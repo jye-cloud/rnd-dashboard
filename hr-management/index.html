@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>인력 정보 관리 시스템</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <h1 class="header-title">인력 정보 관리 시스템</h1>
+    </header>
+
+    <div class="toolbar">
+      <div class="search-section">
+        <input 
+          type="text" 
+          id="search-input" 
+          class="search-input" 
+          placeholder="성명, 소속, 회사로 검색..."
+          autocomplete="off"
+        >
+        <button type="button" id="search-btn" class="search-btn">검색</button>
+      </div>
+      <button type="button" id="add-btn" class="add-btn">신규 인력 등록</button>
+    </div>
+
+    <div class="table-container">
+      <table class="data-table" id="hr-table">
+        <thead>
+          <tr>
+            <th>No</th>
+            <th>회사</th>
+            <th>구분</th>
+            <th>성명</th>
+            <th>소속</th>
+            <th>생년월일</th>
+            <th>주민등록번호</th>
+            <th>성별</th>
+            <th>취득일</th>
+            <th>상실일</th>
+            <th>만나이</th>
+            <th>비고</th>
+            <th>수정/삭제</th>
+          </tr>
+        </thead>
+        <tbody id="table-body">
+          <!-- 데이터가 동적으로 추가됩니다 -->
+        </tbody>
+      </table>
+    </div>
+
+    <div class="stats-bar">
+      <span class="stat-item">총 인력: <strong id="total-count">0</strong>명</span>
+      <span class="stat-item">활성 인력: <strong id="active-count">0</strong>명</span>
+    </div>
+  </div>
+
+  <!-- 신규 등록/수정 모달 -->
+  <div id="modal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="modal-title">신규 인력 등록</h2>
+        <button type="button" class="close-btn" id="close-modal">&times;</button>
+      </div>
+      <form id="hr-form" class="modal-form">
+        <div class="form-row">
+          <div class="form-group">
+            <label for="division">회사 *</label>
+            <select id="division" name="division" required>
+              <option value="">선택하세요</option>
+              <option value="식스티">식스티</option>
+              <option value="굿뉴스">굿뉴스</option>
+              <option value="패리티">패리티</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="name">성명 *</label>
+            <input type="text" id="name" name="name" required>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="department">소속 *</label>
+            <select id="department" name="department" required>
+              <option value="">선택하세요</option>
+              <option value="CI">CI</option>
+              <option value="TVPP">TVPP</option>
+              <option value="CVPP">CVPP</option>
+              <option value="IPP">IPP</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="birthdate">생년월일 *</label>
+            <div class="date-inputs" aria-label="생년월일">
+              <input id="birthdate-y" class="date-part" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="YYYY" aria-label="생년(4자리)" required>
+              <span class="date-sep">-</span>
+              <input id="birthdate-m" class="date-part" inputmode="numeric" pattern="[0-9]*" maxlength="2" placeholder="MM" aria-label="월(2자리)" required>
+              <span class="date-sep">-</span>
+              <input id="birthdate-d" class="date-part" inputmode="numeric" pattern="[0-9]*" maxlength="2" placeholder="DD" aria-label="일(2자리)" required>
+            </div>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="ssn">주민등록번호 *</label>
+            <input type="text" id="ssn" name="ssn" placeholder="000000-0000000" maxlength="14" required>
+          </div>
+          <div class="form-group">
+            <label for="gender">성별</label>
+            <input type="text" id="gender" name="gender" placeholder="주민등록번호로 자동 설정" readonly>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="acquisition-date">취득일 *</label>
+            <div class="date-inputs" aria-label="취득일">
+              <input id="acquisition-y" class="date-part" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="YYYY" aria-label="취득년(4자리)" required>
+              <span class="date-sep">-</span>
+              <input id="acquisition-m" class="date-part" inputmode="numeric" pattern="[0-9]*" maxlength="2" placeholder="MM" aria-label="취득월(2자리)" required>
+              <span class="date-sep">-</span>
+              <input id="acquisition-d" class="date-part" inputmode="numeric" pattern="[0-9]*" maxlength="2" placeholder="DD" aria-label="취득일(2자리)" required>
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="loss-date">상실일</label>
+            <div class="date-inputs" aria-label="상실일">
+              <input id="loss-y" class="date-part" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="YYYY" aria-label="상실년(4자리)">
+              <span class="date-sep">-</span>
+              <input id="loss-m" class="date-part" inputmode="numeric" pattern="[0-9]*" maxlength="2" placeholder="MM" aria-label="상실월(2자리)">
+              <span class="date-sep">-</span>
+              <input id="loss-d" class="date-part" inputmode="numeric" pattern="[0-9]*" maxlength="2" placeholder="DD" aria-label="상실일(2자리)">
+            </div>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="cancel-btn" id="cancel-btn">취소</button>
+          <button type="submit" class="submit-btn">저장</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
