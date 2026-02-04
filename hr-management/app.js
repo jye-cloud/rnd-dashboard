@@ -246,7 +246,28 @@
   // 생년월일로부터 만나이 계산
   function calculateAge(birthdate) {
     if (!birthdate) return '';
-    const birth = new Date(birthdate);
+    let birth;
+    const s = String(birthdate);
+    // YYYY-MM-DD 형식
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+      birth = new Date(s);
+    } else if (/^\d{8}$/.test(s)) {
+      // YYYYMMDD
+      const y = s.slice(0, 4);
+      const m = s.slice(4, 6);
+      const d = s.slice(6, 8);
+      birth = new Date(y + '-' + m + '-' + d);
+    } else if (/^\d{6}$/.test(s)) {
+      // YYMMDD → 19xx 또는 20xx 추정 (단순 규칙: 00~29 → 2000~, 그 외 1900~)
+      const yy = parseInt(s.slice(0, 2), 10);
+      const year = yy <= 29 ? 2000 + yy : 1900 + yy;
+      const m = s.slice(2, 4);
+      const d = s.slice(4, 6);
+      birth = new Date(year + '-' + m + '-' + d);
+    } else {
+      birth = new Date(birthdate);
+    }
+    if (Number.isNaN(birth.getTime())) return '';
     const today = new Date();
     let age = today.getFullYear() - birth.getFullYear();
     const monthDiff = today.getMonth() - birth.getMonth();
@@ -280,35 +301,96 @@
   function normalizeExcelDate(val) {
     if (val == null || val === '') return null;
     if (typeof val === 'number') {
-      // Excel 시리얼: 1900-01-01 기준 일수 (1970-01-01 = 25569)
-      const date = new Date((val - 25569) * 86400 * 1000);
+      // Excel 시리얼: 1899-12-30 기준 일수 (1900-01-01 = 1, 1970-01-01 = 25569)
+      // UTC 기준 + KST(+9h)로 변환해서 타임존/서머타임에 따른 하루 오차를 제거한다.
+      var utcMillis = (val - 25569) * 86400 * 1000;
+      var kstMillis = utcMillis + (9 * 60 * 60 * 1000);
+      var date = new Date(kstMillis);
       if (Number.isNaN(date.getTime())) return null;
-      const y = date.getFullYear();
-      const m = String(date.getMonth() + 1).padStart(2, '0');
-      const d = String(date.getDate()).padStart(2, '0');
+      var y = date.getUTCFullYear();
+      var m = String(date.getUTCMonth() + 1).padStart(2, '0');
+      var d = String(date.getUTCDate()).padStart(2, '0');
       return y + '-' + m + '-' + d;
     }
     if (val instanceof Date) {
       if (Number.isNaN(val.getTime())) return null;
-      return val.toISOString().slice(0, 10);
+      // Date 인스턴스도 KST(+9h) 기준으로 보정 후 UTC 기준으로 잘라 사용
+      var kstDate = new Date(val.getTime() + (9 * 60 * 60 * 1000));
+      var y2 = kstDate.getUTCFullYear();
+      var m2 = String(kstDate.getUTCMonth() + 1).padStart(2, '0');
+      var d2 = String(kstDate.getUTCDate()).padStart(2, '0');
+      return y2 + '-' + m2 + '-' + d2;
     }
-    const str = String(val).trim().replace(/[./]/g, '-');
+    var str = String(val).trim();
     if (!str) return null;
-    const match = str.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/) || str.match(/^(\d{1,2})-(\d{1,2})-(\d{4})/);
+    // 구분자를 통일
+    var s = str.replace(/[.\s/]/g, '-');
+    // YYYY-MM-DD 또는 MM-DD-YYYY
+    var match = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/) || s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})/);
     if (match) {
-      let y, m, d;
+      var y3, m3, d3;
       if (match[1].length === 4) {
-        y = match[1];
-        m = match[2].padStart(2, '0');
-        d = match[3].padStart(2, '0');
+        y3 = match[1];
+        m3 = match[2].padStart(2, '0');
+        d3 = match[3].padStart(2, '0');
       } else {
-        y = match[3];
-        m = match[1].padStart(2, '0');
-        d = match[2].padStart(2, '0');
+        y3 = match[3];
+        m3 = match[1].padStart(2, '0');
+        d3 = match[2].padStart(2, '0');
       }
-      return y + '-' + m + '-' + d;
+      return y3 + '-' + m3 + '-' + d3;
     }
-    return null;
+    // 구분자가 전혀 없는 8자리(YYYYMMDD)도 지원
+    var digits = s.replace(/[^0-9]/g, '');
+    if (digits.length === 8) {
+      var y4 = digits.slice(0, 4);
+      var m4 = digits.slice(4, 6);
+      var d4 = digits.slice(6, 8);
+      return y4 + '-' + m4 + '-' + d4;
+    }
+    // 마지막 수단: 원본 문자열을 그대로 반환 (UI에서라도 볼 수 있도록)
+    return str;
+  }
+
+  // 엑셀에서 읽은 핸드폰 번호를 010-xxxx-xxxx 형식의 문자열로 정리
+  function normalizePhoneNumber(val) {
+    if (val == null || val === '') return '';
+    let s = String(val).trim();
+    // 이미 하이픈이 포함되어 있으면 숫자만 정리 후 재포맷
+    s = s.replace(/[^0-9]/g, '');
+    if (!s) return '';
+    // 앞자리 0 유지, 10~11자리 기준 처리
+    if (s.length === 10) {
+      return s.replace(/(\d{3})(\d{3})(\d{4})/, '$1-$2-$3');
+    }
+    if (s.length === 11) {
+      return s.replace(/(\d{3})(\d{4})(\d{4})/, '$1-$2-$3');
+    }
+    // 그 외 길이는 원본 숫자 그대로 반환
+    return s;
+  }
+
+  // 엑셀에서 읽은 생년월일을 문자열로 보존하면서 가능한 경우 날짜 형식으로도 쓸 수 있게 정리
+  function normalizeBirthFromExcel(val) {
+    if (val == null || val === '') return null;
+    // 먼저 일반 날짜/시리얼 처리 시도
+    var iso = normalizeExcelDate(val);
+    if (iso) return iso;
+    // 그렇지 않으면 숫자/문자열에서 6~8자리 숫자만 추출
+    var s = typeof val === 'number' ? String(Math.floor(val)) : String(val);
+    s = s.replace(/[^0-9]/g, '');
+    if (!s) return null;
+    if (s.length === 8) {
+      // YYYYMMDD → YYYY-MM-DD
+      return s.slice(0, 4) + '-' + s.slice(4, 6) + '-' + s.slice(6, 8);
+    }
+    if (s.length === 6) {
+      // YYMMDD → YYYY-MM-DD (간단 추정 규칙 재사용)
+      var yy = parseInt(s.slice(0, 2), 10);
+      var year = yy <= 29 ? 2000 + yy : 1900 + yy;
+      return year + '-' + s.slice(2, 4) + '-' + s.slice(4, 6);
+    }
+    return s;
   }
 
   // 셀 문자열이 키워드 중 하나를 포함하는지 확인 (공백 무시, 대소문자 무시)
@@ -560,7 +642,7 @@
     if (data.length === 0) {
       const tr = document.createElement('tr');
       tr.innerHTML = `
-        <td colspan="13" class="empty-state">
+        <td colspan="14" class="empty-state">
           <p>등록된 인력 정보가 없습니다.</p>
         </td>
       `;
@@ -604,17 +686,18 @@
       if (selectedRowId === item.id) tr.classList.add('selected');
       tr.innerHTML = `
         <td>${index + 1}</td>
-        <td>${item.division}</td>
         <td>${getDisplayStatus(item)}</td>
         <td>${item.name}</td>
         <td>${item.department}</td>
         <td>${formatDate(item.birthdate)}</td>
-        <td>${formatSSN(item.ssn)}</td>
         <td>${item.gender}</td>
         <td>${formatDate(item.acquisitionDate)}</td>
         <td>${item.lossDate ? formatDate(item.lossDate) : '-'}</td>
-        <td>${item.age}세</td>
-        <td>${item.remark ? item.remark : '-'}</td>
+        <td>${item.researcherId || '-'}</td>
+        <td>${item.finalDegree || '-'}</td>
+        <td class="cell-major" title="${item.major ? item.major : ''}">${item.major || '-'}</td>
+        <td class="cell-remark">${item.remark ? item.remark : '-'}</td>
+        <td><button type="button" class="btn-detail" data-id="${item.id}">상세</button></td>
         <td>
           <div class="action-buttons">
             <button type="button" class="btn-edit" data-id="${item.id}" title="수정"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
@@ -626,6 +709,15 @@
     });
 
     // 이벤트 리스너 추가
+    tableBody.querySelectorAll('.btn-detail').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const id = e.currentTarget.getAttribute('data-id');
+        const item = filteredData.find(function (i) { return i.id === id; }) || hrData.find(function (i) { return i.id === id; });
+        if (item) openDetailSidebar(item);
+      });
+    });
+
     tableBody.querySelectorAll('.btn-edit').forEach(btn => {
       btn.addEventListener('click', (e) => {
         const id = e.currentTarget.getAttribute('data-id');
@@ -697,6 +789,14 @@
         + '<div class="detail-row"><span class="detail-label">자격취득일</span><span class="detail-value">' + formatDate(item.acquisitionDate) + '</span></div>'
         + '<div class="detail-row"><span class="detail-label">자격상실일</span><span class="detail-value">' + (item.lossDate ? formatDate(item.lossDate) : '-') + '</span></div>'
         + '<div class="detail-row"><span class="detail-label">만나이</span><span class="detail-value">' + (item.age !== undefined && item.age !== '' ? item.age + '세' : '-') + '</span></div>'
+        + '<div class="detail-row"><span class="detail-label">핸드폰번호</span><span class="detail-value">' + (item.phoneNumber || '-') + '</span></div>'
+        + '<div class="detail-row"><span class="detail-label">연구자번호</span><span class="detail-value">' + (item.researcherId || '-') + '</span></div>'
+        + '<div class="detail-row"><span class="detail-label">최종학위</span><span class="detail-value">' + (item.finalDegree || '-') + '</span></div>'
+        + '<div class="detail-row"><span class="detail-label">학교</span><span class="detail-value">' + (item.school || '-') + '</span></div>'
+        + '<div class="detail-row"><span class="detail-label">학과</span><span class="detail-value">' + (item.major || '-') + '</span></div>'
+        + '<div class="detail-row"><span class="detail-label">학위번호</span><span class="detail-value">' + (item.degreeNumber || '-') + '</span></div>'
+        + '<div class="detail-row"><span class="detail-label">학위 수여일</span><span class="detail-value">' + (item.degreeAwardDate ? formatDate(item.degreeAwardDate) : '-') + '</span></div>'
+        + '<div class="detail-row"><span class="detail-label">주소</span><span class="detail-value">' + (item.address || '-') + '</span></div>'
         + '<div class="detail-row"><span class="detail-label">비고</span><span class="detail-value">' + (item.remark || '-') + '</span></div>';
     }
     if (detailSidebar) {
@@ -935,7 +1035,8 @@
       list = list.filter(function (item) {
         return (item.name && item.name.toLowerCase().includes(query)) ||
           (item.department && item.department.toLowerCase().includes(query)) ||
-          (item.division && item.division.toLowerCase().includes(query));
+          (item.division && item.division.toLowerCase().includes(query)) ||
+          (item.finalDegree && item.finalDegree.toLowerCase().includes(query));
       });
     }
 
@@ -1109,6 +1210,14 @@
       acquisitionDate: formData.acquisitionDate,
       lossDate: formData.lossDate || null,
       age: calculateAge(formData.birthdate),
+      phoneNumber: formData.phoneNumber || '',
+      researcherId: formData.researcherId || '',
+      finalDegree: formData.finalDegree || '',
+      school: formData.school || '',
+      major: formData.major || '',
+      degreeNumber: formData.degreeNumber || '',
+      degreeAwardDate: formData.degreeAwardDate || '',
+      address: formData.address || '',
       remark: formData.remark || ''
     };
 
@@ -1134,6 +1243,22 @@
     setDateParts('loss', item.lossDate || null);
     var remarkEl = document.getElementById('remark');
     if (remarkEl) remarkEl.value = item.remark || '';
+    var phoneEl = document.getElementById('phone-number');
+    if (phoneEl) phoneEl.value = item.phoneNumber || '';
+    var researcherEl = document.getElementById('researcher-id');
+    if (researcherEl) researcherEl.value = item.researcherId || '';
+    var degreeEl = document.getElementById('final-degree');
+    if (degreeEl) degreeEl.value = item.finalDegree || '';
+    var schoolEl = document.getElementById('school');
+    if (schoolEl) schoolEl.value = item.school || '';
+    var majorEl = document.getElementById('major');
+    if (majorEl) majorEl.value = item.major || '';
+    var degreeNoEl = document.getElementById('degree-no');
+    if (degreeNoEl) degreeNoEl.value = item.degreeNumber || '';
+    var degreeDateEl = document.getElementById('degree-award-date');
+    if (degreeDateEl) degreeDateEl.value = item.degreeAwardDate || '';
+    var addressEl = document.getElementById('address');
+    if (addressEl) addressEl.value = item.address || '';
     
     openModal(true);
   }
@@ -1152,6 +1277,14 @@
     item.acquisitionDate = formData.acquisitionDate;
     item.lossDate = formData.lossDate || null;
     item.age = calculateAge(formData.birthdate);
+    item.phoneNumber = formData.phoneNumber || '';
+    item.researcherId = formData.researcherId || '';
+    item.finalDegree = formData.finalDegree || '';
+    item.school = formData.school || '';
+    item.major = formData.major || '';
+    item.degreeNumber = formData.degreeNumber || '';
+    item.degreeAwardDate = formData.degreeAwardDate || '';
+    item.address = formData.address || '';
     item.remark = formData.remark || '';
 
     saveData();
@@ -1202,6 +1335,14 @@
       ssn: document.getElementById('ssn').value,
       acquisitionDate,
       lossDate,
+      phoneNumber: (document.getElementById('phone-number').value || '').trim(),
+      researcherId: (document.getElementById('researcher-id').value || '').trim(),
+      finalDegree: (document.getElementById('final-degree').value || '').trim(),
+      school: (document.getElementById('school').value || '').trim(),
+      major: (document.getElementById('major').value || '').trim(),
+      degreeNumber: (document.getElementById('degree-no').value || '').trim(),
+      degreeAwardDate: (document.getElementById('degree-award-date').value || '').trim(),
+      address: (document.getElementById('address').value || '').trim(),
       remark: (document.getElementById('remark').value || '').trim()
     };
 
@@ -1570,7 +1711,16 @@
     info.birthdateCol = findColumnIndexInRow(headerRow, ['생년월일']);
     info.ssnCol = findColumnIndexInRow(headerRow, ['주민등록번호']);
     info.genderCol = findColumnIndexInRow(headerRow, ['성별']);
+    info.phoneCol = findColumnIndexInRow(headerRow, ['핸드폰번호', '휴대폰번호', '연락처']);
     info.remarkCol = findColumnIndexInRow(headerRow, ['비고']);
+    // 부가 정보(연구자번호, 학위 등) 컬럼 탐색
+    info.researcherIdCol = findColumnIndexInRow(headerRow, ['연구자번호', '연구자 번호']);
+    info.finalDegreeCol = findColumnIndexInRow(headerRow, ['최종학위', '최종 학위']);
+    info.schoolCol = findColumnIndexInRow(headerRow, ['학교']);
+    info.majorCol = findColumnIndexInRow(headerRow, ['학과']);
+    info.degreeNumberCol = findColumnIndexInRow(headerRow, ['학위번호', '학위 번호']);
+    info.degreeAwardDateCol = findColumnIndexInRow(headerRow, ['학위수여일', '학위 수여일']);
+    info.addressCol = findColumnIndexInRow(headerRow, ['주소', 'Address']);
     return info;
   }
 
@@ -1603,7 +1753,8 @@
             if (!row || !Array.isArray(row)) continue;
             var name = String(row[headerInfo.nameCol] != null ? row[headerInfo.nameCol] : '').trim();
             if (!name) continue;
-            var birthdate = headerInfo.birthdateCol >= 0 ? normalizeExcelDate(row[headerInfo.birthdateCol]) : null;
+            var birthRaw = headerInfo.birthdateCol >= 0 ? row[headerInfo.birthdateCol] : null;
+            var birthdate = normalizeBirthFromExcel(birthRaw);
             var item = {
               id: baseId + '-' + result.length,
               no: result.length + 1,
@@ -1617,6 +1768,15 @@
               acquisitionDate: normalizeExcelDate(row[headerInfo.acqCol]) || null,
               lossDate: normalizeExcelDate(row[headerInfo.lossCol]) || null,
               age: calculateAge(birthdate),
+              // 부가 정보는 컬럼이 있는 경우에만 채움
+              phoneNumber: headerInfo.phoneCol >= 0 ? normalizePhoneNumber(row[headerInfo.phoneCol]) : '',
+              researcherId: headerInfo.researcherIdCol >= 0 ? String(row[headerInfo.researcherIdCol] != null ? row[headerInfo.researcherIdCol] : '').trim() : '',
+              finalDegree: headerInfo.finalDegreeCol >= 0 ? String(row[headerInfo.finalDegreeCol] != null ? row[headerInfo.finalDegreeCol] : '').trim() : '',
+              school: headerInfo.schoolCol >= 0 ? String(row[headerInfo.schoolCol] != null ? row[headerInfo.schoolCol] : '').trim() : '',
+              major: headerInfo.majorCol >= 0 ? String(row[headerInfo.majorCol] != null ? row[headerInfo.majorCol] : '').trim() : '',
+              degreeNumber: headerInfo.degreeNumberCol >= 0 ? String(row[headerInfo.degreeNumberCol] != null ? row[headerInfo.degreeNumberCol] : '').trim() : '',
+              degreeAwardDate: headerInfo.degreeAwardDateCol >= 0 ? normalizeExcelDate(row[headerInfo.degreeAwardDateCol]) || null : null,
+              address: headerInfo.addressCol >= 0 ? String(row[headerInfo.addressCol] != null ? row[headerInfo.addressCol] : '').trim() : '',
               remark: headerInfo.remarkCol >= 0 ? String(row[headerInfo.remarkCol] != null ? row[headerInfo.remarkCol] : '').trim() : ''
             };
             result.push(item);
