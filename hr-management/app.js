@@ -30,6 +30,7 @@
   const excelUploadBtn = document.getElementById('excel-upload-btn');
   const legacyExcelInput = document.getElementById('legacy-excel-input');
   const legacyExcelBtn = document.getElementById('legacy-excel-btn');
+  const deleteAllBtn = document.getElementById('delete-all-btn');
   const statusAll = document.getElementById('status-all');
   const statusEmployed = document.getElementById('status-employed');
   const statusRetired = document.getElementById('status-retired');
@@ -39,16 +40,70 @@
   const pityQueryBtn = document.getElementById('pity-query-btn');
   const pitySummaryCard = document.getElementById('pity-summary-card');
   const pitySummaryText = document.getElementById('pity-summary-text');
+  const pityClearBtn = document.getElementById('pity-clear-btn');
+  const dualBtn = document.getElementById('dual-btn');
   const filterResetBtn = document.getElementById('filter-reset-btn');
+  const statsYearEl = document.getElementById('stats-year');
+  const statsMonthEl = document.getElementById('stats-month');
+  const statsJoinedEl = document.getElementById('stats-joined');
+  const statsLeftEl = document.getElementById('stats-left');
+  const statsJoinedYearEl = document.getElementById('stats-joined-year');
+  const statsLeftYearEl = document.getElementById('stats-left-year');
+  const todayDateEl = document.getElementById('today-date');
+  const periodQueryHintEl = document.getElementById('period-query-hint');
+  const detailSidebar = document.getElementById('detail-sidebar');
+  const detailSidebarBody = document.getElementById('detail-sidebar-body');
+  const detailSidebarClose = document.getElementById('detail-sidebar-close');
+  const thName = document.getElementById('th-name');
+  const thAge = document.getElementById('th-age');
 
   const UI_STATE_KEY = 'hr-management-ui-state';
 
   let hrData = loadData();
   let editingId = null;
   let filteredData = [...hrData];
-  let statusFilter = '전체';
+  let statusFilter = '재직';
   let companyFilter = null;
   let pointInTimeResult = null;
+  let selectedRowId = null;
+  // 어떤 섹션이 현재 테이블 필터의 주도권을 갖는지: 'section1' | 'section2' | 'section3'
+  let activeFilterSection = 'section1';
+  // 테이블 정렬 상태: null | 'name' | 'age'
+  let tableSortKey = null;
+  let tableSortDir = 'asc';
+  // 섹션1 겸직 전용 모드 여부
+  let dualMode = false;
+
+  function getStartYear() {
+    return 2020;
+  }
+
+  function formatTodayYmd() {
+    var d = new Date();
+    var y = d.getFullYear();
+    var m = String(d.getMonth() + 1).padStart(2, '0');
+    var day = String(d.getDate()).padStart(2, '0');
+    return y + '. ' + m + '. ' + day;
+  }
+
+  function updateYearLabelUI() {
+    if (!todayDateEl) return;
+    var y = new Date().getFullYear();
+    todayDateEl.textContent = y + ' 누적 현황';
+  }
+
+  function updateYearCumulativeUI() {
+    var y = new Date().getFullYear();
+    // 'YYYY 누적 현황' = 해당 연도 입/퇴사 건수
+    if (statsJoinedYearEl) statsJoinedYearEl.textContent = String(getJoinedInYear(y));
+    if (statsLeftYearEl) statsLeftYearEl.textContent = String(getLeftInYear(y));
+    updateYearLabelUI();
+  }
+
+  function updatePeriodQueryHintUI(label) {
+    if (!periodQueryHintEl) return;
+    periodQueryHintEl.textContent = label || '조회 결과';
+  }
 
   // 데이터 로드 (로컬스토리지 또는 구글 스프레드시트에서)
   function loadData() {
@@ -73,23 +128,43 @@
     }
   }
 
+  function deleteAllData() {
+    hrData = [];
+    filteredData = [];
+    pointInTimeResult = null;
+    selectedRowId = null;
+    editingId = null;
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(UI_STATE_KEY);
+    } catch (e) {
+      console.error('전체 삭제 실패:', e);
+    }
+    if (pitySummaryCard) pitySummaryCard.hidden = true;
+    if (searchInput) searchInput.value = '';
+    applyFilters();
+    updateStatusCardsUI();
+  }
+
   // UI 상태 저장 (필터·통계 조회 상태)
   function saveUIState() {
     try {
-      var yearEl = document.getElementById('pity-year');
-      var monthEl = document.getElementById('pity-month');
+      var pityYearEl = document.getElementById('pity-year');
+      var pityMonthEl = document.getElementById('pity-month');
       var state = {
         statusFilter: statusFilter,
         companyFilter: companyFilter,
         searchQuery: searchInput ? searchInput.value.trim() : '',
-        statsYear: yearEl ? yearEl.value : '',
-        statsMonth: monthEl ? monthEl.value : '',
+        statsYear: statsYearEl ? statsYearEl.value : '',
+        statsMonth: statsMonthEl ? statsMonthEl.value : '',
+        pityYear: pityYearEl ? pityYearEl.value : '',
+        pityMonth: pityMonthEl ? pityMonthEl.value : '',
         hasPointInTime: !!pointInTimeResult
       };
       if (pointInTimeResult) {
         state.refDateStr = pointInTimeResult.refDateStr;
         state.label = pointInTimeResult.label;
-        state.mode = pointInTimeResult.mode; // 'cumulative' | 'monthly'
+        state.mode = pointInTimeResult.mode;
       }
       localStorage.setItem(UI_STATE_KEY, JSON.stringify(state));
     } catch (e) {
@@ -106,20 +181,27 @@
       if (state.statusFilter) statusFilter = state.statusFilter;
       if (state.companyFilter !== undefined) companyFilter = state.companyFilter;
       if (state.searchQuery !== undefined && searchInput) searchInput.value = state.searchQuery;
-      var yearEl = document.getElementById('pity-year');
-      var monthEl = document.getElementById('pity-month');
-      if (yearEl && state.statsYear) yearEl.value = state.statsYear;
-      if (monthEl && state.statsMonth !== undefined) monthEl.value = state.statsMonth;
+      if (statsYearEl && state.statsYear) statsYearEl.value = state.statsYear;
+      if (statsMonthEl && state.statsMonth !== undefined) statsMonthEl.value = state.statsMonth;
+      var pityYearEl = document.getElementById('pity-year');
+      var pityMonthEl = document.getElementById('pity-month');
+      if (pityYearEl && state.pityYear) pityYearEl.value = state.pityYear;
+      if (pityMonthEl && state.pityMonth !== undefined) pityMonthEl.value = state.pityMonth;
       if (state.hasPointInTime && state.refDateStr && state.label) {
         var refDateStr = state.refDateStr;
         var mode = state.mode || 'cumulative';
         var list;
-        if (mode === 'monthly' && state.statsYear && state.statsMonth) {
-          list = getMonthlyFilterList(parseInt(state.statsYear, 10), parseInt(state.statsMonth, 10));
+        if (mode === 'monthly' && state.pityYear && state.pityMonth) {
+          list = getMonthlyFilterList(parseInt(state.pityYear, 10), parseInt(state.pityMonth, 10));
+          pointInTimeResult = { refDateStr: refDateStr, label: state.label, list: list, mode: mode };
+        } else if (mode === 'snapshot') {
+          var employedList = hrData.filter(function (item) { return isEmployedAtRef(item, refDateStr); });
+          var retiredList = hrData.filter(function (item) { return isRetiredAtRef(item, refDateStr); });
+          pointInTimeResult = { refDateStr: refDateStr, label: state.label, list: employedList, employedList: employedList, retiredList: retiredList, mode: 'snapshot' };
         } else {
           list = hrData.filter(function (item) { return isEmployedAtRef(item, refDateStr); });
+          pointInTimeResult = { refDateStr: refDateStr, label: state.label, list: list, mode: mode };
         }
-        pointInTimeResult = { refDateStr: refDateStr, label: state.label, list: list, mode: mode };
         if (pitySummaryCard) pitySummaryCard.hidden = false;
       }
     } catch (e) {
@@ -356,6 +438,7 @@
         var newItem = {
           id: 'hr-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9),
           no: hrData.length + 1,
+          originalIndex: hrData.length,
           division: '',
           name: row.name,
           department: '',
@@ -385,7 +468,6 @@
       updated++;
     });
     if (updated > 0 || added > 0) {
-      hrData.forEach(function (item, index) { item.no = index + 1; });
       saveData();
     }
     return { updated: updated, skipped: skipped, added: added, total: rows.length };
@@ -486,12 +568,44 @@
       return;
     }
 
-    data.forEach((item, index) => {
+    var rows = data.slice();
+
+    // 정렬 우선 적용 (성명/만나이)
+    if (tableSortKey && rows.length) {
+      rows = rows.slice().sort(function (a, b) {
+        var dir = tableSortDir === 'desc' ? -1 : 1;
+        if (tableSortKey === 'name') {
+          var an = (a.name || '').toString();
+          var bn = (b.name || '').toString();
+          var cmp = an.localeCompare(bn, 'ko', { sensitivity: 'base' });
+          if (cmp !== 0) return cmp * dir;
+        } else if (tableSortKey === 'age') {
+          var aa = Number(a.age || 0);
+          var ba = Number(b.age || 0);
+          if (aa !== ba) return (aa < ba ? -1 : 1) * dir;
+        }
+        // tie-breaker: originalIndex 유지
+        var ai = a.originalIndex != null ? a.originalIndex : 0;
+        var bi = b.originalIndex != null ? b.originalIndex : 0;
+        return (ai - bi) * dir;
+      });
+    } else if (rows.length && Object.prototype.hasOwnProperty.call(rows[0], 'originalIndex')) {
+      // 기본: 엑셀에서 읽은 원본 순서를 유지
+      rows = rows.slice().sort(function (a, b) {
+        var ai = a.originalIndex != null ? a.originalIndex : 0;
+        var bi = b.originalIndex != null ? b.originalIndex : 0;
+        return ai - bi;
+      });
+    }
+
+    rows.forEach((item, index) => {
       const tr = document.createElement('tr');
+      tr.setAttribute('data-id', item.id);
+      if (selectedRowId === item.id) tr.classList.add('selected');
       tr.innerHTML = `
-        <td>${item.no}</td>
+        <td>${index + 1}</td>
         <td>${item.division}</td>
-        <td>${item.lossDate ? '퇴직' : '재직'}</td>
+        <td>${getDisplayStatus(item)}</td>
         <td>${item.name}</td>
         <td>${item.department}</td>
         <td>${formatDate(item.birthdate)}</td>
@@ -521,10 +635,83 @@
 
     tableBody.querySelectorAll('.btn-delete').forEach(btn => {
       btn.addEventListener('click', (e) => {
+        e.stopPropagation();
         const id = e.currentTarget.getAttribute('data-id');
         deleteItem(id);
       });
     });
+
+    tableBody.querySelectorAll('.btn-edit').forEach(btn => {
+      btn.addEventListener('click', (e) => e.stopPropagation());
+    });
+
+    tableBody.querySelectorAll('tr[data-id]').forEach(tr => {
+      tr.addEventListener('click', function (e) {
+        if (e.target.closest('.btn-edit') || e.target.closest('.btn-delete')) return;
+        const id = tr.getAttribute('data-id');
+        const item = filteredData.find(function (i) { return i.id === id; }) || hrData.find(function (i) { return i.id === id; });
+        if (item) openDetailSidebar(item);
+      });
+    });
+  }
+
+  function setTableSort(key) {
+    if (tableSortKey === key) {
+      tableSortDir = tableSortDir === 'asc' ? 'desc' : 'asc';
+    } else {
+      tableSortKey = key;
+      tableSortDir = 'asc';
+    }
+
+    // 헤더 정렬 표시 업데이트
+    if (thName) {
+      thName.classList.remove('sort-asc', 'sort-desc');
+      if (tableSortKey === 'name') {
+        thName.classList.add(tableSortDir === 'asc' ? 'sort-asc' : 'sort-desc');
+      }
+    }
+    if (thAge) {
+      thAge.classList.remove('sort-asc', 'sort-desc');
+      if (tableSortKey === 'age') {
+        thAge.classList.add(tableSortDir === 'asc' ? 'sort-asc' : 'sort-desc');
+      }
+    }
+
+    renderTable();
+  }
+
+  function openDetailSidebar(item) {
+    selectedRowId = item.id;
+    tableBody.querySelectorAll('tr').forEach(function (tr) {
+      tr.classList.toggle('selected', tr.getAttribute('data-id') === item.id);
+    });
+    if (detailSidebarBody) {
+      detailSidebarBody.innerHTML = ''
+        + '<div class="detail-row"><span class="detail-label">성명</span><span class="detail-value">' + (item.name || '-') + '</span></div>'
+        + '<div class="detail-row"><span class="detail-label">회사</span><span class="detail-value">' + (item.division || '-') + '</span></div>'
+        + '<div class="detail-row"><span class="detail-label">구분</span><span class="detail-value">' + getDisplayStatus(item) + '</span></div>'
+        + '<div class="detail-row"><span class="detail-label">소속</span><span class="detail-value">' + (item.department || '-') + '</span></div>'
+        + '<div class="detail-row"><span class="detail-label">생년월일</span><span class="detail-value">' + formatDate(item.birthdate) + '</span></div>'
+        + '<div class="detail-row"><span class="detail-label">주민등록번호</span><span class="detail-value">' + formatSSN(item.ssn) + '</span></div>'
+        + '<div class="detail-row"><span class="detail-label">성별</span><span class="detail-value">' + (item.gender || '-') + '</span></div>'
+        + '<div class="detail-row"><span class="detail-label">자격취득일</span><span class="detail-value">' + formatDate(item.acquisitionDate) + '</span></div>'
+        + '<div class="detail-row"><span class="detail-label">자격상실일</span><span class="detail-value">' + (item.lossDate ? formatDate(item.lossDate) : '-') + '</span></div>'
+        + '<div class="detail-row"><span class="detail-label">만나이</span><span class="detail-value">' + (item.age !== undefined && item.age !== '' ? item.age + '세' : '-') + '</span></div>'
+        + '<div class="detail-row"><span class="detail-label">비고</span><span class="detail-value">' + (item.remark || '-') + '</span></div>';
+    }
+    if (detailSidebar) {
+      detailSidebar.classList.add('open');
+      detailSidebar.setAttribute('aria-hidden', 'false');
+    }
+  }
+
+  function closeDetailSidebar() {
+    selectedRowId = null;
+    if (detailSidebar) {
+      detailSidebar.classList.remove('open');
+      detailSidebar.setAttribute('aria-hidden', 'true');
+    }
+    tableBody.querySelectorAll('tr.selected').forEach(function (tr) { tr.classList.remove('selected'); });
   }
 
   // 자격상실일 비어있음 여부 (null, '', 공백만 구분)
@@ -533,11 +720,31 @@
     return v != null && String(v).trim() !== '';
   }
 
+  // '겸직' 여부: 비고에 "겸직"이 포함된 경우
+  function isDualEmployment(item) {
+    var remark = item && item.remark ? String(item.remark) : '';
+    return remark.indexOf('겸직') !== -1;
+  }
+
+  // 화면용 구분 텍스트: 기본은 재직/퇴직, '겸직'은 별도 표시
+  function getDisplayStatus(item) {
+    if (isDualEmployment(item)) return '겸직';
+    return hasLossDate(item) ? '퇴직' : '재직';
+  }
+
   // 기준일(refDateStr, YYYY-MM-DD) 시점에 재직인지: 자격취득일 <= 기준일 이고 (자격상실일 없음 OR 자격상실일 > 기준일)
   function isEmployedAtRef(item, refDateStr) {
     var acq = item.acquisitionDate;
     if (acq == null || String(acq).trim() === '') return false;
-    if (String(acq).trim() > refDateStr) return false;
+    var acqStr = String(acq).trim();
+    if (acqStr > refDateStr) return false;
+
+    // 겸직 인원은 자격취득일 이후에는 자격상실일과 상관 없이 항상 재직으로 간주
+    if (isDualEmployment(item)) {
+      return true;
+    }
+
+    // 일반 인원: 자격상실일이 없거나 기준일 이후인 경우만 재직
     if (!hasLossDate(item)) return true;
     return String(item.lossDate).trim() > refDateStr;
   }
@@ -585,6 +792,28 @@
     }).length;
   }
 
+  // 해당 연도 입사자 수 (취득일이 YYYY- 로 시작)
+  function getJoinedInYear(year) {
+    var y = parseInt(year, 10);
+    if (isNaN(y)) return 0;
+    var prefix = String(y) + '-';
+    return hrData.filter(function (item) {
+      var acq = item.acquisitionDate;
+      return acq && String(acq).trim().indexOf(prefix) === 0;
+    }).length;
+  }
+
+  // 해당 연도 퇴사자 수 (상실일이 YYYY- 로 시작)
+  function getLeftInYear(year) {
+    var y = parseInt(year, 10);
+    if (isNaN(y)) return 0;
+    var prefix = String(y) + '-';
+    return hrData.filter(function (item) {
+      var loss = item.lossDate;
+      return loss && String(loss).trim().indexOf(prefix) === 0;
+    }).length;
+  }
+
   // 해당 연·월 입사자 수 (취득일 기준)
   function getJoinedInMonth(year, month) {
     var y = parseInt(year, 10);
@@ -609,6 +838,49 @@
     }).length;
   }
 
+  // 해당 연도 입/퇴사 이벤트가 있었던 인원 목록 (연도 전체)
+  function getYearlyFilterList(year) {
+    var y = parseInt(year, 10);
+    if (isNaN(y)) return [];
+    var yStr = String(y);
+    return hrData.filter(function (item) {
+      var acq = item.acquisitionDate;
+      var loss = item.lossDate;
+      var joinedInYear = acq && String(acq).substring(0, 4) === yStr;
+      var leftInYear = loss && String(loss).substring(0, 4) === yStr;
+      return joinedInYear || leftInYear;
+    });
+  }
+
+  // 선택한 연도 기준 YTD(1월1일~해당 월 말) 입사/퇴사 수
+  function getYtdJoined(year, month) {
+    var y = parseInt(year, 10);
+    var m = month == null || month === '' ? 12 : parseInt(month, 10);
+    if (isNaN(y) || isNaN(m)) return 0;
+    var end = getLastDayOfMonth(y, m);
+    var start = y + '-01-01';
+    return hrData.filter(function (item) {
+      var acq = item.acquisitionDate;
+      if (!acq) return false;
+      var s = String(acq).trim();
+      return s >= start && s <= end;
+    }).length;
+  }
+
+  function getYtdLeft(year, month) {
+    var y = parseInt(year, 10);
+    var m = month == null || month === '' ? 12 : parseInt(month, 10);
+    if (isNaN(y) || isNaN(m)) return 0;
+    var end = getLastDayOfMonth(y, m);
+    var start = y + '-01-01';
+    return hrData.filter(function (item) {
+      var loss = item.lossDate;
+      if (!loss) return false;
+      var s = String(loss).trim();
+      return s >= start && s <= end;
+    }).length;
+  }
+
   // 말일자 계산 (년, 월 1-based) -> YYYY-MM-DD
   function getLastDayOfMonth(year, month) {
     var d = new Date(year, month, 0);
@@ -618,22 +890,43 @@
     return y + '-' + m + '-' + day;
   }
 
-  // 필터 적용: 검색어 + 현황(전체/재직/퇴직) + 회사 + (말일자 기준 결과 있으면 해당 연월 기준으로 재직/퇴직 구분)
+  // 필터 적용: 검색어 + 현황(전체/재직/퇴직) + 회사 + (시점 조회 또는 중앙 연월 통계)
   function applyFilters() {
+    // 상단 '올해 누적'은 기간별 조회(하단)와 무관하게 고정 표시
+    updateYearCumulativeUI();
+
     var baseList;
-    if (pointInTimeResult) {
-      if (pointInTimeResult.mode === 'monthly') {
-        baseList = pointInTimeResult.list.slice();
+    if (activeFilterSection === 'section3' && pointInTimeResult) {
+      // 섹션3: 말일 스냅샷 기준 재직 명단
+      baseList = (pointInTimeResult.employedList || pointInTimeResult.list || []).slice();
+    } else if (activeFilterSection === 'section2') {
+      // 섹션2: 선택된 연/월 기준 기간 필터
+      var sy = statsYearEl ? statsYearEl.value : '';
+      var sm = statsMonthEl ? statsMonthEl.value : '';
+      if (sy) {
+        if (sm === '' || sm === '0') {
+          // 연도 전체(1~12월) 기간 조회: 해당 연도에 입/퇴사 이벤트가 있었던 인원만
+          baseList = getYearlyFilterList(parseInt(sy, 10)).slice();
+        } else {
+          baseList = getMonthlyFilterList(parseInt(sy, 10), parseInt(sm, 10)).slice();
+        }
       } else {
-        var refStr = pointInTimeResult.refDateStr;
-        if (statusFilter === '재직') baseList = pointInTimeResult.list;
-        else if (statusFilter === '퇴직') baseList = hrData.filter(function (item) { return isRetiredAtRef(item, refStr); });
-        else baseList = pointInTimeResult.list.concat(hrData.filter(function (item) { return isRetiredAtRef(item, refStr); }));
+        baseList = hrData.slice();
       }
-    } else {
-      baseList = hrData.slice();
+      // 상태 필터는 섹션1 기준으로 그대로 적용
       if (statusFilter === '재직') baseList = baseList.filter(function (item) { return !hasLossDate(item); });
       else if (statusFilter === '퇴직') baseList = baseList.filter(function (item) { return hasLossDate(item); });
+    } else {
+      // 기본: 섹션1이 주도권. 다른 섹션 필터는 무시하고 hrData + 상태/회사/겸직 필터만 적용
+      if (dualMode) {
+        // 겸직 모드: 겸직 인원만
+        baseList = hrData.filter(function (item) { return isDualEmployment(item); });
+      } else {
+        // 일반 모드: 겸직은 제외하고 재직/퇴직/전체
+        baseList = hrData.filter(function (item) { return !isDualEmployment(item); });
+        if (statusFilter === '재직') baseList = baseList.filter(function (item) { return !hasLossDate(item); });
+        else if (statusFilter === '퇴직') baseList = baseList.filter(function (item) { return hasLossDate(item); });
+      }
     }
     var list = baseList.slice();
 
@@ -647,64 +940,115 @@
     }
 
     if (companyFilter) {
-      list = list.filter(function (item) { return item.division === companyFilter; });
+      list = list.filter(function (item) {
+        var div = item && item.division ? String(item.division).trim() : '';
+        return div === companyFilter;
+      });
     }
 
     filteredData = list;
-    filteredData.forEach(function (item, index) { item.no = index + 1; });
     renderTable();
+    updateStatsBigNumbers();
     if (!pointInTimeResult) updateStats();
     updateFilterCounts();
     updatePitySummaryText();
     saveUIState();
   }
 
-  // 현황·회사 버튼 옆 인원수 갱신 (연월 조회 시에는 해당 시점 기준 재직/퇴직 인원수)
-  function updateFilterCounts() {
-    var baseList = pointInTimeResult ? pointInTimeResult.list : hrData;
-    var total, employed, retired, listByStatus;
-    if (pointInTimeResult) {
-      if (pointInTimeResult.mode === 'monthly') {
-        total = pointInTimeResult.list.length;
-        employed = pointInTimeResult.list.filter(function (item) { return !hasLossDate(item); }).length;
-        retired = pointInTimeResult.list.filter(function (item) { return hasLossDate(item); }).length;
-        listByStatus = statusFilter === '재직' ? pointInTimeResult.list.filter(function (item) { return !hasLossDate(item); }) : statusFilter === '퇴직' ? pointInTimeResult.list.filter(function (item) { return hasLossDate(item); }) : pointInTimeResult.list;
-      } else {
-        var refStr = pointInTimeResult.refDateStr;
-        employed = pointInTimeResult.list.length;
-        retired = hrData.filter(function (item) { return isRetiredAtRef(item, refStr); }).length;
-        total = employed + retired;
-        if (statusFilter === '재직') listByStatus = pointInTimeResult.list;
-        else if (statusFilter === '퇴직') listByStatus = hrData.filter(function (item) { return isRetiredAtRef(item, refStr); });
-        else listByStatus = pointInTimeResult.list.concat(hrData.filter(function (item) { return isRetiredAtRef(item, refStr); }));
-      }
+  // 중앙 영역 입사/퇴사 숫자 갱신 (실시간 계산)
+  function updateStatsBigNumbers() {
+    if (!statsJoinedEl || !statsLeftEl) return;
+    var sy = statsYearEl ? statsYearEl.value : '';
+    var sm = statsMonthEl ? statsMonthEl.value : '';
+    if (!sy) {
+      statsJoinedEl.textContent = '0';
+      statsLeftEl.textContent = '0';
+      updatePeriodQueryHintUI('조회 결과');
+      return;
+    }
+    // 연도 전체(월=전체): 해당 연도 1~12월 누적(YTD)
+    if (sm === '' || sm === '0') {
+      statsJoinedEl.textContent = getYtdJoined(sy, '');
+      statsLeftEl.textContent = getYtdLeft(sy, '');
+      updatePeriodQueryHintUI(sy + '년 누적');
     } else {
-      total = baseList.length;
-      employed = baseList.filter(function (item) { return !hasLossDate(item); }).length;
-      retired = baseList.filter(function (item) { return hasLossDate(item); }).length;
-      listByStatus = statusFilter === '재직' ? baseList.filter(function (item) { return !hasLossDate(item); }) : statusFilter === '퇴직' ? baseList.filter(function (item) { return hasLossDate(item); }) : baseList;
+      // 월 선택 시: 해당 월 한 달치 값만
+      statsJoinedEl.textContent = getJoinedInMonth(sy, sm);
+      statsLeftEl.textContent = getLeftInMonth(sy, sm);
+      updatePeriodQueryHintUI(sy + '년 ' + sm + '월');
+    }
+  }
+
+  // 현황·회사 버튼 옆 인원수 갱신
+  // 섹션1 전용: 항상 전체 hrData 기준으로 재직/퇴직/회사별 인원수를 계산한다.
+  function updateFilterCounts() {
+    var baseList = hrData.slice();
+
+    // 겸직 인원은 총 인원/재직/퇴직 카운트에서 제외
+    var nonDual = baseList.filter(function (item) { return !isDualEmployment(item); });
+    var dualOnly = baseList.filter(function (item) { return isDualEmployment(item); });
+
+    var total = nonDual.length;
+    var employed = nonDual.filter(function (item) { return !hasLossDate(item); }).length;
+    var retired = nonDual.filter(function (item) { return hasLossDate(item); }).length;
+
+    // 섹션1에서 실제로 보고 있는 리스트(상태 필터 반영, 겸직 제외)
+    var listByStatus;
+    if (statusFilter === '재직') {
+      listByStatus = nonDual.filter(function (item) { return !hasLossDate(item); });
+    } else if (statusFilter === '퇴직') {
+      listByStatus = nonDual.filter(function (item) { return hasLossDate(item); });
+    } else {
+      listByStatus = nonDual;
     }
     setCountEl('count-all', total);
     setCountEl('count-employed', employed);
     setCountEl('count-retired', retired);
+
     var companies = ['식스티', '굿뉴스', '패리티'];
     companies.forEach(function (company) {
-      var n = listByStatus.filter(function (item) { return item.division === company; }).length;
+      var n = listByStatus.filter(function (item) {
+        var div = item && item.division ? String(item.division).trim() : '';
+        return div === company;
+      }).length;
       setCountEl('count-company-' + company, n);
     });
+
+    // 겸직 인원 수
+    setCountEl('count-dual', dualOnly.length);
   }
 
-  // 통계 조회 시 요약 문구 갱신 (누적/월별 실시간 계산)
+  // 통계 조회 시 요약 문구 갱신
   function updatePitySummaryText() {
     if (!pitySummaryCard || !pitySummaryText || !pointInTimeResult) return;
     var label = pointInTimeResult.label;
     var companySuffix = companyFilter ? ' (' + companyFilter + ')' : '';
-    if (pointInTimeResult.mode === 'monthly') {
-      var y = document.getElementById('pity-year') ? document.getElementById('pity-year').value : '';
-      var m = document.getElementById('pity-month') ? document.getElementById('pity-month').value : '';
-      var joined = getJoinedInMonth(y, m);
-      var left = getLeftInMonth(y, m);
-      pitySummaryText.textContent = label + ' 입사 ' + joined + '명, 퇴사 ' + left + '명 (표시: ' + filteredData.length + '명)';
+    if (pointInTimeResult.mode === 'snapshot') {
+      var employed = (pointInTimeResult.employedList || pointInTimeResult.list || []).length;
+
+      function byCompany(list) {
+        var companies = ['식스티', '굿뉴스', '패리티'];
+        var map = {};
+        companies.forEach(function (c) { map[c] = 0; });
+        (list || []).forEach(function (item) {
+          var div = item && item.division ? String(item.division).trim() : '';
+          if (map[div] !== undefined) map[div] += 1;
+        });
+        return map;
+      }
+
+      var eMap = byCompany(pointInTimeResult.employedList || pointInTimeResult.list || []);
+
+      // 텍스트 위계: 기준(중간) / 재직·퇴직(가장 큼) / 회사별 상세(작고 옅게)
+      pitySummaryText.innerHTML = ''
+        + '<div class="pity-result-title">' + label + ' 기준</div>'
+        + '<div class="pity-result-main">재직 : <strong>' + employed + '명</strong></div>'
+        + '<div class="pity-result-sub">식스티: 재직 ' + eMap['식스티'] + '명</div>'
+        + '<div class="pity-result-sub">굿뉴스: 재직 ' + eMap['굿뉴스'] + '명</div>'
+        + '<div class="pity-result-sub">패리티: 재직 ' + eMap['패리티'] + '명</div>';
+    } else if (pointInTimeResult.mode === 'headcount') {
+      // (구버전 유지) 월말 기준 재직자 총원(=headcount)
+      pitySummaryText.textContent = label + ' 기준 재직자' + companySuffix + ': ' + filteredData.length + '명';
     } else {
       var yearStr = (pointInTimeResult.refDateStr || '').substring(0, 4);
       var cumJoined = getCumulativeJoinedByEndOfYear(yearStr);
@@ -764,7 +1108,8 @@
       gender: getGenderFromSSN(formData.ssn),
       acquisitionDate: formData.acquisitionDate,
       lossDate: formData.lossDate || null,
-      age: calculateAge(formData.birthdate)
+      age: calculateAge(formData.birthdate),
+      remark: formData.remark || ''
     };
 
     hrData.push(newItem);
@@ -787,6 +1132,8 @@
     document.getElementById('gender').value = item.gender || getGenderFromSSN(item.ssn);
     setDateParts('acquisition', item.acquisitionDate);
     setDateParts('loss', item.lossDate || null);
+    var remarkEl = document.getElementById('remark');
+    if (remarkEl) remarkEl.value = item.remark || '';
     
     openModal(true);
   }
@@ -805,6 +1152,7 @@
     item.acquisitionDate = formData.acquisitionDate;
     item.lossDate = formData.lossDate || null;
     item.age = calculateAge(formData.birthdate);
+    item.remark = formData.remark || '';
 
     saveData();
     search(); // 검색 결과도 업데이트
@@ -853,7 +1201,8 @@
       birthdate,
       ssn: document.getElementById('ssn').value,
       acquisitionDate,
-      lossDate
+      lossDate,
+      remark: (document.getElementById('remark').value || '').trim()
     };
 
     if (editingId) {
@@ -928,7 +1277,7 @@
     }
   });
 
-  // 현황 카드·하위 회사 버튼 UI 갱신
+  // 현황 카드·하위 회사 버튼 UI 갱신 (3분할 레이아웃에서는 회사 버튼 항상 표시)
   function updateStatusCardsUI() {
     [statusAll, statusEmployed, statusRetired].forEach(function (el) {
       if (!el) return;
@@ -936,13 +1285,8 @@
       el.classList.toggle('active', status === statusFilter);
     });
     if (companySubButtons) {
-      if (statusFilter === '전체') {
-        companySubButtons.classList.remove('visible');
-        companySubButtons.setAttribute('aria-hidden', 'true');
-      } else {
-        companySubButtons.classList.add('visible');
-        companySubButtons.setAttribute('aria-hidden', 'false');
-      }
+      companySubButtons.classList.add('visible');
+      companySubButtons.setAttribute('aria-hidden', 'false');
     }
     var companyBtns = companySubButtons ? companySubButtons.querySelectorAll('.company-btn') : [];
     companyBtns.forEach(function (btn) {
@@ -951,13 +1295,42 @@
     });
   }
 
-  // 연·월 셀렉트 초기화 (월 '전체' 옵션 포함)
+  // 중앙 영역 연·월 셀렉트 초기화 (기본 올해, 월 전체)
+  function initStatsSelects() {
+    var y = new Date().getFullYear();
+    var i;
+    if (statsYearEl) {
+      statsYearEl.innerHTML = '';
+      for (i = getStartYear(); i <= y; i++) {
+        var opt = document.createElement('option');
+        opt.value = i;
+        opt.textContent = i + '년';
+        if (i === y) opt.selected = true;
+        statsYearEl.appendChild(opt);
+      }
+    }
+    if (statsMonthEl) {
+      statsMonthEl.innerHTML = '';
+      var optAll = document.createElement('option');
+      optAll.value = '';
+      optAll.textContent = '전체';
+      statsMonthEl.appendChild(optAll);
+      for (i = 1; i <= 12; i++) {
+        var optM = document.createElement('option');
+        optM.value = i;
+        optM.textContent = i + '월';
+        statsMonthEl.appendChild(optM);
+      }
+    }
+  }
+
+  // 연·월 셀렉트 초기화 (오른쪽 시점 조회용, 월 '전체' 옵션 포함)
   function initPointInTimeSelects() {
     var y = new Date().getFullYear();
     var i;
     if (pityYear) {
       pityYear.innerHTML = '';
-      for (i = y - 15; i <= y + 1; i++) {
+      for (i = getStartYear(); i <= y; i++) {
         var opt = document.createElement('option');
         opt.value = i;
         opt.textContent = i + '년';
@@ -982,6 +1355,9 @@
   }
 
   if (statusAll) statusAll.addEventListener('click', function () {
+    // 섹션1이 주도권을 가져가고, 다른 섹션 필터는 무시
+    activeFilterSection = 'section1';
+    dualMode = false;
     statusFilter = '전체';
     companyFilter = null;
     pointInTimeResult = null;
@@ -990,12 +1366,20 @@
     updateStatusCardsUI();
   });
   if (statusEmployed) statusEmployed.addEventListener('click', function () {
+    activeFilterSection = 'section1';
     statusFilter = '재직';
+    dualMode = false;
+    pointInTimeResult = null;
+    if (pitySummaryCard) pitySummaryCard.hidden = true;
     applyFilters();
     updateStatusCardsUI();
   });
   if (statusRetired) statusRetired.addEventListener('click', function () {
+    activeFilterSection = 'section1';
     statusFilter = '퇴직';
+    dualMode = false;
+    pointInTimeResult = null;
+    if (pitySummaryCard) pitySummaryCard.hidden = true;
     applyFilters();
     updateStatusCardsUI();
   });
@@ -1003,10 +1387,49 @@
     companySubButtons.querySelectorAll('.company-btn').forEach(function (btn) {
       btn.addEventListener('click', function () {
         var company = btn.getAttribute('data-company');
+        activeFilterSection = 'section1';
         companyFilter = companyFilter === company ? null : company;
+        dualMode = false;
+        pointInTimeResult = null;
+        if (pitySummaryCard) pitySummaryCard.hidden = true;
         applyFilters();
         updateStatusCardsUI();
       });
+    });
+  }
+
+  if (statsYearEl) {
+    statsYearEl.addEventListener('change', function () {
+      activeFilterSection = 'section2';
+      pointInTimeResult = null;
+      if (pitySummaryCard) pitySummaryCard.hidden = true;
+      updateStatsBigNumbers();
+      applyFilters();
+    });
+  }
+  if (statsMonthEl) {
+    statsMonthEl.addEventListener('change', function () {
+      activeFilterSection = 'section2';
+      pointInTimeResult = null;
+      if (pitySummaryCard) pitySummaryCard.hidden = true;
+      updateStatsBigNumbers();
+      applyFilters();
+    });
+  }
+
+  if (detailSidebarClose) {
+    detailSidebarClose.addEventListener('click', closeDetailSidebar);
+  }
+
+  // 테이블 헤더 정렬(성명/만나이)
+  if (thName) {
+    thName.addEventListener('click', function () {
+      setTableSort('name');
+    });
+  }
+  if (thAge) {
+    thAge.addEventListener('click', function () {
+      setTableSort('age');
     });
   }
 
@@ -1017,41 +1440,108 @@
       companyFilter = null;
       if (searchInput) searchInput.value = '';
       if (pitySummaryCard) pitySummaryCard.hidden = true;
-      if (pityYear && pityMonth) {
-        pityYear.value = new Date().getFullYear();
-        pityMonth.value = '';
+      var currentYear = new Date().getFullYear();
+      if (statsYearEl) statsYearEl.value = currentYear;
+      if (statsMonthEl) statsMonthEl.value = '';
+      if (pityYear) pityYear.value = currentYear;
+      if (pityMonth) pityMonth.value = '';
+      selectedRowId = null;
+      if (detailSidebar) {
+        detailSidebar.classList.remove('open');
+        detailSidebar.setAttribute('aria-hidden', 'true');
       }
+      tableBody.querySelectorAll('tr.selected').forEach(function (tr) { tr.classList.remove('selected'); });
       saveUIState();
       applyFilters();
       updateStatusCardsUI();
     });
   }
 
+  // 임시: 전체 삭제 버튼
+  if (deleteAllBtn) {
+    deleteAllBtn.addEventListener('click', function () {
+      var ok = confirm('정말 전체 삭제할까요?\n\n• 표 데이터가 전부 삭제됩니다.\n• 브라우저 로컬 저장소 데이터도 함께 초기화됩니다.');
+      if (!ok) return;
+      deleteAllData();
+      alert('전체 삭제가 완료되었습니다.');
+    });
+  }
+
   if (pityQueryBtn && pityYear && pityMonth && pitySummaryCard && pitySummaryText) {
     pityQueryBtn.addEventListener('click', function () {
+      activeFilterSection = 'section3';
       var year = parseInt(pityYear.value, 10);
       var monthVal = pityMonth.value;
       var month = monthVal === '' ? 0 : parseInt(monthVal, 10);
       if (isNaN(year)) return;
-      if (monthVal === '' || month === 0) {
-        var refDateStr = year + '-12-31';
-        var list = hrData.filter(function (item) { return isEmployedAtRef(item, refDateStr); });
-        var label = year + '년 12월 31일 기준';
-        pointInTimeResult = { refDateStr: refDateStr, label: label, list: list, mode: 'cumulative' };
-      } else {
-        var refDateStrM = getLastDayOfMonth(year, month);
-        var listM = getMonthlyFilterList(year, month);
-        var labelM = year + '년 ' + month + '월';
-        pointInTimeResult = { refDateStr: refDateStrM, label: labelM, list: listM, mode: 'monthly' };
-      }
+      // [섹션3] 말일 기준 스냅샷:
+      // - 재직: 취득일 <= 기준일 && (상실일 없음 || 상실일 > 기준일)
+      // - 퇴직: 상실일 <= 기준일
+      var refDateStr = (monthVal === '' || month === 0)
+        ? (year + '-12-31')
+        : getLastDayOfMonth(year, month);
+
+      var employedList = hrData.filter(function (item) { return isEmployedAtRef(item, refDateStr); });
+      var retiredList = hrData.filter(function (item) { return isRetiredAtRef(item, refDateStr); });
+
+      var mm = (monthVal === '' || month === 0) ? '12' : String(month).padStart(2, '0');
+      var label = year + '년 ' + mm + '월';
+
+      pointInTimeResult = { refDateStr: refDateStr, label: label, list: employedList, employedList: employedList, retiredList: retiredList, mode: 'snapshot' };
       pitySummaryCard.hidden = false;
       saveUIState();
       applyFilters();
     });
   }
 
+  // 섹션3 결과 지우기 버튼
+  if (pityClearBtn && pitySummaryCard && pitySummaryText) {
+    pityClearBtn.addEventListener('click', function () {
+      // 섹션3 결과만 초기화하고, 섹션1이 다시 주도권을 갖도록 복원
+      activeFilterSection = 'section1';
+      pointInTimeResult = null;
+      pitySummaryText.textContent = '';
+      pitySummaryCard.hidden = true;
+
+      // 섹션3의 연/월 선택만 초기화
+      var currentYear = new Date().getFullYear();
+      if (pityYear) pityYear.value = currentYear;
+      if (pityMonth) pityMonth.value = '';
+
+      // 섹션1 기본 상태: 재직 유지
+      statusFilter = '재직';
+      dualMode = false;
+      updateStatusCardsUI();
+      applyFilters();
+    });
+  }
+
+  // 섹션1 겸직 버튼
+  if (dualBtn) {
+    dualBtn.addEventListener('click', function () {
+      activeFilterSection = 'section1';
+      // 토글 형식: 이미 겸직 모드면 해제 → 재직 모드
+      dualMode = !dualMode;
+      if (dualMode) {
+        // 상단 재직/퇴직 버튼은 모두 비활성
+        statusFilter = '전체';
+        companyFilter = null;
+      } else {
+        statusFilter = '재직';
+      }
+      if (pitySummaryCard) pitySummaryCard.hidden = true;
+      updateStatusCardsUI();
+      applyFilters();
+
+      // 겸직 버튼 자체 active 스타일
+      dualBtn.classList.toggle('active', dualMode);
+    });
+  }
+
+  initStatsSelects();
   initPointInTimeSelects();
   loadUIState();
+  updateYearCumulativeUI();
 
   // 초기 렌더링 (applyFilters가 renderTable, updateStats, updateFilterCounts 호출)
   updateStatusCardsUI();
@@ -1117,6 +1607,7 @@
             var item = {
               id: baseId + '-' + result.length,
               no: result.length + 1,
+              originalIndex: result.length, // 엑셀에서 읽어온 실제 행 순서
               division: headerInfo.divisionCol >= 0 ? String(row[headerInfo.divisionCol] != null ? row[headerInfo.divisionCol] : '').trim() : '',
               name: name,
               department: headerInfo.departmentCol >= 0 ? String(row[headerInfo.departmentCol] != null ? row[headerInfo.departmentCol] : '').trim() : '',
