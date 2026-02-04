@@ -3,14 +3,43 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>인력 정보 관리 시스템</title>
+  <title>[R&DM] 인력 정보</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <div class="container">
     <header class="header">
-      <h1 class="header-title">인력 정보 관리 시스템</h1>
+      <h1 class="header-title">[R&DM] 인력 정보</h1>
     </header>
+
+    <!-- 현황 카드: 전체 / 재직 / 퇴직 -->
+    <section class="filter-section">
+      <div class="status-cards">
+        <button type="button" class="status-card active" data-status="전체" id="status-all">전체 <span class="filter-count" id="count-all">0</span></button>
+        <button type="button" class="status-card" data-status="재직" id="status-employed">재직 <span class="filter-count" id="count-employed">0</span></button>
+        <button type="button" class="status-card" data-status="퇴직" id="status-retired">퇴직 <span class="filter-count" id="count-retired">0</span></button>
+      </div>
+      <div class="company-sub-buttons" id="company-sub-buttons" aria-hidden="true">
+        <button type="button" class="company-btn" data-company="식스티">식스티 <span class="filter-count" id="count-company-식스티">0</span></button>
+        <button type="button" class="company-btn" data-company="굿뉴스">굿뉴스 <span class="filter-count" id="count-company-굿뉴스">0</span></button>
+        <button type="button" class="company-btn" data-company="패리티">패리티 <span class="filter-count" id="count-company-패리티">0</span></button>
+      </div>
+    </section>
+
+    <!-- 연도/월별 입·퇴사 통계 -->
+    <section class="point-in-time-section">
+      <div class="point-in-time-controls">
+        <label for="pity-year">연도</label>
+        <select id="pity-year"></select>
+        <label for="pity-month">월</label>
+        <select id="pity-month"></select>
+        <button type="button" id="pity-query-btn" class="pity-query-btn">조회</button>
+        <button type="button" id="filter-reset-btn" class="filter-reset-btn">필터 초기화</button>
+      </div>
+      <div class="pity-summary-card" id="pity-summary-card" hidden>
+        <p class="pity-summary-text" id="pity-summary-text"></p>
+      </div>
+    </section>
 
     <div class="toolbar">
       <div class="search-section">
@@ -23,7 +52,15 @@
         >
         <button type="button" id="search-btn" class="search-btn">검색</button>
       </div>
-      <button type="button" id="add-btn" class="add-btn">신규 인력 등록</button>
+      <div class="toolbar-actions">
+        <button type="button" id="add-btn" class="add-btn">신규 인력 등록</button>
+        <input type="file" id="legacy-excel-input" accept=".xlsx,.xls" hidden>
+        <button type="button" id="legacy-excel-btn" class="legacy-excel-btn">기존 엑셀 업로드</button>
+        <input type="file" id="excel-input" accept=".xlsx,.xls" hidden>
+        <button type="button" id="excel-upload-btn" class="excel-upload-btn icon-only" title="엑셀 업로드" aria-label="엑셀 업로드">
+          <svg class="excel-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M3 15h18"/><path d="M9 3v18"/><path d="M15 3v18"/></svg>
+        </button>
+      </div>
     </div>
 
     <div class="table-container">
@@ -38,8 +75,8 @@
             <th>생년월일</th>
             <th>주민등록번호</th>
             <th>성별</th>
-            <th>취득일</th>
-            <th>상실일</th>
+            <th>자격취득일</th>
+            <th>자격상실일</th>
             <th>만나이</th>
             <th>비고</th>
             <th>수정/삭제</th>
@@ -82,13 +119,14 @@
         </div>
         <div class="form-row">
           <div class="form-group">
-            <label for="department">소속 *</label>
-            <select id="department" name="department" required>
+            <label for="department">소속</label>
+            <select id="department" name="department">
               <option value="">선택하세요</option>
               <option value="CI">CI</option>
               <option value="TVPP">TVPP</option>
               <option value="CVPP">CVPP</option>
               <option value="IPP">IPP</option>
+              <option value="CEO Office">CEO Office</option>
             </select>
           </div>
           <div class="form-group">
@@ -114,23 +152,23 @@
         </div>
         <div class="form-row">
           <div class="form-group">
-            <label for="acquisition-date">취득일 *</label>
-            <div class="date-inputs" aria-label="취득일">
-              <input id="acquisition-y" class="date-part" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="YYYY" aria-label="취득년(4자리)" required>
+            <label for="acquisition-date">자격취득일 *</label>
+            <div class="date-inputs" aria-label="자격취득일">
+              <input id="acquisition-y" class="date-part" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="YYYY" aria-label="자격취득년(4자리)" required>
               <span class="date-sep">-</span>
-              <input id="acquisition-m" class="date-part" inputmode="numeric" pattern="[0-9]*" maxlength="2" placeholder="MM" aria-label="취득월(2자리)" required>
+              <input id="acquisition-m" class="date-part" inputmode="numeric" pattern="[0-9]*" maxlength="2" placeholder="MM" aria-label="자격취득월(2자리)" required>
               <span class="date-sep">-</span>
-              <input id="acquisition-d" class="date-part" inputmode="numeric" pattern="[0-9]*" maxlength="2" placeholder="DD" aria-label="취득일(2자리)" required>
+              <input id="acquisition-d" class="date-part" inputmode="numeric" pattern="[0-9]*" maxlength="2" placeholder="DD" aria-label="자격취득일(2자리)" required>
             </div>
           </div>
           <div class="form-group">
-            <label for="loss-date">상실일</label>
-            <div class="date-inputs" aria-label="상실일">
-              <input id="loss-y" class="date-part" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="YYYY" aria-label="상실년(4자리)">
+            <label for="loss-date">자격상실일</label>
+            <div class="date-inputs" aria-label="자격상실일">
+              <input id="loss-y" class="date-part" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="YYYY" aria-label="자격상실년(4자리)">
               <span class="date-sep">-</span>
-              <input id="loss-m" class="date-part" inputmode="numeric" pattern="[0-9]*" maxlength="2" placeholder="MM" aria-label="상실월(2자리)">
+              <input id="loss-m" class="date-part" inputmode="numeric" pattern="[0-9]*" maxlength="2" placeholder="MM" aria-label="자격상실월(2자리)">
               <span class="date-sep">-</span>
-              <input id="loss-d" class="date-part" inputmode="numeric" pattern="[0-9]*" maxlength="2" placeholder="DD" aria-label="상실일(2자리)">
+              <input id="loss-d" class="date-part" inputmode="numeric" pattern="[0-9]*" maxlength="2" placeholder="DD" aria-label="자격상실일(2자리)">
             </div>
           </div>
         </div>
@@ -142,6 +180,7 @@
     </div>
   </div>
 
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
