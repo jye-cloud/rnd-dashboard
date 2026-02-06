@@ -56,8 +56,36 @@
   const detailSidebarClose = document.getElementById('detail-sidebar-close');
   const thName = document.getElementById('th-name');
   const thAge = document.getElementById('th-age');
+  const pageHr = document.getElementById('page-hr');
+  const pagePayroll = document.getElementById('page-payroll');
+  const navHr = document.getElementById('nav-hr');
+  const navPayroll = document.getElementById('nav-payroll');
 
   const UI_STATE_KEY = 'hr-management-ui-state';
+
+  // 라우팅: 해시(#/hr, #/payroll)에 따라 메인 영역 페이지 전환
+  function getPageFromHash() {
+    var h = (window.location.hash || '#/hr').replace(/^#\/?/, '');
+    return h === 'payroll' ? 'payroll' : 'hr';
+  }
+  function renderRoute() {
+    var page = getPageFromHash();
+    if (pageHr) {
+      pageHr.classList.toggle('active', page === 'hr');
+      pageHr.hidden = page !== 'hr';
+    }
+    if (pagePayroll) {
+      pagePayroll.classList.toggle('active', page === 'payroll');
+      pagePayroll.hidden = page !== 'payroll';
+    }
+    if (navHr) navHr.classList.toggle('active', page === 'hr');
+    if (navPayroll) navPayroll.classList.toggle('active', page === 'payroll');
+  }
+  window.addEventListener('hashchange', renderRoute);
+  if (!window.location.hash || window.location.hash === '#') {
+    window.location.hash = '#/hr';
+  }
+  renderRoute();
 
   let hrData = loadData();
   let editingId = null;

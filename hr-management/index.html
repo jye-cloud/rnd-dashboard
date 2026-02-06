@@ -7,10 +7,24 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div class="container">
-    <header class="header">
-      <h1 class="header-title">[R&DM] 인력 정보</h1>
-    </header>
+  <div class="dashboard">
+    <aside class="sidebar" aria-label="메인 메뉴">
+      <div class="sidebar-header">
+        <h1 class="sidebar-title">R&DM</h1>
+      </div>
+      <nav class="sidebar-nav">
+        <a href="#/hr" class="sidebar-link active" data-page="hr" id="nav-hr">인력 정보 관리</a>
+        <a href="#/payroll" class="sidebar-link" data-page="payroll" id="nav-payroll">인건비 관리</a>
+      </nav>
+    </aside>
+
+    <main class="main-area" id="main-area">
+      <!-- 인력 정보 관리 페이지 -->
+      <div id="page-hr" class="page active">
+        <div class="container">
+          <header class="header">
+            <h1 class="header-title">[R&DM] 인력 정보</h1>
+          </header>
 
     <!-- 상단 3분할 레이아웃 (Top Section) -->
     <section class="top-section">
@@ -176,6 +190,70 @@
       <span class="stat-item">총 인력: <strong id="total-count">0</strong>명</span>
       <span class="stat-item">활성 인력: <strong id="active-count">0</strong>명</span>
     </div>
+        </div>
+      </div>
+
+      <!-- 인건비 관리 페이지 -->
+      <div id="page-payroll" class="page" hidden>
+        <div class="container">
+          <header class="header">
+            <h1 class="header-title">[R&DM] 월별 인건비 및 과제 환급액 관리</h1>
+          </header>
+          <section class="payroll-controls">
+            <div class="payroll-controls-left">
+              <label for="payroll-year" class="payroll-controls-label">연도</label>
+              <select id="payroll-year" class="ui-select payroll-select" aria-label="연도 선택"></select>
+              <label for="payroll-month" class="payroll-controls-label">월</label>
+              <select id="payroll-month" class="ui-select payroll-select" aria-label="월 선택"></select>
+              <button type="button" id="payroll-load-prev-btn" class="ui-btn ui-btn--ghost payroll-load-prev-btn">전월 지급액 불러오기</button>
+            </div>
+            <div class="payroll-controls-right">
+              <button type="button" id="payroll-unlock-month-btn" class="ui-btn ui-btn--ghost payroll-unlock-btn" title="마감 취소 후 데이터 수정 가능" style="display: none;"><span class="payroll-unlock-btn-text">마감 해제</span> <svg class="payroll-unlock-btn-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 5.83-4.78"/><path d="M12 11V7a2 2 0 0 1 4 0"/></svg></button>
+              <button type="button" id="payroll-save-month-btn" class="ui-btn ui-btn--primary payroll-save-btn" title="해당 월의 과제비 환급이 완료되면 본 버튼을 클릭합니다."><span class="payroll-save-btn-text">월 마감</span> <svg class="payroll-save-btn-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></button>
+            </div>
+          </section>
+          <div id="payroll-toast" class="payroll-toast" role="status" aria-live="polite" hidden></div>
+          <section class="payroll-summary-cards" aria-label="해당 월 요약">
+            <div class="payroll-summary-card payroll-summary-card--actual">
+              <span class="payroll-summary-card-label">실제 지급 총액</span>
+              <span class="payroll-summary-card-row"><span class="payroll-summary-card-value" id="payroll-card-total-actual">0</span><span class="payroll-summary-card-unit">원</span></span>
+            </div>
+            <div class="payroll-summary-card payroll-summary-card--net">
+              <span class="payroll-summary-card-label">회사 부담액</span>
+              <span class="payroll-summary-card-row"><span class="payroll-summary-card-value" id="payroll-card-net-burden">0</span><span class="payroll-summary-card-unit">원</span></span>
+            </div>
+            <div class="payroll-summary-card payroll-summary-card--allocation" data-filter="allocation" role="button" tabindex="0" title="클릭 시 환급 대상자만 표시 (다시 클릭 시 전체)">
+              <span class="payroll-summary-card-label">과제 환급 총액</span>
+              <span class="payroll-summary-card-row"><span class="payroll-summary-card-value" id="payroll-card-total-allocation">0</span><span class="payroll-summary-card-unit">원</span></span>
+            </div>
+            <div class="payroll-summary-card payroll-summary-card--rate">
+              <span class="payroll-summary-card-label">인건비 환급률</span>
+              <span class="payroll-summary-card-row"><span class="payroll-summary-card-value" id="payroll-card-refund-rate">0</span><span class="payroll-summary-card-unit">%</span></span>
+            </div>
+          </section>
+          <div class="payroll-table-wrap">
+            <table class="payroll-table" id="payroll-table">
+              <thead>
+                <tr>
+                  <th class="th-name">성명(소속)</th>
+                  <th class="th-join-date th-amount-equal">입사일</th>
+                  <th class="th-amount th-amount-equal">계약 연봉</th>
+                  <th class="th-edit-salary"></th>
+                  <th class="th-amount th-amount-equal">월 기준급</th>
+                  <th class="th-amount th-amount-equal">실제 지급액</th>
+                  <th class="th-allocation-sum th-amount th-amount-equal">과제 환급 총액</th>
+                  <th class="th-remark">비고</th>
+                  <th class="th-allocation">환급 상세</th>
+                </tr>
+              </thead>
+              <tbody id="payroll-tbody">
+                <!-- MonthlyPayroll.js에서 동적 생성 -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </main>
   </div>
 
   <!-- 신규 등록/수정 모달 -->
@@ -314,5 +392,6 @@
 
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
   <script src="app.js"></script>
+  <script src="MonthlyPayroll.js"></script>
 </body>
 </html>
