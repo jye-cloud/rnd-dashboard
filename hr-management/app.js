@@ -58,15 +58,19 @@
   const thAge = document.getElementById('th-age');
   const pageHr = document.getElementById('page-hr');
   const pagePayroll = document.getElementById('page-payroll');
+  const pageParticipation = document.getElementById('page-participation');
   const navHr = document.getElementById('nav-hr');
   const navPayroll = document.getElementById('nav-payroll');
+  const navParticipation = document.getElementById('nav-participation');
 
   const UI_STATE_KEY = 'hr-management-ui-state';
 
-  // 라우팅: 해시(#/hr, #/payroll)에 따라 메인 영역 페이지 전환
+  // 라우팅: 해시(#/hr, #/participation, #/payroll)에 따라 메인 영역 페이지 전환
   function getPageFromHash() {
     var h = (window.location.hash || '#/hr').replace(/^#\/?/, '');
-    return h === 'payroll' ? 'payroll' : 'hr';
+    if (h === 'participation') return 'participation';
+    if (h === 'payroll') return 'payroll';
+    return 'hr';
   }
   function renderRoute() {
     var page = getPageFromHash();
@@ -74,11 +78,16 @@
       pageHr.classList.toggle('active', page === 'hr');
       pageHr.hidden = page !== 'hr';
     }
+    if (pageParticipation) {
+      pageParticipation.classList.toggle('active', page === 'participation');
+      pageParticipation.hidden = page !== 'participation';
+    }
     if (pagePayroll) {
       pagePayroll.classList.toggle('active', page === 'payroll');
       pagePayroll.hidden = page !== 'payroll';
     }
     if (navHr) navHr.classList.toggle('active', page === 'hr');
+    if (navParticipation) navParticipation.classList.toggle('active', page === 'participation');
     if (navPayroll) navPayroll.classList.toggle('active', page === 'payroll');
   }
   window.addEventListener('hashchange', renderRoute);
@@ -712,6 +721,10 @@
       const tr = document.createElement('tr');
       tr.setAttribute('data-id', item.id);
       if (selectedRowId === item.id) tr.classList.add('selected');
+
+      // 버튼이 들어가는 셀에는 반드시 래퍼(div.btn-group)를 두고,
+      // 그 래퍼에 인라인 flex 스타일을 강제로 적용해서
+      // 어떤 경우에도 가로 한 줄 레이아웃이 유지되도록 한다.
       tr.innerHTML = `
         <td>${index + 1}</td>
         <td>${getDisplayStatus(item)}</td>
@@ -725,11 +738,43 @@
         <td>${item.finalDegree || '-'}</td>
         <td class="cell-major" title="${item.major ? item.major : ''}">${item.major || '-'}</td>
         <td class="cell-remark">${item.remark ? item.remark : '-'}</td>
-        <td><button type="button" class="btn-detail" data-id="${item.id}">상세</button></td>
         <td>
-          <div class="action-buttons">
-            <button type="button" class="btn-edit" data-id="${item.id}" title="수정"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
-            <button type="button" class="btn-delete" data-id="${item.id}" title="삭제"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg></button>
+          <div class="btn-group"
+               style="
+                 display: flex !important;
+                 flex-direction: row !important;
+                 align-items: center !important;
+                 justify-content: center !important;
+                 gap: 4px !important;
+                 width: 100% !important;
+               ">
+            <button type="button" class="btn-detail" data-id="${item.id}">상세</button>
+          </div>
+        </td>
+        <td>
+          <div class="btn-group"
+               style="
+                 display: flex !important;
+                 flex-direction: row !important;
+                 align-items: center !important;
+                 justify-content: center !important;
+                 gap: 4px !important;
+                 width: 100% !important;
+               ">
+            <button type="button" class="btn-edit" data-id="${item.id}" title="수정">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+              </svg>
+            </button>
+            <button type="button" class="btn-delete" data-id="${item.id}" title="삭제">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="3 6 5 6 21 6"/>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                <line x1="10" y1="11" x2="10" y2="17"/>
+                <line x1="14" y1="11" x2="14" y2="17"/>
+              </svg>
+            </button>
           </div>
         </td>
       `;

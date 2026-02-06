@@ -12,6 +12,11 @@
   var payrollSaveMonthBtn = document.getElementById('payroll-save-month-btn');
   var payrollUnlockMonthBtn = document.getElementById('payroll-unlock-month-btn');
   var payrollLoadPrevBtn = document.getElementById('payroll-load-prev-btn');
+  var payrollSearchName = document.getElementById('payroll-search-name');
+  var payrollSearchClear = document.getElementById('payroll-search-clear');
+  var payrollImportBtn = document.getElementById('payroll-import-btn');
+  var payrollImportFile = document.getElementById('payroll-import-file');
+  var payrollSampleDownload = document.getElementById('payroll-sample-download');
   var editingSalaryId = null;
 
   // 상단 요약 카드 필터: null | 'allocation' | 'actual' | 'net' (확장용)
@@ -47,20 +52,21 @@
     }
   }
 
-  // 기존 형식(월 키가 최상위) → snapshots/draft/contractSalaries 형식으로 마이그레이션
+  // 기존 형식(월 키가 최상위) → snapshots/draft/contractSalaries/contractSalaryByMonth 형식으로 마이그레이션
   function normalizePayrollState(state) {
     if (!state) state = {};
     var snapshots = state.snapshots || {};
     var draft = state.draft || {};
     var contractSalaries = state.contractSalaries || {};
+    var contractSalaryByMonth = state.contractSalaryByMonth || {};
     if (state.snapshots == null || state.draft == null) {
       Object.keys(state).forEach(function (key) {
-        if (key === 'snapshots' || key === 'draft' || key === 'contractSalaries') return;
+        if (key === 'snapshots' || key === 'draft' || key === 'contractSalaries' || key === 'contractSalaryByMonth') return;
         if (/^\d{4}-\d{2}$/.test(key) && state[key] && typeof state[key] === 'object') draft[key] = state[key];
       });
     }
     migrateContractSalariesFromSnapshotsAndDraft(state, contractSalaries, snapshots, draft);
-    return { snapshots: snapshots, draft: draft, contractSalaries: contractSalaries };
+    return { snapshots: snapshots, draft: draft, contractSalaries: contractSalaries, contractSalaryByMonth: contractSalaryByMonth };
   }
 
   function migrateContractSalariesFromSnapshotsAndDraft(state, contractSalaries, snapshots, draft) {
@@ -88,6 +94,31 @@
     } catch (e) {
       console.error('인건비 데이터 저장 실패:', e);
     }
+  }
+
+  function normalizeDateStr(dateStr, fallback) {
+    if (!dateStr || typeof dateStr !== 'string') return fallback || '9999-12-31';
+    var s = dateStr.trim().replace(/\./g, '-');
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+    return s || (fallback || '9999-12-31');
+  }
+
+  // 해당 월에 적용되는 계약 연봉 (월별 저장·소급 미적용: 수정한 월 이후에만 반영)
+  function getSalaryForMonth(state, personId, ymKey) {
+    var byMonth = state.contractSalaryByMonth || {};
+    var keys = Object.keys(byMonth).filter(function (k) { return k <= ymKey && byMonth[k] && (byMonth[k][personId] !== undefined && byMonth[k][personId] !== null); });
+    if (keys.length > 0) {
+      keys.sort();
+      return byMonth[keys[keys.length - 1]][personId];
+    }
+    return (state.contractSalaries && state.contractSalaries[personId]) != null ? state.contractSalaries[personId] : '';
+  }
+
+  // 연봉 수정 시 해당 월(ymKey)부터만 반영. 이전 월(1~수정월-1) 데이터는 변경하지 않음.
+  function updateSalaryByMonth(state, personId, ymKey, newVal) {
+    if (!state.contractSalaryByMonth) state.contractSalaryByMonth = {};
+    if (!state.contractSalaryByMonth[ymKey]) state.contractSalaryByMonth[ymKey] = {};
+    state.contractSalaryByMonth[ymKey][personId] = newVal;
   }
 
   function getSnapshot(state, ymKey) {
@@ -121,15 +152,15 @@
     });
   }
 
-  // 계약 연봉은 인물별 마스터(contractSalaries)에서만 사용. 월별 데이터는 actualPay/remark/allocationList만.
+  // 계약 연봉은 인물별 마스터(contractSalaries) 또는 월별(contractSalaryByMonth) 사용. 월별 저장 시 해당 월에 적용되는 연봉만 사용(소급 미적용).
   function getMasterSalary(state, personId) {
     return (state.contractSalaries && state.contractSalaries[personId]) != null ? state.contractSalaries[personId] : '';
   }
 
-  // 해당 월 표시용 행 데이터: 계약 연봉·월 기준급은 마스터/계산, actualPay/remark/allocationList는 스냅샷·드래프트·기본값
+  // 해당 월 표시용 행 데이터: 계약 연봉·월 기준급은 getSalaryForMonth(해당 월 기준)/계산, actualPay/remark/allocationList는 스냅샷·드래프트·기본값
   function getRowStateForMonth(state, ymKey, personId) {
-    var masterSalary = getMasterSalary(state, personId);
-    var base = monthlyBase(masterSalary);
+    var salaryForMonth = getSalaryForMonth(state, personId, ymKey);
+    var base = monthlyBase(salaryForMonth);
     var actualPay = '';
     var remark = '';
     var rawList = [];
@@ -159,7 +190,7 @@
     }
     var allocationList = normalizeAllocationList(rawList);
     return {
-      contractSalary: masterSalary,
+      contractSalary: salaryForMonth,
       monthlyBase: base,
       actualPay: actualPay,
       remark: remark,
@@ -234,7 +265,9 @@
   function getEmployedInMonth(hrData, year, month) {
     var first = monthFirstDay(year, month);
     var last = monthLastDay(year, month);
-    return hrData.filter(function (item) {
+    var withIndex = hrData.map(function (p, idx) { return { person: p, idx: idx }; });
+    var filtered = withIndex.filter(function (wrap) {
+      var item = wrap.person;
       var acq = (item.acquisitionDate || '').trim();
       var loss = (item.lossDate || '').trim();
       if (!acq) return false;
@@ -242,6 +275,14 @@
       if (loss === '' || loss === null) return true;
       return loss >= first;
     });
+    filtered.sort(function (a, b) {
+      var da = normalizeDateStr(a.person.acquisitionDate, '9999-12-31');
+      var db = normalizeDateStr(b.person.acquisitionDate, '9999-12-31');
+      if (da < db) return -1;
+      if (da > db) return 1;
+      return a.idx - b.idx;
+    });
+    return filtered.map(function (w) { return w.person; });
   }
 
   function getCurrentYearMonth() {
@@ -261,10 +302,10 @@
     return y + '-' + String(m - 1).padStart(2, '0');
   }
 
-  // 월 기준급 = 연봉/12 소수점 절삭
+  // 월 기준급 = 연봉/12, 1원 단위 보정: 올림(Math.ceil) 적용. (예: 333,333.33원 → 333,334원)
   function monthlyBase(salary) {
     if (salary === '' || salary === null || isNaN(Number(salary))) return 0;
-    return Math.floor(Number(salary) / 12);
+    return Math.ceil(Number(salary) / 12);
   }
 
   function formatAmount(v) {
@@ -324,6 +365,10 @@
     var list = getEmployedInMonth(hrData, year, month);
     var predicate = getFilterPredicate(activeSummaryFilter, state, ymKey);
     if (predicate) list = list.filter(predicate);
+    var fullListForSummary = list;
+    var searchQuery = (payrollSearchName && payrollSearchName.value) ? payrollSearchName.value.trim().toLowerCase() : '';
+    if (payrollSearchClear) payrollSearchClear.hidden = !searchQuery;
+    if (searchQuery) list = list.filter(function (item) { return ((item.name || '').toLowerCase()).indexOf(searchQuery) !== -1; });
     var snapshot = getSnapshot(state, ymKey);
     var isLocked = !!snapshot;
 
@@ -337,6 +382,19 @@
 
     payrollTbody.innerHTML = '';
     var totalActual = 0;
+
+    if (list.length === 0) {
+      var emptyTr = document.createElement('tr');
+      emptyTr.className = 'payroll-empty-search';
+      var emptyTd = document.createElement('td');
+      emptyTd.colSpan = 9;
+      emptyTd.textContent = '검색 결과가 없습니다.';
+      emptyTr.appendChild(emptyTd);
+      payrollTbody.appendChild(emptyTr);
+      updateSummaryCards(fullListForSummary, state, ymKey);
+      updateSummaryCardFilterUI();
+      return;
+    }
 
     list.forEach(function (item) {
       var rowState = getRowStateForMonth(state, ymKey, item.id);
@@ -547,7 +605,7 @@
       });
     });
 
-    updateSummaryCards();
+    updateSummaryCards(fullListForSummary, state, ymKey);
     updateSummaryCardFilterUI();
 
     attachPayrollInputListeners();
@@ -643,6 +701,111 @@
       toast.classList.remove('payroll-toast--visible');
       setTimeout(function () { toast.hidden = true; }, 300);
     }, 3000);
+  }
+
+  // 성명으로 인력 ID 찾기 (hrData 기준)
+  function getPersonIdByName(hrData, name) {
+    if (!name || !Array.isArray(hrData)) return null;
+    var n = String(name).trim();
+    for (var i = 0; i < hrData.length; i++) {
+      if ((hrData[i].name || '').trim() === n) return hrData[i].id;
+    }
+    return null;
+  }
+
+  // 해당 월·인원에 이미 실제 지급액이 있는지 (스냅샷 또는 드래프트)
+  function hasExistingActualPay(state, ymKey, personId) {
+    var snap = getSnapshot(state, ymKey);
+    if (snap && snap.persons && snap.persons[personId] && (snap.persons[personId].actualPay !== '' && snap.persons[personId].actualPay != null)) return true;
+    var dr = getDraft(state, ymKey);
+    if (dr && dr[personId] && (dr[personId].actualPay !== '' && dr[personId].actualPay != null)) return true;
+    return false;
+  }
+
+  // CSV 파싱: 성명, 연도, 월, 실제 지급액 컬럼. 첫 줄 헤더, 쉼표 구분.
+  function parseCSV(text) {
+    var lines = text.split(/\r?\n/).filter(function (l) { return l.trim(); });
+    if (lines.length < 2) return [];
+    var header = lines[0].split(',').map(function (c) { return c.trim(); });
+    var idxName = header.findIndex(function (h) { return h === '성명' || h === 'Name' || h === 'name'; });
+    var idxYear = header.findIndex(function (h) { return h === '연도' || h === 'Year' || h === 'year'; });
+    var idxMonth = header.findIndex(function (h) { return h === '월' || h === 'Month' || h === 'month'; });
+    var idxActual = header.findIndex(function (h) { return h === '실제 지급액' || h === '실제지급액' || h === 'actualPay' || h === 'actual'; });
+    if (idxName === -1 || idxYear === -1 || idxMonth === -1 || idxActual === -1) return null;
+    var rows = [];
+    for (var i = 1; i < lines.length; i++) {
+      var cells = lines[i].split(',').map(function (c) { return c.trim(); });
+      var name = cells[idxName] || '';
+      var year = parseInt(cells[idxYear], 10);
+      var month = parseInt(cells[idxMonth], 10);
+      var actualStr = (cells[idxActual] || '');
+      if (idxActual + 1 < cells.length) {
+        actualStr = cells.slice(idxActual).join(',').trim();
+      }
+      actualStr = actualStr.replace(/,/g, '');
+      if (!name || isNaN(year) || isNaN(month)) continue;
+      rows.push({ name: name, year: year, month: month, actualPay: actualStr });
+    }
+    return rows;
+  }
+
+  function onImportFileChange(e) {
+    var file = e.target && e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function (ev) {
+      var text = (ev.target && ev.target.result) || '';
+      var rows = parseCSV(text);
+      if (rows === null) {
+        showToast('CSV 형식이 올바르지 않습니다. 성명, 연도, 월, 실제 지급액 컬럼이 필요합니다.');
+        return;
+      }
+      if (rows.length === 0) {
+        showToast('적용할 데이터가 없습니다.');
+        return;
+      }
+      var hrData = getHrData();
+      var state = getPayrollState();
+      var toApply = [];
+      var notFound = [];
+      var hasExisting = false;
+      for (var r = 0; r < rows.length; r++) {
+        var personId = getPersonIdByName(hrData, rows[r].name);
+        if (!personId) { notFound.push(rows[r].name); continue; }
+        var ymKey = rows[r].year + '-' + String(rows[r].month).padStart(2, '0');
+        if (hasExistingActualPay(state, ymKey, personId)) hasExisting = true;
+        toApply.push({ personId: personId, ymKey: ymKey, actualPay: rows[r].actualPay });
+      }
+      if (notFound.length > 0) showToast('인력 목록에 없는 성명이 있어 일부 행은 제외됩니다: ' + notFound.slice(0, 3).join(', ') + (notFound.length > 3 ? ' 외' : ''));
+      if (hasExisting && typeof confirm === 'function' && !confirm('이미 입력된 값이 있는 항목이 있습니다. 덮어쓰시겠습니까?')) return;
+      if (!state.draft) state.draft = {};
+      var applied = 0;
+      for (var j = 0; j < toApply.length; j++) {
+        var a = toApply[j];
+        if (getSnapshot(state, a.ymKey)) continue;
+        if (!state.draft[a.ymKey]) state.draft[a.ymKey] = {};
+        if (!state.draft[a.ymKey][a.personId]) state.draft[a.ymKey][a.personId] = { actualPay: '', remark: '', allocationList: [] };
+        state.draft[a.ymKey][a.personId].actualPay = a.actualPay;
+        applied++;
+      }
+      savePayrollState(state);
+      renderPayrollTable();
+      updateSummaryCards();
+      showToast(applied < toApply.length ? '과거 데이터 ' + applied + '건 반영 (마감된 월 ' + (toApply.length - applied) + '건 제외)' : '과거 데이터 ' + applied + '건이 반영되었습니다.');
+    };
+    reader.readAsText(file, 'UTF-8');
+  }
+
+  function onSampleDownload(e) {
+    if (e) e.preventDefault();
+    var csv = '성명,연도,월,실제 지급액\n홍길동,2025,1,3000000\n김철수,2025,2,3200000';
+    var blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = '과거_데이터_업로드_양식.csv';
+    a.click();
+    URL.revokeObjectURL(a.href);
   }
 
   function onSaveMonthClick() {
@@ -743,8 +906,9 @@
       var num = parseAmount(valueStr);
       var val = num !== '' ? String(num) : '';
       var state = getPayrollState();
-      if (!state.contractSalaries) state.contractSalaries = {};
-      state.contractSalaries[personId] = val;
+      var _ym = getCurrentYearMonth();
+      var ymKey = getYmKey(_ym.year, _ym.month);
+      updateSalaryByMonth(state, personId, ymKey, val);
       savePayrollState(state);
       var row = payrollTbody.querySelector('.payroll-row[data-id="' + personId + '"]');
       var baseCell = row ? row.querySelector('.payroll-base-cell') : null;
@@ -903,14 +1067,19 @@
           var salaryIn = row ? row.querySelector('.payroll-salary') : null;
           var val = salaryIn ? (parseAmount(salaryIn.value) !== '' ? String(parseAmount(salaryIn.value)) : '') : '';
           var state = getPayrollState();
-          if (!state.contractSalaries) state.contractSalaries = {};
-          state.contractSalaries[id] = val;
+          var _ym = getCurrentYearMonth();
+          var ymKey = getYmKey(_ym.year, _ym.month);
+          updateSalaryByMonth(state, id, ymKey, val);
           savePayrollState(state);
           editingSalaryId = null;
           renderPayrollTable();
         } else {
           editingSalaryId = id;
           renderPayrollTable();
+          requestAnimationFrame(function () {
+            var inp = document.querySelector('.payroll-salary[data-id="' + id + '"]');
+            if (inp) inp.focus();
+          });
         }
         return;
       }
@@ -1026,39 +1195,89 @@
     if (sumCell) sumCell.textContent = sum > 0 ? sum.toLocaleString() : '-';
   }
 
-  function updateSummaryCards() {
-    var cardActual = document.getElementById('payroll-card-total-actual');
-    var cardAllocation = document.getElementById('payroll-card-total-allocation');
-    var cardNet = document.getElementById('payroll-card-net-burden');
-    var cardRate = document.getElementById('payroll-card-refund-rate');
-    if (!payrollTbody || !cardActual || !cardAllocation || !cardNet || !cardRate) return;
+  // 요약 카드는 검색 필터와 무관하게 해당 월 전체 인원 기준 합계 유지 (전체 예산 대비 비중 파악용)
+  function updateSummaryCards(fullListForSummary, stateForSummary, ymKeyForSummary) {
+    var cardMonthActual = document.getElementById('payroll-card-total-actual');
+    var cardMonthAllocation = document.getElementById('payroll-card-total-allocation');
+    var cardMonthRate = document.getElementById('payroll-card-refund-rate');
+    var cardYearActual = document.getElementById('payroll-card-total-actual-year');
+    var cardYearAllocation = document.getElementById('payroll-card-total-allocation-year');
+    var cardYearRate = document.getElementById('payroll-card-refund-rate-year');
+    var titleMonthActual = document.getElementById('payroll-card-title-month-actual');
+    var titleMonthAllocation = document.getElementById('payroll-card-title-month-allocation');
+    var titleMonthRate = document.getElementById('payroll-card-title-month-rate');
+    var titleYearActual = document.getElementById('payroll-card-title-year-actual');
+    var titleYearAllocation = document.getElementById('payroll-card-title-year-allocation');
+    var titleYearRate = document.getElementById('payroll-card-title-year-rate');
+    if (!cardMonthActual || !cardMonthAllocation || !cardMonthRate ||
+      !cardYearActual || !cardYearAllocation || !cardYearRate ||
+      !titleMonthActual || !titleMonthAllocation || !titleMonthRate ||
+      !titleYearActual || !titleYearAllocation || !titleYearRate) return;
 
-    var totalActual = 0;
-    payrollTbody.querySelectorAll('.payroll-actual').forEach(function (el) {
-      var v = parseAmount(el.value);
-      if (v !== '') totalActual += v;
-    });
-
-    var totalAllocation = 0;
-    payrollTbody.querySelectorAll('.payroll-row').forEach(function (row) {
-      var sumCell = row.querySelector('.payroll-allocation-sum');
-      if (!sumCell || !sumCell.textContent || sumCell.textContent === '-') return;
-      var n = parseInt(String(sumCell.textContent).replace(/,/g, ''), 10);
-      if (!isNaN(n)) totalAllocation += n;
-    });
-
-    var net = totalActual - totalAllocation;
-    if (isNaN(net)) net = 0;
-
-    var rate = 0;
-    if (totalActual > 0 && isFinite(totalAllocation)) {
-      rate = (totalAllocation / totalActual) * 100;
+    var state = stateForSummary || getPayrollState();
+    var _ym = getCurrentYearMonth();
+    var year = parseInt(_ym.year, 10);
+    var month = parseInt(_ym.month, 10);
+    var ymKey = ymKeyForSummary || getYmKey(year, month);
+    var hrData = getHrData();
+    var fullList = fullListForSummary;
+    if (!fullList || !Array.isArray(fullList)) {
+      fullList = getEmployedInMonth(hrData, year, month);
+      var predicate = getFilterPredicate(activeSummaryFilter, state, ymKey);
+      if (predicate) fullList = fullList.filter(predicate);
     }
 
-    cardActual.textContent = totalActual > 0 ? totalActual.toLocaleString() : '0';
-    cardAllocation.textContent = totalAllocation > 0 ? totalAllocation.toLocaleString() : '0';
-    cardNet.textContent = net !== 0 ? net.toLocaleString() : '0';
-    cardRate.textContent = rate > 0 ? rate.toFixed(1) : '0';
+    // 월간 합계
+    var totalActual = 0;
+    var totalAllocation = 0;
+    fullList.forEach(function (item) {
+      var rowState = getRowStateForMonth(state, ymKey, item.id);
+      var a = parseAmount(rowState.actualPay);
+      totalActual += (a !== '' && !isNaN(a)) ? a : 0;
+      totalAllocation += sumAllocationAmount(rowState.allocationList || []);
+    });
+    var monthRate = 0;
+    if (totalActual > 0 && isFinite(totalAllocation)) {
+      monthRate = (totalAllocation / totalActual) * 100;
+    }
+
+    // 연간 누적 합계 (1월~현재 월)
+    var totalActualYear = 0;
+    var totalAllocationYear = 0;
+    for (var m = 1; m <= month; m++) {
+      var ymKeyLoop = getYmKey(year, m);
+      var list = getEmployedInMonth(hrData, year, m);
+      var pred = getFilterPredicate(activeSummaryFilter, state, ymKeyLoop);
+      if (pred) list = list.filter(pred);
+      list.forEach(function (item) {
+        var rowStateLoop = getRowStateForMonth(state, ymKeyLoop, item.id);
+        var av = parseAmount(rowStateLoop.actualPay);
+        totalActualYear += (av !== '' && !isNaN(av)) ? av : 0;
+        totalAllocationYear += sumAllocationAmount(rowStateLoop.allocationList || []);
+      });
+    }
+    var yearRate = 0;
+    if (totalActualYear > 0 && isFinite(totalAllocationYear)) {
+      yearRate = (totalAllocationYear / totalActualYear) * 100;
+    }
+
+    // 제목 동적 반영
+    var shortYear = String(year).slice(2);
+    var mm = String(month).padStart(2, '0');
+    titleMonthActual.textContent = shortYear + '.' + mm + '월 실제 지급 총액';
+    titleMonthAllocation.textContent = shortYear + '.' + mm + '월 과제 환급 총액';
+    titleMonthRate.textContent = shortYear + '.' + mm + '월 인건비 환급률';
+    titleYearActual.textContent = year + '년 누적 지급액';
+    titleYearAllocation.textContent = year + '년 누적 환급액';
+    titleYearRate.textContent = year + '년 누적 환급률';
+
+    // 숫자 반영 (3자리 콤마 + 굵게는 CSS로 처리)
+    cardMonthActual.textContent = totalActual > 0 ? totalActual.toLocaleString() : '0';
+    cardMonthAllocation.textContent = totalAllocation > 0 ? totalAllocation.toLocaleString() : '0';
+    cardMonthRate.textContent = monthRate > 0 ? monthRate.toFixed(1) : '0';
+    cardYearActual.textContent = totalActualYear > 0 ? totalActualYear.toLocaleString() : '0';
+    cardYearAllocation.textContent = totalAllocationYear > 0 ? totalAllocationYear.toLocaleString() : '0';
+    cardYearRate.textContent = yearRate > 0 ? yearRate.toFixed(1) : '0';
   }
 
   function onPayrollRoute() {
@@ -1075,6 +1294,14 @@
 
   if (payrollYear) payrollYear.addEventListener('change', onYearMonthChange);
   if (payrollMonth) payrollMonth.addEventListener('change', onYearMonthChange);
+  if (payrollSearchName) payrollSearchName.addEventListener('input', function () { renderPayrollTable(); });
+  if (payrollSearchName) payrollSearchName.addEventListener('keydown', function (e) { if (e.key === 'Escape') { this.value = ''; renderPayrollTable(); this.blur(); } });
+  if (payrollSearchClear) payrollSearchClear.addEventListener('click', function () {
+    if (payrollSearchName) { payrollSearchName.value = ''; payrollSearchName.focus(); renderPayrollTable(); }
+  });
+  if (payrollImportBtn && payrollImportFile) payrollImportBtn.addEventListener('click', function () { payrollImportFile.click(); });
+  if (payrollImportFile) payrollImportFile.addEventListener('change', onImportFileChange);
+  if (payrollSampleDownload) payrollSampleDownload.addEventListener('click', onSampleDownload);
   if (payrollSaveMonthBtn) payrollSaveMonthBtn.addEventListener('click', onSaveMonthClick);
   if (payrollUnlockMonthBtn) payrollUnlockMonthBtn.addEventListener('click', rollbackUnlockCurrentMonth);
   if (payrollLoadPrevBtn) payrollLoadPrevBtn.addEventListener('click', loadPrevMonthActualPay);
