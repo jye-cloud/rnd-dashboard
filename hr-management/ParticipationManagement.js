@@ -16,7 +16,9 @@
   var tabAnnual = document.getElementById('participation-tab-annual');
 
   var yearSelect = document.getElementById('participation-year');
+  var monthSelect = document.getElementById('participation-month');
   var annualYearSelect = document.getElementById('participation-annual-year');
+  var annualSearchInput = document.getElementById('participation-annual-search');
   var projectCardsEl = document.getElementById('participation-project-cards');
   var annualTableWrap = document.getElementById('participation-annual-table-wrap');
   var addProjectBtn = document.getElementById('participation-add-project-btn');
@@ -84,6 +86,38 @@
     return s || (fallback || '9999-12-31');
   }
 
+  // 입사일 >= 기준일 → 신규, 입사일 < 기준일 → 기존
+  function isNewPersonnel(person, baseDateStr) {
+    if (!person) return false;
+    var acqStr = normalizeDateStr(person.acquisitionDate || person['입사일자'], null);
+    if (!acqStr) return false;
+    if (!baseDateStr || typeof baseDateStr !== 'string') return false;
+    var baseStr = normalizeDateStr(baseDateStr, null);
+    if (!baseStr) return false;
+    return acqStr >= baseStr;
+  }
+
+  function getPersonType(person, baseDateStr) {
+    return isNewPersonnel(person, baseDateStr) ? '신규' : '기존';
+  }
+
+  function getMonthlyTotalsForPerson(personId, projects) {
+    var projs = projects || (state.projects || []).filter(function (p) { return p.includeInSummary !== false; });
+    var totals = {};
+    for (var m = 1; m <= 12; m++) totals[m] = 0;
+    projs.forEach(function (proj) {
+      (proj.members || []).forEach(function (memb) {
+        if (memb.personId !== personId) return;
+        ensureMemberRates(memb);
+        for (var mm = 1; mm <= 12; mm++) {
+          var v = parseFloat(memb.rates[mm] || 0);
+          if (!isNaN(v)) totals[mm] += v;
+        }
+      });
+    });
+    return totals;
+  }
+
   function getSortedPersonsForYear(hrData, year) {
     var withIndex = hrData.map(function (p, idx) { return { person: p, idx: idx }; });
     var filtered = withIndex.filter(function (wrap) {
@@ -116,6 +150,9 @@
 
   // 키보드 네비게이션 후, 리렌더링이 일어나더라도 포커스를 복구하기 위한 정보
   var pendingFocus = null; // { projectId, rowIndex, colIndex }
+
+  // 투입 후보군 리스트 열림 상태: { projectId, filter: 'new'|'existing' }
+  var openedCandidateState = { projectId: null, filter: null };
 
   // 플로팅 패널: 현재 포커스된 인원/월 정보
   var currentFocusPersonId = null;
@@ -199,9 +236,11 @@
       return s;
     } catch (e) {
       console.warn('참여율 state 초기화 오류, 기본값 사용:', e);
+      var now = new Date();
       return {
         selectedYear: defaultYear,
-        projects: [{ id: 1, title: '새 과제', includeInSummary: true, members: [] }]
+        selectedMonth: now.getMonth() + 1,
+        projects: [{ id: 1, title: '새 과제', includeInSummary: true, members: [], newPersonnelBaseDate: defaultYear + '-01-01' }]
       };
     }
   }
@@ -218,6 +257,15 @@
     state.selectedYear = year;
     saveState();
     renderAll();
+  }
+
+  function setSelectedMonth(month) {
+    var m = parseInt(month, 10);
+    if (m >= 1 && m <= 12) {
+      state.selectedMonth = m;
+      saveState();
+      renderProjectView();
+    }
   }
 
   function setProjects(projects) {
@@ -245,6 +293,15 @@
     if (annualYearSelect) annualYearSelect.innerHTML = opts;
   }
 
+  function renderMonthSelect() {
+    if (!monthSelect) return;
+    var opts = '';
+    for (var m = 1; m <= 12; m++) {
+      opts += '<option value="' + m + '"' + (m === state.selectedMonth ? ' selected' : '') + '>' + m + '월</option>';
+    }
+    monthSelect.innerHTML = opts;
+  }
+
   function ensureMemberRates(member) {
     if (!member) return;
     if (!member.type1) member.type1 = '기존'; // 구분1
@@ -256,20 +313,17 @@
     }
   }
 
-  // 우측 하단 플로팅 패널: 현재 포커스된 인원의 해당 월 합계 (현금/현물 분리)
+  // 플로팅 패널: 현재 포커스된 인원의 월별 참여율 (합산 반영 / 미합산 반영 구분)
   function updateMonitorPanel(personId, month) {
-    // personId, month가 넘어오면 현재 포커스 정보로 갱신
     if (personId != null && month != null) {
       currentFocusPersonId = String(personId);
       currentFocusMonth = month;
     }
 
     var panel = document.getElementById('participation-floating-panel');
-    var titleEl = document.getElementById('participation-floating-name'); // 기존 구조 활용
-    var sumEl = document.getElementById('participation-floating-sum');
-    var titleBarEl = document.querySelector('.participation-floating-panel-title');
+    var innerEl = document.getElementById('participation-floating-panel-inner');
 
-    if (!panel || !titleEl || !sumEl || !titleBarEl) return;
+    if (!panel || !innerEl) return;
 
     if (!currentFocusPersonId || !currentFocusMonth) {
       panel.hidden = true;
@@ -281,65 +335,73 @@
     var person = hrData.find(function (p) { return p.id === currentFocusPersonId; }) || {};
     var name = person.name || person.id || currentFocusPersonId;
 
-    var cashTotal = 0;
-    var kindTotal = 0;
+    var sumIncluded = {};  // includeInSummary !== false
+    var sumExcluded = {};  // includeInSummary === false
+    for (var m = 1; m <= 12; m++) {
+      sumIncluded[m] = 0;
+      sumExcluded[m] = 0;
+    }
 
-    // includeInSummary 가 false 인 프로젝트는 플로팅 패널 합산에서도 제외
-    var projects = Array.isArray(state.projects)
-      ? state.projects.filter(function (p) { return p.includeInSummary !== false; })
-      : [];
-
+    var projects = Array.isArray(state.projects) ? state.projects : [];
     projects.forEach(function (proj) {
-      (proj.members || []).forEach(function (m) {
-        if (m.personId !== currentFocusPersonId) return;
-        ensureMemberRates(m);
-        var v;
-        if (
-          focusOverride &&
-          focusOverride.personId === m.personId &&
-          focusOverride.month === currentFocusMonth
-        ) {
-          v = focusOverride.value;
-        } else {
-          v = parseFloat(m.rates[currentFocusMonth] || 0);
-        }
-        if (isNaN(v)) v = 0;
-
-        var disabled = isMonthDisabledForPerson(person, year, currentFocusMonth);
-        if (disabled) v = 0;
-
-        if (m.type2 === '현물') {
-          kindTotal += v;
-        } else {
-          cashTotal += v;
+      var isIncluded = proj.includeInSummary !== false;
+      (proj.members || []).forEach(function (memb) {
+        if (memb.personId !== currentFocusPersonId) return;
+        ensureMemberRates(memb);
+        for (var mm = 1; mm <= 12; mm++) {
+          var v;
+          if (
+            focusOverride &&
+            focusOverride.personId === memb.personId &&
+            focusOverride.month === mm
+          ) {
+            v = focusOverride.value;
+          } else {
+            v = parseFloat(memb.rates[mm] || 0);
+          }
+          if (isNaN(v)) v = 0;
+          var disabled = isMonthDisabledForPerson(person, year, mm);
+          if (disabled) v = 0;
+          if (isIncluded) {
+            sumIncluded[mm] += v;
+          } else {
+            sumExcluded[mm] += v;
+          }
         }
       });
     });
 
     panel.hidden = false;
-    // 제목: "[이름]님의 [n]월 참여율 합계" (이름과 n월만 굵게)
-    titleBarEl.innerHTML =
-      '<strong>' + name + '</strong>' +
-      '님의 ' +
-      '<strong>' + currentFocusMonth + '월</strong>' +
-      ' 참여율 합계';
-    // 두 번째 줄: "현금: n% / 현물: n%"
-    titleEl.textContent = ''; // 이름 라인은 사용하지 않음
 
-    var total = cashTotal + kindTotal;
-    sumEl.textContent =
-      '현금: ' + cashTotal.toFixed(1) + '%  /  현물: ' + kindTotal.toFixed(1) + '%';
-
-    // 100% 초과 경고 스타일 적용
-    if (total > 100) {
-      sumEl.style.color = '#ff0000';
-      sumEl.style.fontWeight = '800';
-      sumEl.style.fontSize = '1.25rem';
-    } else {
-      sumEl.style.color = '#1d4ed8'; // 신뢰감 있는 블루 (기본)
-      sumEl.style.fontWeight = '700';
-      sumEl.style.fontSize = '1.1rem';
+    var title = '<strong>' + name + '</strong>님의 참여율';
+    var headerCells = '';
+    for (var h = 1; h <= 12; h++) {
+      var hCls = h === currentFocusMonth ? ' participation-floating-th--focus' : '';
+      headerCells += '<th class="participation-floating-th' + hCls + '">' + h + '월</th>';
     }
+    var rowIncluded = '';
+    for (var r1 = 1; r1 <= 12; r1++) {
+      var v1 = sumIncluded[r1];
+      var cellCls1 = v1 > 100 ? ' participation-floating-cell--over' : '';
+      if (r1 === currentFocusMonth) cellCls1 += ' participation-floating-cell--focus';
+      rowIncluded += '<td class="participation-floating-cell participation-floating-cell--included' + cellCls1 + '">' + (v1 ? v1.toFixed(1) + '%' : '') + '</td>';
+    }
+    var rowExcluded = '';
+    for (var r2 = 1; r2 <= 12; r2++) {
+      var v2 = sumExcluded[r2];
+      var cellCls2 = v2 > 100 ? ' participation-floating-cell--over' : '';
+      if (r2 === currentFocusMonth) cellCls2 += ' participation-floating-cell--focus';
+      rowExcluded += '<td class="participation-floating-cell participation-floating-cell--excluded' + cellCls2 + '">' + (v2 ? v2.toFixed(1) + '%' : '') + '</td>';
+    }
+
+    innerEl.innerHTML =
+      '<div class="participation-floating-panel-title">' + title + '</div>' +
+      '<table class="participation-floating-table">' +
+      '<thead><tr><th class="participation-floating-th-label"></th>' + headerCells + '</tr></thead>' +
+      '<tbody>' +
+      '<tr><td class="participation-floating-label participation-floating-label--included"><span class="participation-floating-bullet participation-floating-bullet--included"></span>합산 반영</td>' + rowIncluded + '</tr>' +
+      '<tr><td class="participation-floating-label participation-floating-label--excluded"><span class="participation-floating-bullet participation-floating-bullet--excluded"></span>미합산 반영</td>' + rowExcluded + '</tr>' +
+      '</tbody></table>';
   }
 
   // 페이지 바깥(카드/입력 영역 밖)을 클릭하면 플로팅 패널을 숨기는 전역 클릭 핸들러
@@ -363,7 +425,8 @@
         target.closest('.participation-project-card') || // 카드/테이블 영역
         target.closest('.participation-floating-panel') || // 패널 자체
         target.closest('.participation-person-search') || // 검색 영역
-        target.closest('.participation-summary-toggle')   // 요약 포함 토글
+        target.closest('.participation-summary-toggle') || // 요약 포함 토글
+        target.closest('.participation-candidate-area')   // 투입 후보군 리스트
       ) {
         return;
       }
@@ -422,32 +485,87 @@
         updateMonitorPanel();
       });
 
+      // 신규 인력 기준일 DatePicker + 조회 버튼들 (카드별 독립)
+      var headerControls = document.createElement('div');
+      headerControls.className = 'participation-card-header-controls';
+
+      var baseDateWrap = document.createElement('div');
+      baseDateWrap.className = 'participation-base-date-wrap';
+      var baseDateLabel = document.createElement('label');
+      baseDateLabel.className = 'participation-base-date-label';
+      baseDateLabel.textContent = '신규 인력 기준일';
+      var baseDateInput = document.createElement('input');
+      baseDateInput.type = 'date';
+      baseDateInput.className = 'participation-base-date-input';
+      baseDateInput.value = proj.newPersonnelBaseDate || (state.selectedYear + '-01-01');
+      baseDateInput.addEventListener('change', function () {
+        var newProjects = state.projects.map(function (p) {
+          if (p.id !== proj.id) return p;
+          return Object.assign({}, p, { newPersonnelBaseDate: baseDateInput.value || (state.selectedYear + '-01-01') });
+        });
+        setProjects(newProjects);
+      });
+      baseDateWrap.appendChild(baseDateLabel);
+      baseDateWrap.appendChild(baseDateInput);
+
+      var btnNew = document.createElement('button');
+      btnNew.type = 'button';
+      btnNew.className = 'ui-btn ui-btn--ghost participation-candidate-btn';
+      btnNew.textContent = '신규 인력 조회';
+      btnNew.addEventListener('click', function () {
+        var next = openedCandidateState.projectId === proj.id && openedCandidateState.filter === 'new'
+          ? { projectId: null, filter: null }
+          : { projectId: proj.id, filter: 'new' };
+        openedCandidateState.projectId = next.projectId;
+        openedCandidateState.filter = next.filter;
+        renderProjectView();
+      });
+
+      var btnExisting = document.createElement('button');
+      btnExisting.type = 'button';
+      btnExisting.className = 'ui-btn ui-btn--ghost participation-candidate-btn';
+      btnExisting.textContent = '기존 인력 조회';
+      btnExisting.addEventListener('click', function () {
+        var next = openedCandidateState.projectId === proj.id && openedCandidateState.filter === 'existing'
+          ? { projectId: null, filter: null }
+          : { projectId: proj.id, filter: 'existing' };
+        openedCandidateState.projectId = next.projectId;
+        openedCandidateState.filter = next.filter;
+        renderProjectView();
+      });
+
+      headerControls.appendChild(baseDateWrap);
+      headerControls.appendChild(btnNew);
+      headerControls.appendChild(btnExisting);
+
       titleRow.appendChild(title);
+      titleRow.appendChild(headerControls);
       titleRow.appendChild(deleteProjBtn);
 
       var list = document.createElement('div');
       list.className = 'participation-project-card-list';
 
-      // 헤더: 이름 | 구분1 | 구분2 | 1~12월 | 비고 | 삭제
+      // 헤더: 이름 | 구분2 | 1~12월 | 비고 | 삭제 (구분1 제거, 성명에 배지로 대체)
       var headerRow = document.createElement('div');
       headerRow.className = 'participation-person-row participation-person-row--header';
 
       var nameHead = document.createElement('span');
-      nameHead.className = 'participation-person-name';
+      nameHead.className = 'participation-person-name participation-header-sortable';
       nameHead.textContent = '이름';
-      headerRow.appendChild(nameHead);
-
-      var type1Head = document.createElement('span');
-      type1Head.className = 'participation-month-label participation-header-sortable';
-      type1Head.textContent = '구분1';
-      type1Head.addEventListener('click', function () {
+      nameHead.addEventListener('click', function () {
         toggleSort(proj.id, 'type1');
       });
-      headerRow.appendChild(type1Head);
+      if (conf && conf.key === 'type1') {
+        var nameArrow = document.createElement('span');
+        nameArrow.className = 'participation-header-arrow';
+        nameArrow.textContent = conf.dir === 'asc' ? '▲' : '▼';
+        nameHead.appendChild(nameArrow);
+      }
+      headerRow.appendChild(nameHead);
 
       var type2Head = document.createElement('span');
       type2Head.className = 'participation-month-label participation-header-sortable';
-      type2Head.textContent = '구분2';
+      type2Head.textContent = '구분';
       type2Head.addEventListener('click', function () {
         toggleSort(proj.id, 'type2');
       });
@@ -455,15 +573,11 @@
 
       // 정렬 상태에 따라 헤더에 화살표 표시
       var conf = getSortConfig(proj.id);
-      if (conf && (conf.key === 'type1' || conf.key === 'type2')) {
+      if (conf && conf.key === 'type2') {
         var arrowSpan = document.createElement('span');
         arrowSpan.className = 'participation-header-arrow';
         arrowSpan.textContent = conf.dir === 'asc' ? '▲' : '▼';
-        if (conf.key === 'type1') {
-          type1Head.appendChild(arrowSpan);
-        } else {
-          type2Head.appendChild(arrowSpan);
-        }
+        type2Head.appendChild(arrowSpan);
       }
 
       for (var mm = 1; mm <= 12; mm++) {
@@ -489,27 +603,31 @@
       var members = Array.isArray(proj.members) ? proj.members.slice() : [];
       members.forEach(ensureMemberRates);
 
-      // 정렬 설정이 있으면 구분1/구분2 기준으로 그룹 정렬 (그룹 내 순서는 원래 추가 순서 유지)
+      var baseDate = proj.newPersonnelBaseDate || (state.selectedYear + '-01-01');
+      // 정렬 설정이 있으면 구분1(배지 기준)/구분2 기준으로 그룹 정렬
       if (conf && (conf.key === 'type1' || conf.key === 'type2')) {
-        var keyed = members.map(function (m, idx) { return { m: m, idx: idx }; });
+        var keyed = members.map(function (m, idx) {
+          var p = hrData.find(function (x) { return x.id === m.personId; });
+          var autoType1 = getPersonType(p, baseDate);
+          return { m: m, idx: idx, autoType1: autoType1 };
+        });
         keyed.sort(function (a, b) {
-          function getRank(member) {
-            var v = conf.key === 'type1' ? (member.type1 || '') : (member.type2 || '');
+          function getRank(item) {
             if (conf.key === 'type1') {
-              if (v === '기존') return 0;
-              if (v === '신규') return 1;
+              if (item.autoType1 === '기존') return 0;
+              if (item.autoType1 === '신규') return 1;
               return 2;
             } else {
+              var v = item.m.type2 || '';
               if (v === '현금') return 0;
               if (v === '현물') return 1;
               return 2;
             }
           }
-          var ra = getRank(a.m);
-          var rb = getRank(b.m);
+          var ra = getRank(a);
+          var rb = getRank(b);
           var diff = conf.dir === 'asc' ? (ra - rb) : (rb - ra);
           if (diff !== 0) return diff;
-          // 같은 그룹 내에서는 추가 순서를 유지
           return a.idx - b.idx;
         });
         members = keyed.map(function (x) { return x.m; });
@@ -525,41 +643,19 @@
         row.setAttribute('data-idx', String(idx));
         row.setAttribute('data-row-index', String(idx));
 
+        // 성명 셀: 배지 + 이름 (배지는 기준일 기반 자동 분류)
         var nameCell = document.createElement('span');
-        nameCell.className = 'participation-person-name';
-        nameCell.textContent = person ? (person.name || member.personId) : member.personId;
+        nameCell.className = 'participation-person-name participation-person-name-with-badge';
+        var personType = getPersonType(person, baseDate);
+        var badge = document.createElement('span');
+        badge.className = 'participation-badge participation-badge--' + (personType === '신규' ? 'new' : 'existing');
+        badge.textContent = personType;
+        var nameTxt = document.createElement('span');
+        nameTxt.className = 'participation-person-name-text';
+        nameTxt.textContent = person ? (person.name || member.personId) : member.personId;
+        nameCell.appendChild(badge);
+        nameCell.appendChild(nameTxt);
         row.appendChild(nameCell);
-
-        // 구분1 셀렉트 (기존/신규)
-        var type1Select = document.createElement('select');
-        type1Select.className = 'participation-type-select';
-        ['기존', '신규'].forEach(function (label) {
-          var opt = document.createElement('option');
-          opt.value = label;
-          opt.textContent = label;
-          if (member.type1 === label) opt.selected = true;
-          type1Select.appendChild(opt);
-        });
-        type1Select.addEventListener('change', function () {
-          var newProjects = state.projects.map(function (p) {
-            if (p.id !== proj.id) return p;
-            var newMembers = (p.members || []).map(function (m) {
-              if (m.personId !== member.personId) return m;
-              return Object.assign({}, m, { type1: type1Select.value });
-            });
-            return Object.assign({}, p, { members: newMembers });
-          });
-          setProjects(newProjects);
-          updateMonitorPanel();
-        });
-        // 구분1에서 Tab 시, 바로 오른쪽 첫 번째 참여율 칸(1월)로 이동
-        type1Select.addEventListener('keydown', function (e) {
-          if (e.key === 'Tab' && !e.shiftKey) {
-            e.preventDefault();
-            focusRateInput(proj.id, idx, 0);
-          }
-        });
-        row.appendChild(type1Select);
 
         // 구분2 셀렉트 (현금/현물)
         var type2Select = document.createElement('select');
@@ -793,25 +889,50 @@
         }
       }
 
+      function getPersonTotalParticipationForMonth(personId, month) {
+        var projects = Array.isArray(state.projects)
+          ? state.projects.filter(function (p) { return p.includeInSummary !== false; })
+          : [];
+        var total = 0;
+        projects.forEach(function (proj) {
+          (proj.members || []).forEach(function (m) {
+            if (m.personId !== personId) return;
+            ensureMemberRates(m);
+            var v = parseFloat(m.rates[month] || 0);
+            if (!isNaN(v)) total += v;
+          });
+        });
+        return total;
+      }
+
       function renderDropdown() {
         dropdown.innerHTML = '';
         var term = searchInput.value.trim().toLowerCase();
-        var candidates = [];
+        var newCandidates = [];
+        var existingCandidates = [];
 
-        // 검색어가 없으면 리스트를 표시하지 않음
         if (!term) {
           activeIndex = -1;
           return;
         }
 
+        var editMonth = state.selectedMonth || 1;
+        var baseDate = proj.newPersonnelBaseDate || (state.selectedYear + '-01-01');
+
         personsSorted.forEach(function (p) {
           if (existingIds.indexOf(p.id) !== -1) return;
           var name = p.name || p.id;
           if (name && name.toLowerCase().indexOf(term) === -1) return;
-          candidates.push(p);
+          var isNew = isNewPersonnel(p, baseDate);
+          if (isNew) {
+            newCandidates.push(p);
+          } else {
+            existingCandidates.push(p);
+          }
         });
 
-        if (candidates.length === 0) {
+        var allCandidates = newCandidates.concat(existingCandidates);
+        if (allCandidates.length === 0) {
           var empty = document.createElement('div');
           empty.className = 'participation-person-search-empty';
           empty.textContent = '검색 결과가 없습니다.';
@@ -820,28 +941,38 @@
           return;
         }
 
-        if (activeIndex >= candidates.length) activeIndex = candidates.length - 1;
+        if (activeIndex >= allCandidates.length) activeIndex = allCandidates.length - 1;
 
-        candidates.forEach(function (p, idx) {
-          var item = document.createElement('div');
-          item.className = 'participation-person-search-item';
-          if (idx === activeIndex) item.classList.add('participation-person-search-item--active');
-          var nameTxt = p.name || p.id;
-          var company = p.division || p['회사'] || '';
-          var dept = p.department || p['소속'] || '';
-          var meta = '';
-          if (company || dept) {
-            meta = ' (' + [company, dept].filter(Boolean).join('/') + ')';
-          }
-          item.textContent = nameTxt + meta;
-          item.setAttribute('data-person-id', p.id);
-          item.addEventListener('mousedown', function (e) {
-            // mousedown 단계에서 바로 처리하여 blur 전에 선택되도록
-            e.preventDefault();
-            addMemberToProject(p.id);
+        function addSection(title, list) {
+          if (list.length === 0) return;
+          var section = document.createElement('div');
+          section.className = 'participation-person-search-section';
+          var header = document.createElement('div');
+          header.className = 'participation-person-search-section-header';
+          header.textContent = title;
+          section.appendChild(header);
+          list.forEach(function (p) {
+            var item = document.createElement('div');
+            item.className = 'participation-person-search-item';
+            var idx = allCandidates.indexOf(p);
+            if (idx === activeIndex) item.classList.add('participation-person-search-item--active');
+            var rate = getPersonTotalParticipationForMonth(p.id, editMonth);
+            var typeLabel = isNewPersonnel(p, baseDate) ? '신규' : '기존';
+            var rateStr = editMonth + '월 총 참여율: ' + rate.toFixed(1) + '%';
+            item.innerHTML = '<span class="participation-search-item-name">' + (p.name || p.id) + ' [' + typeLabel + ']</span> <span class="participation-search-item-rate">(' + rateStr + ')</span>';
+            item.setAttribute('data-person-id', p.id);
+            item.setAttribute('data-candidate-index', String(idx));
+            item.addEventListener('mousedown', function (e) {
+              e.preventDefault();
+              addMemberToProject(p.id);
+            });
+            section.appendChild(item);
           });
-          dropdown.appendChild(item);
-        });
+          dropdown.appendChild(section);
+        }
+
+        addSection('신규 인력', newCandidates);
+        addSection('기존 인력', existingCandidates);
       }
 
       searchInput.addEventListener('input', function () {
@@ -880,6 +1011,116 @@
       searchWrap.appendChild(dropdown);
       addRow.appendChild(searchWrap);
 
+      // 투입 후보군 리스트 (신규/기존 조회 버튼 클릭 시 펼침)
+      var candidateArea = document.createElement('div');
+      candidateArea.className = 'participation-candidate-area';
+      candidateArea.setAttribute('data-project-id', proj.id);
+
+      if (openedCandidateState.projectId === proj.id && openedCandidateState.filter) {
+        candidateArea.hidden = false;
+        candidateArea.classList.add('participation-candidate-area--open');
+
+        var existingIds = (proj.members || []).map(function (m) { return m.personId; });
+        var baseDate = proj.newPersonnelBaseDate || (state.selectedYear + '-01-01');
+        var projects = (state.projects || []).filter(function (p) { return p.includeInSummary !== false; });
+
+        var candidates = personsSorted.filter(function (p) {
+          if (existingIds.indexOf(p.id) !== -1) return false;
+          var isNew = isNewPersonnel(p, baseDate);
+          return openedCandidateState.filter === 'new' ? isNew : !isNew;
+        });
+
+        var tableWrap = document.createElement('div');
+        tableWrap.className = 'participation-candidate-table-wrap';
+
+        var table = document.createElement('table');
+        table.className = 'participation-candidate-table';
+
+        var thead = document.createElement('thead');
+        var headerTr = document.createElement('tr');
+        var thName = document.createElement('th');
+        thName.className = 'participation-candidate-th-name';
+        thName.textContent = '성명';
+        headerTr.appendChild(thName);
+        var thJoin = document.createElement('th');
+        thJoin.className = 'participation-candidate-th-join';
+        thJoin.textContent = '입사일';
+        headerTr.appendChild(thJoin);
+        for (var mm = 1; mm <= 12; mm++) {
+          var th = document.createElement('th');
+          th.textContent = mm + '월';
+          th.className = 'participation-candidate-th-month';
+          headerTr.appendChild(th);
+        }
+        var thAdd = document.createElement('th');
+        thAdd.className = 'participation-candidate-th-add';
+        thAdd.textContent = '추가';
+        headerTr.appendChild(thAdd);
+        thead.appendChild(headerTr);
+        table.appendChild(thead);
+
+        var tbody = document.createElement('tbody');
+        if (candidates.length === 0) {
+          var emptyRow = document.createElement('tr');
+          emptyRow.innerHTML = '<td colspan="15" class="participation-candidate-empty">해당 조건의 후보가 없습니다.</td>';
+          tbody.appendChild(emptyRow);
+        } else {
+          candidates.forEach(function (person) {
+            var tr = document.createElement('tr');
+            var personType = getPersonType(person, baseDate);
+            var badgeCls = personType === '신규' ? 'participation-badge participation-badge--new' : 'participation-badge participation-badge--existing';
+            var nameTd = document.createElement('td');
+            nameTd.className = 'participation-candidate-td-name';
+            nameTd.innerHTML = '<span class="' + badgeCls + '">' + personType + '</span> ' + (person.name || person.id || '-');
+            tr.appendChild(nameTd);
+
+            var joinTd = document.createElement('td');
+            joinTd.className = 'participation-candidate-td-join';
+            joinTd.textContent = person.acquisitionDate || person['입사일자'] || '-';
+            tr.appendChild(joinTd);
+
+            var totals = getMonthlyTotalsForPerson(person.id, projects);
+            var year = state.selectedYear || new Date().getFullYear();
+
+            for (var mmm = 1; mmm <= 12; mmm++) {
+              var cellTd = document.createElement('td');
+              cellTd.className = 'participation-candidate-td-month';
+              var v = totals[mmm] || 0;
+              var disabled = isMonthDisabledForPerson(person, year, mmm);
+              if (disabled) {
+                cellTd.classList.add('participation-annual-cell--disabled');
+                v = 0;
+              }
+              if (!disabled && v > 100) {
+                cellTd.classList.add('participation-annual-cell--over');
+              }
+              cellTd.textContent = v ? v.toFixed(1) + '%' : '';
+              tr.appendChild(cellTd);
+            }
+
+            var addTd = document.createElement('td');
+            addTd.className = 'participation-candidate-td-add';
+            var addBtn = document.createElement('button');
+            addBtn.type = 'button';
+            addBtn.className = 'ui-btn participation-candidate-add-btn';
+            addBtn.textContent = '+';
+            addBtn.title = '프로젝트에 추가';
+            addBtn.addEventListener('click', function () {
+              addMemberToProject(person.id);
+            });
+            addTd.appendChild(addBtn);
+            tr.appendChild(addTd);
+
+            tbody.appendChild(tr);
+          });
+        }
+        table.appendChild(tbody);
+        tableWrap.appendChild(table);
+        candidateArea.appendChild(tableWrap);
+      } else {
+        candidateArea.hidden = true;
+      }
+
       // 연간 요약 포함 체크박스
       var summaryWrap = document.createElement('label');
       summaryWrap.className = 'participation-summary-toggle';
@@ -908,6 +1149,7 @@
 
       card.appendChild(titleRow);
       card.appendChild(list);
+      card.appendChild(candidateArea);
       card.appendChild(addRow);
       projectCardsEl.appendChild(card);
     });
@@ -924,28 +1166,17 @@
     var year = state.selectedYear || new Date().getFullYear();
     var persons = getSortedPersonsForYear(hrData, year);
 
-    // projects에서 personId 기준 월별 합계를 계산
-    // includeInSummary 가 false 인 프로젝트는 연간 요약 계산에서 제외
+    var searchTerm = (annualSearchInput && annualSearchInput.value) ? annualSearchInput.value.trim().toLowerCase() : '';
+    if (searchTerm) {
+      persons = persons.filter(function (p) {
+        var name = (p.name || p.id || '').toLowerCase();
+        return name.indexOf(searchTerm) !== -1;
+      });
+    }
+
     var projects = Array.isArray(state.projects)
       ? state.projects.filter(function (p) { return p.includeInSummary !== false; })
       : [];
-
-    function getMonthlyTotalsForPerson(personId) {
-      var totals = {};
-      for (var m = 1; m <= 12; m++) totals[m] = 0;
-
-      projects.forEach(function (proj) {
-        (proj.members || []).forEach(function (memb) {
-          if (memb.personId !== personId) return;
-          ensureMemberRates(memb);
-          for (var mm = 1; mm <= 12; mm++) {
-            var v = parseFloat(memb.rates[mm] || 0);
-            if (!isNaN(v)) totals[mm] += v;
-          }
-        });
-      });
-      return totals;
-    }
 
     // 테이블 기본 구조
     var html = '';
@@ -960,15 +1191,15 @@
     html += '<tbody>';
 
     if (!persons || persons.length === 0) {
-      // 이름(1) + 구분(1) + 1~12월(12) = 14 컬럼
-      html += '<tr><td colspan="14" class="participation-annual-empty">데이터가 없습니다.</td></tr>';
+      var emptyMsg = searchTerm ? '검색 결과가 없습니다.' : '데이터가 없습니다.';
+      html += '<tr><td colspan="14" class="participation-annual-empty">' + emptyMsg + '</td></tr>';
       html += '</tbody></table>';
       annualTableWrap.innerHTML = html;
       return;
     }
 
     persons.forEach(function (person) {
-      var totals = getMonthlyTotalsForPerson(person.id);
+      var totals = getMonthlyTotalsForPerson(person.id, projects);
       html += '<tr>';
       var name = person.name || person.id || '-';
       var loss = person.lossDate || person['자격상실일'];
@@ -999,8 +1230,8 @@
 
   function renderAll() {
     renderYearSelect();
+    renderMonthSelect();
     renderProjectView();
-    // 전체 렌더 이후 포커스 복구 시도
     applyPendingFocus();
   }
 
@@ -1049,13 +1280,21 @@
 
   if (addProjectBtn) {
     addProjectBtn.addEventListener('click', function () {
-      var newProj = { id: Date.now(), title: '새 과제', includeInSummary: true, members: [] };
+      var baseDate = (state.selectedYear || new Date().getFullYear()) + '-01-01';
+      var newProj = { id: Date.now(), title: '새 과제', includeInSummary: true, members: [], newPersonnelBaseDate: baseDate };
       setProjects((state.projects || []).concat([newProj]));
     });
   }
 
   if (tabProject) tabProject.addEventListener('click', function () { switchView('project'); });
   if (tabAnnual) tabAnnual.addEventListener('click', function () { switchView('annual'); });
+
+  if (annualSearchInput) {
+    annualSearchInput.addEventListener('input', function () {
+      var viewAnnualEl = document.getElementById('participation-view-annual');
+      if (viewAnnualEl && !viewAnnualEl.hidden) renderAnnualView();
+    });
+  }
 
   window.addEventListener('hashchange', onParticipationRoute);
   if (document.readyState === 'loading') {

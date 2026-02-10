@@ -395,6 +395,8 @@
           <div class="participation-year-row">
               <label for="participation-year">연도</label>
               <select id="participation-year" class="ui-select" aria-label="연도 선택"></select>
+              <label for="participation-month">편집 월</label>
+              <select id="participation-month" class="ui-select" aria-label="편집 월 선택"></select>
             </div>
             <div id="participation-project-cards" class="participation-project-cards"></div>
             <button type="button" id="participation-add-project-btn" class="ui-btn ui-btn--primary">+ 프로젝트 추가</button>
@@ -404,14 +406,14 @@
             <div class="participation-annual-year-row">
               <label for="participation-annual-year">연도</label>
               <select id="participation-annual-year" class="ui-select" aria-label="연도 선택"></select>
+              <label for="participation-annual-search" class="participation-annual-search-label">이름</label>
+              <input type="text" id="participation-annual-search" class="participation-annual-search-input" placeholder="이름" aria-label="이름 검색" autocomplete="off">
             </div>
             <div id="participation-annual-table-wrap" class="participation-table-wrap"></div>
           </div>
 
           <div id="participation-floating-panel" class="participation-floating-panel" aria-live="polite" hidden>
-            <div class="participation-floating-panel-title">실시간 개인별 합계</div>
-            <div class="participation-floating-panel-name" id="participation-floating-name">-</div>
-            <div class="participation-floating-panel-sum" id="participation-floating-sum">0%</div>
+            <div id="participation-floating-panel-inner" class="participation-floating-panel-inner"></div>
           </div>
         </div>
       </div>
