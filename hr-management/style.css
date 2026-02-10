@@ -2398,6 +2398,66 @@ body {
   border-color: var(--primary-color);
 }
 
+/* 인력별 연간 요약: 구분 필터 버튼 - #participation-view-annual 내 격리 */
+#participation-view-annual .participation-annual-filter {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+#participation-view-annual .participation-annual-filter-btn {
+  font-size: 0.85rem;
+  padding: 0.35rem 0.65rem;
+}
+
+#participation-view-annual .participation-annual-filter-btn.active {
+  background: rgba(37, 99, 235, 0.12);
+  color: var(--primary-color);
+  font-weight: 600;
+}
+
+/* 인력별 연간 요약: 현금/현물 행 분리 및 구분 컬럼 - #participation-view-annual 내 격리 */
+#participation-view-annual .participation-annual-table .participation-annual-name-cell {
+  vertical-align: middle;
+}
+
+#participation-view-annual .participation-annual-type {
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+#participation-view-annual .participation-annual-type--cash {
+  color: var(--text-primary);
+}
+
+#participation-view-annual .participation-annual-type--kind {
+  color: #64748b;
+}
+
+#participation-view-annual .participation-annual-table td.participation-annual-row--kind,
+#participation-view-annual .participation-annual-table .participation-annual-row--kind {
+  background-color: #f8fafc;
+  color: #64748b;
+}
+
+#participation-view-annual .participation-annual-table .participation-annual-cell--over.participation-annual-row--kind {
+  background-color: #ffe4e6;
+  color: #ff0000;
+}
+
+/* 구분 컬럼 너비 - #participation-view-annual 내 격리 */
+#participation-view-annual .participation-annual-table th:nth-child(2),
+#participation-view-annual .participation-annual-table td:nth-child(2) {
+  width: 60px;
+  min-width: 60px;
+}
+
+/* 가로 스크롤 방지: 표 전체 화면에 꽉 차게 */
+#participation-view-annual .participation-table-wrap {
+  overflow-x: hidden;
+  max-width: 100%;
+}
+
 .participation-project-cards {
   display: flex;
   flex-direction: column;
@@ -2452,7 +2512,7 @@ body {
 #page-participation .participation-base-date-wrap {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.35rem; /* 버튼과의 간격을 조금만 두어 상단을 컴팩트하게 */
 }
 
 #page-participation .participation-base-date-label {
@@ -2461,11 +2521,16 @@ body {
   color: var(--text-secondary);
 }
 
+/* 신규 인력 기준일 DatePicker: 날짜 + 캘린더 아이콘 정도만 보이도록 너비 최적화 */
 #page-participation .participation-base-date-input {
-  padding: 0.35rem 0.5rem;
+  padding: 0.25rem 0.5rem;  /* 양 옆에 약간의 여백만 */
   border: 1px solid var(--border-color);
   border-radius: 0.5rem;
   font-size: 0.9rem;
+  width: 14ch;          /* YYYY-MM-DD 또는 YYYY.MM.DD까지 여유 있게 표시 */
+  min-width: 12ch;
+  text-align: center;   /* 입력값을 중앙 정렬 */
+  box-sizing: border-box;
 }
 
 /* 성명/비고 칸 너비 재정의 (과제별 상세 입력) - 뱃지+이름 짤림 방지 */
@@ -2853,8 +2918,8 @@ body {
 }
 
 #page-participation .participation-floating-th-label {
-  width: 88px;
-  min-width: 88px;
+  width: 110px;
+  min-width: 110px;
   text-align: left;
 }
 
@@ -3048,8 +3113,6 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-
-/* 구분 컬럼은 현재 너비 유지 (명시 지정 없음) */
 
 /* 1월~12월 컬럼: 나머지 공간을 12등분 (table-layout: fixed 에 의해 균등 분배) */
 .participation-annual-table th:nth-child(n+3):nth-child(-n+14),

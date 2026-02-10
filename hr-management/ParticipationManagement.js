@@ -6,6 +6,7 @@
 
 (function () {
   'use strict';
+  console.log('=== DATE CLEANING START ===');
 
   var HR_STORAGE_KEY = 'hr-management-data';
   var PARTICIPATION_STORAGE_KEY = 'hr-participation-data-v2';
@@ -16,7 +17,6 @@
   var tabAnnual = document.getElementById('participation-tab-annual');
 
   var yearSelect = document.getElementById('participation-year');
-  var monthSelect = document.getElementById('participation-month');
   var annualYearSelect = document.getElementById('participation-annual-year');
   var annualSearchInput = document.getElementById('participation-annual-search');
   var projectCardsEl = document.getElementById('participation-project-cards');
@@ -118,6 +118,31 @@
     return totals;
   }
 
+  function getMonthlyTotalsByTypeForPerson(personId, projects) {
+    var projs = projects || (state.projects || []).filter(function (p) { return p.includeInSummary !== false; });
+    var cash = {};
+    var kind = {};
+    for (var m = 1; m <= 12; m++) {
+      cash[m] = 0;
+      kind[m] = 0;
+    }
+    projs.forEach(function (proj) {
+      (proj.members || []).forEach(function (memb) {
+        if (memb.personId !== personId) return;
+        ensureMemberRates(memb);
+        var isKind = (memb.type2 || '현금') === '현물';
+        for (var mm = 1; mm <= 12; mm++) {
+          var v = parseFloat(memb.rates[mm] || 0);
+          if (!isNaN(v)) {
+            if (isKind) kind[mm] += v;
+            else cash[mm] += v;
+          }
+        }
+      });
+    });
+    return { cash: cash, kind: kind };
+  }
+
   function getSortedPersonsForYear(hrData, year) {
     var withIndex = hrData.map(function (p, idx) { return { person: p, idx: idx }; });
     var filtered = withIndex.filter(function (wrap) {
@@ -153,6 +178,9 @@
 
   // 투입 후보군 리스트 열림 상태: { projectId, filter: 'new'|'existing' }
   var openedCandidateState = { projectId: null, filter: null };
+
+  // 인력별 연간 요약 필터: 'all' | 'cash' | 'kind'
+  var annualTypeFilter = 'all';
 
   // 플로팅 패널: 현재 포커스된 인원/월 정보
   var currentFocusPersonId = null;
@@ -227,19 +255,24 @@
       if (!Array.isArray(s.projects) || s.projects.length === 0) {
         s.projects = [{ id: 1, title: '새 과제', includeInSummary: true, members: [] }];
       }
-      // 프로젝트 기본 필드 보정 (includeInSummary 기본 true)
+      // 프로젝트 기본 필드 보정 (includeInSummary 기본 true, 기준일 정규화)
       s.projects = s.projects.map(function (p) {
         if (p.includeInSummary === undefined) p.includeInSummary = true;
         if (!Array.isArray(p.members)) p.members = [];
+        var baseYear = s.selectedYear || defaultYear;
+        var rawBaseDate = (p.newPersonnelBaseDate && String(p.newPersonnelBaseDate)) || (baseYear + '-01-01');
+        // 예전 버전에서 저장된 "YYYY-MM-DD ()" 처럼 괄호가 섞인 값을 정규식으로 정리
+        var cleanedBase = String(rawBaseDate).replace(/\(.*\)/g, '').trim();
+        // normalizeDateStr로 YYYY-MM-DD 형태만 남기고, 앞 10자리만 사용
+        var normalizedBase = normalizeDateStr(cleanedBase, baseYear + '-01-01').slice(0, 10);
+        p.newPersonnelBaseDate = normalizedBase;
         return p;
       });
       return s;
     } catch (e) {
       console.warn('참여율 state 초기화 오류, 기본값 사용:', e);
-      var now = new Date();
       return {
         selectedYear: defaultYear,
-        selectedMonth: now.getMonth() + 1,
         projects: [{ id: 1, title: '새 과제', includeInSummary: true, members: [], newPersonnelBaseDate: defaultYear + '-01-01' }]
       };
     }
@@ -257,15 +290,6 @@
     state.selectedYear = year;
     saveState();
     renderAll();
-  }
-
-  function setSelectedMonth(month) {
-    var m = parseInt(month, 10);
-    if (m >= 1 && m <= 12) {
-      state.selectedMonth = m;
-      saveState();
-      renderProjectView();
-    }
   }
 
   function setProjects(projects) {
@@ -291,15 +315,6 @@
     });
     if (yearSelect) yearSelect.innerHTML = opts;
     if (annualYearSelect) annualYearSelect.innerHTML = opts;
-  }
-
-  function renderMonthSelect() {
-    if (!monthSelect) return;
-    var opts = '';
-    for (var m = 1; m <= 12; m++) {
-      opts += '<option value="' + m + '"' + (m === state.selectedMonth ? ' selected' : '') + '>' + m + '월</option>';
-    }
-    monthSelect.innerHTML = opts;
   }
 
   function ensureMemberRates(member) {
@@ -335,11 +350,15 @@
     var person = hrData.find(function (p) { return p.id === currentFocusPersonId; }) || {};
     var name = person.name || person.id || currentFocusPersonId;
 
-    var sumIncluded = {};  // includeInSummary !== false
-    var sumExcluded = {};  // includeInSummary === false
+    var sumIncludedCash = {};
+    var sumIncludedKind = {};
+    var sumExcludedCash = {};
+    var sumExcludedKind = {};
     for (var m = 1; m <= 12; m++) {
-      sumIncluded[m] = 0;
-      sumExcluded[m] = 0;
+      sumIncludedCash[m] = 0;
+      sumIncludedKind[m] = 0;
+      sumExcludedCash[m] = 0;
+      sumExcludedKind[m] = 0;
     }
 
     var projects = Array.isArray(state.projects) ? state.projects : [];
@@ -348,6 +367,7 @@
       (proj.members || []).forEach(function (memb) {
         if (memb.personId !== currentFocusPersonId) return;
         ensureMemberRates(memb);
+        var isKind = (memb.type2 || '현금') === '현물';
         for (var mm = 1; mm <= 12; mm++) {
           var v;
           if (
@@ -363,9 +383,11 @@
           var disabled = isMonthDisabledForPerson(person, year, mm);
           if (disabled) v = 0;
           if (isIncluded) {
-            sumIncluded[mm] += v;
+            if (isKind) sumIncludedKind[mm] += v;
+            else sumIncludedCash[mm] += v;
           } else {
-            sumExcluded[mm] += v;
+            if (isKind) sumExcludedKind[mm] += v;
+            else sumExcludedCash[mm] += v;
           }
         }
       });
@@ -373,35 +395,35 @@
 
     panel.hidden = false;
 
+    function buildRow(label, labelCls, bulletCls, values, isIncluded) {
+      var cells = '';
+      for (var i = 1; i <= 12; i++) {
+        var v = values[i] || 0;
+        var total = isIncluded ? (sumIncludedCash[i] + sumIncludedKind[i]) : (sumExcludedCash[i] + sumExcludedKind[i]);
+        var cellCls = total > 100 ? ' participation-floating-cell--over' : '';
+        if (i === currentFocusMonth) cellCls += ' participation-floating-cell--focus';
+        cells += '<td class="participation-floating-cell ' + labelCls + cellCls + '">' + (v ? v.toFixed(1) + '%' : '') + '</td>';
+      }
+      return '<tr><td class="participation-floating-label ' + labelCls + '"><span class="participation-floating-bullet ' + bulletCls + '"></span>' + label + '</td>' + cells + '</tr>';
+    }
+
     var title = '<strong>' + name + '</strong>님의 참여율';
     var headerCells = '';
     for (var h = 1; h <= 12; h++) {
       var hCls = h === currentFocusMonth ? ' participation-floating-th--focus' : '';
       headerCells += '<th class="participation-floating-th' + hCls + '">' + h + '월</th>';
     }
-    var rowIncluded = '';
-    for (var r1 = 1; r1 <= 12; r1++) {
-      var v1 = sumIncluded[r1];
-      var cellCls1 = v1 > 100 ? ' participation-floating-cell--over' : '';
-      if (r1 === currentFocusMonth) cellCls1 += ' participation-floating-cell--focus';
-      rowIncluded += '<td class="participation-floating-cell participation-floating-cell--included' + cellCls1 + '">' + (v1 ? v1.toFixed(1) + '%' : '') + '</td>';
-    }
-    var rowExcluded = '';
-    for (var r2 = 1; r2 <= 12; r2++) {
-      var v2 = sumExcluded[r2];
-      var cellCls2 = v2 > 100 ? ' participation-floating-cell--over' : '';
-      if (r2 === currentFocusMonth) cellCls2 += ' participation-floating-cell--focus';
-      rowExcluded += '<td class="participation-floating-cell participation-floating-cell--excluded' + cellCls2 + '">' + (v2 ? v2.toFixed(1) + '%' : '') + '</td>';
-    }
+
+    var row1 = buildRow('합산 반영 - 현금', 'participation-floating-label--included', 'participation-floating-bullet--included', sumIncludedCash, true);
+    var row2 = buildRow('합산 반영 - 현물', 'participation-floating-label--included', 'participation-floating-bullet--included', sumIncludedKind, true);
+    var row3 = buildRow('미합산 반영 - 현금', 'participation-floating-label--excluded', 'participation-floating-bullet--excluded', sumExcludedCash, false);
+    var row4 = buildRow('미합산 반영 - 현물', 'participation-floating-label--excluded', 'participation-floating-bullet--excluded', sumExcludedKind, false);
 
     innerEl.innerHTML =
       '<div class="participation-floating-panel-title">' + title + '</div>' +
       '<table class="participation-floating-table">' +
-      '<thead><tr><th class="participation-floating-th-label"></th>' + headerCells + '</tr></thead>' +
-      '<tbody>' +
-      '<tr><td class="participation-floating-label participation-floating-label--included"><span class="participation-floating-bullet participation-floating-bullet--included"></span>합산 반영</td>' + rowIncluded + '</tr>' +
-      '<tr><td class="participation-floating-label participation-floating-label--excluded"><span class="participation-floating-bullet participation-floating-bullet--excluded"></span>미합산 반영</td>' + rowExcluded + '</tr>' +
-      '</tbody></table>';
+      '<thead><tr><th class="participation-floating-th-label">항목</th>' + headerCells + '</tr></thead>' +
+      '<tbody>' + row1 + row2 + row3 + row4 + '</tbody></table>';
   }
 
   // 페이지 바깥(카드/입력 영역 밖)을 클릭하면 플로팅 패널을 숨기는 전역 클릭 핸들러
@@ -494,16 +516,69 @@
       var baseDateLabel = document.createElement('label');
       baseDateLabel.className = 'participation-base-date-label';
       baseDateLabel.textContent = '신규 인력 기준일';
+
       var baseDateInput = document.createElement('input');
-      baseDateInput.type = 'date';
+      // 1. UX를 위해 text 타입으로 고정
+      baseDateInput.setAttribute('type', 'text');
+      baseDateInput.type = 'text';
       baseDateInput.className = 'participation-base-date-input';
-      baseDateInput.value = proj.newPersonnelBaseDate || (state.selectedYear + '-01-01');
-      baseDateInput.addEventListener('change', function () {
+      baseDateInput.placeholder = 'YYYY.MM.DD';
+
+      // 공통 포맷팅 유틸 (YYYY, MM, DD 추출 후 YYYY.MM.DD / YYYY-MM-DD 반환)
+      function normalizeDateForCard(raw) {
+        var src = String(raw || '').replace(/[()]/g, '').trim();
+        // 숫자/구분자 외 제거
+        src = src.replace(/[^0-9\-\/.]/g, '');
+        var digits = src.replace(/\D/g, '');
+        var y = '', m = '', d = '';
+        if (digits.length >= 8) {
+          y = digits.slice(0, 4);
+          m = digits.slice(4, 6);
+          d = digits.slice(6, 8);
+        } else {
+          // 자리수가 부족하면 selectedYear 기준 기본값
+          y = String(state.selectedYear || new Date().getFullYear());
+          m = '01';
+          d = '01';
+        }
+        var yi = parseInt(y, 10);
+        var mi = Math.min(Math.max(parseInt(m || '1', 10), 1), 12);
+        var di = Math.min(Math.max(parseInt(d || '1', 10), 1), 31);
+        function pad2(n) { return n < 10 ? '0' + n : String(n); }
+        var mm = pad2(mi);
+        var dd = pad2(di);
+        return {
+          display: yi + '.' + mm + '.' + dd, // 화면용
+          store: yi + '-' + mm + '-' + dd    // 저장용
+        };
+      }
+
+      // 4. 로드 시: 저장된 하이픈 포맷을 점 포맷으로 변환하여 중앙 정렬로 보여줌
+      var rawCardBaseDate = proj.newPersonnelBaseDate || (state.selectedYear + '-01-01');
+      var normalized = normalizeDateForCard(rawCardBaseDate);
+      console.log('Cleaning Result (baseDateInput):', rawCardBaseDate, '=>', normalized.display, '/', normalized.store);
+      baseDateInput.value = normalized.display;
+
+      // 3. Blur 시 스마트 포맷팅 + 저장 동기화
+      baseDateInput.addEventListener('blur', function (e) {
+        var val = (e && e.target && e.target.value) ? String(e.target.value) : '';
+        var norm = normalizeDateForCard(val);
+        baseDateInput.value = norm.display; // 화면에는 항상 YYYY.MM.DD
+
         var newProjects = state.projects.map(function (p) {
           if (p.id !== proj.id) return p;
-          return Object.assign({}, p, { newPersonnelBaseDate: baseDateInput.value || (state.selectedYear + '-01-01') });
+          // DB/저장소에는 항상 YYYY-MM-DD (하이픈) 포맷으로 저장
+          return Object.assign({}, p, { newPersonnelBaseDate: norm.store });
         });
         setProjects(newProjects);
+      });
+
+      // 1. 엔터 키 입력 시 blur 강제 호출 → 위 blur 로직(포맷팅+저장) 재사용
+      baseDateInput.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          baseDateInput.blur();
+        }
       });
       baseDateWrap.appendChild(baseDateLabel);
       baseDateWrap.appendChild(baseDateInput);
@@ -916,7 +991,7 @@
           return;
         }
 
-        var editMonth = state.selectedMonth || 1;
+        var editMonth = (new Date().getMonth() + 1);
         var baseDate = proj.newPersonnelBaseDate || (state.selectedYear + '-01-01');
 
         personsSorted.forEach(function (p) {
@@ -1199,29 +1274,46 @@
     }
 
     persons.forEach(function (person) {
-      var totals = getMonthlyTotalsForPerson(person.id, projects);
-      html += '<tr>';
+      var byType = getMonthlyTotalsByTypeForPerson(person.id, projects);
       var name = person.name || person.id || '-';
       var loss = person.lossDate || person['자격상실일'];
       if (loss) name += ' (퇴사)';
-      html += '<td class="participation-annual-name">' + name + '</td>';
-      html += '<td class="participation-annual-dept">' + (person.department || person['소속'] || '') + '</td>';
 
-      for (var mm = 1; mm <= 12; mm++) {
-        var v = totals[mm] || 0;
-        var cls = '';
-        var disabled = isMonthDisabledForPerson(person, year, mm);
-        if (disabled) {
-          cls = 'participation-annual-cell--disabled';
-          v = 0;
+      var showCash = (annualTypeFilter === 'all' || annualTypeFilter === 'cash');
+      var showKind = (annualTypeFilter === 'all' || annualTypeFilter === 'kind');
+      var useRowspan = annualTypeFilter === 'all';
+
+      function buildRow(typeLabel, values, isKindRow) {
+        var rowHtml = '';
+        var includeRow = (isKindRow && showKind) || (!isKindRow && showCash);
+        if (includeRow) {
+          var nameCell;
+          if (useRowspan) {
+            nameCell = isKindRow ? '' : ('<td rowspan="2" class="participation-annual-name participation-annual-name-cell">' + name + '</td>');
+          } else {
+            nameCell = '<td class="participation-annual-name participation-annual-name-cell">' + name + '</td>';
+          }
+          var typeCell = '<td class="participation-annual-type participation-annual-type--' + (isKindRow ? 'kind' : 'cash') + '">' + typeLabel + '</td>';
+          rowHtml = '<tr>' + nameCell + typeCell;
+          for (var mm = 1; mm <= 12; mm++) {
+            var v = values[mm] || 0;
+            var cls = 'participation-annual-cell';
+            var disabled = isMonthDisabledForPerson(person, year, mm);
+            if (disabled) {
+              cls += ' participation-annual-cell--disabled';
+              v = 0;
+            }
+            if (!disabled && v > 100) cls += ' participation-annual-cell--over';
+            if (isKindRow) cls += ' participation-annual-row--kind';
+            rowHtml += '<td class="' + cls + '">' + (v ? v.toFixed(1) + '%' : '') + '</td>';
+          }
+          rowHtml += '</tr>';
         }
-        // 월별 합계가 100%를 초과하면 빨간색 경고 스타일
-        if (!disabled && v > 100) {
-          cls += (cls ? ' ' : '') + 'participation-annual-cell--over';
-        }
-        html += '<td class="' + cls + '">' + (v ? v.toFixed(1) + '%' : '') + '</td>';
+        return rowHtml;
       }
-      html += '</tr>';
+
+      html += buildRow('현금', byType.cash, false);
+      html += buildRow('현물', byType.kind, true);
     });
 
     html += '</tbody></table>';
@@ -1230,7 +1322,6 @@
 
   function renderAll() {
     renderYearSelect();
-    renderMonthSelect();
     renderProjectView();
     applyPendingFocus();
   }
@@ -1295,6 +1386,17 @@
       if (viewAnnualEl && !viewAnnualEl.hidden) renderAnnualView();
     });
   }
+
+  document.addEventListener('click', function (e) {
+    var btn = e.target && e.target.closest('.participation-annual-filter-btn');
+    if (!btn) return;
+    annualTypeFilter = btn.getAttribute('data-filter') || 'all';
+    document.querySelectorAll('.participation-annual-filter-btn').forEach(function (b) {
+      b.classList.toggle('active', b.getAttribute('data-filter') === annualTypeFilter);
+    });
+    var viewAnnualEl = document.getElementById('participation-view-annual');
+    if (viewAnnualEl && !viewAnnualEl.hidden) renderAnnualView();
+  });
 
   window.addEventListener('hashchange', onParticipationRoute);
   if (document.readyState === 'loading') {

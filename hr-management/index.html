@@ -395,8 +395,6 @@
           <div class="participation-year-row">
               <label for="participation-year">연도</label>
               <select id="participation-year" class="ui-select" aria-label="연도 선택"></select>
-              <label for="participation-month">편집 월</label>
-              <select id="participation-month" class="ui-select" aria-label="편집 월 선택"></select>
             </div>
             <div id="participation-project-cards" class="participation-project-cards"></div>
             <button type="button" id="participation-add-project-btn" class="ui-btn ui-btn--primary">+ 프로젝트 추가</button>
@@ -406,6 +404,11 @@
             <div class="participation-annual-year-row">
               <label for="participation-annual-year">연도</label>
               <select id="participation-annual-year" class="ui-select" aria-label="연도 선택"></select>
+              <div class="participation-annual-filter" role="group" aria-label="구분 필터">
+                <button type="button" class="ui-btn ui-btn--ghost participation-annual-filter-btn active" data-filter="all">전체</button>
+                <button type="button" class="ui-btn ui-btn--ghost participation-annual-filter-btn" data-filter="cash">현금</button>
+                <button type="button" class="ui-btn ui-btn--ghost participation-annual-filter-btn" data-filter="kind">현물</button>
+              </div>
               <label for="participation-annual-search" class="participation-annual-search-label">이름</label>
               <input type="text" id="participation-annual-search" class="participation-annual-search-input" placeholder="이름" aria-label="이름 검색" autocomplete="off">
             </div>
