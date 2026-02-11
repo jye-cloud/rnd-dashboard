@@ -59,17 +59,36 @@
   const pageHr = document.getElementById('page-hr');
   const pagePayroll = document.getElementById('page-payroll');
   const pageParticipation = document.getElementById('page-participation');
+  const pageCalendar = document.getElementById('page-calendar');
   const navHr = document.getElementById('nav-hr');
   const navPayroll = document.getElementById('nav-payroll');
   const navParticipation = document.getElementById('nav-participation');
+  const navCalendar = document.getElementById('nav-calendar');
 
   const UI_STATE_KEY = 'hr-management-ui-state';
 
-  // 라우팅: 해시(#/hr, #/participation, #/payroll)에 따라 메인 영역 페이지 전환
+  // 사이드바 토글 (축소/확장) - 별도 키로 상태 유지
+  const SIDEBAR_STATE_KEY = 'hr-sidebar-collapsed';
+  const sidebar = document.getElementById('sidebar');
+  const sidebarToggle = document.getElementById('sidebar-toggle');
+  if (sidebar && sidebarToggle) {
+    sidebarToggle.addEventListener('click', function () {
+      sidebar.classList.toggle('sidebar--collapsed');
+      try {
+        localStorage.setItem(SIDEBAR_STATE_KEY, sidebar.classList.contains('sidebar--collapsed') ? '1' : '');
+      } catch (e) {}
+    });
+    try {
+      if (localStorage.getItem(SIDEBAR_STATE_KEY) === '1') sidebar.classList.add('sidebar--collapsed');
+    } catch (e) {}
+  }
+
+  // 라우팅: 해시(#/hr, #/participation, #/payroll, #/calendar)에 따라 메인 영역 페이지 전환
   function getPageFromHash() {
     var h = (window.location.hash || '#/hr').replace(/^#\/?/, '');
     if (h === 'participation') return 'participation';
     if (h === 'payroll') return 'payroll';
+    if (h === 'calendar') return 'calendar';
     return 'hr';
   }
   function renderRoute() {
@@ -86,9 +105,17 @@
       pagePayroll.classList.toggle('active', page === 'payroll');
       pagePayroll.hidden = page !== 'payroll';
     }
+    if (pageCalendar) {
+      pageCalendar.classList.toggle('active', page === 'calendar');
+      pageCalendar.hidden = page !== 'calendar';
+      if (page === 'calendar' && typeof window.CalendarManagement !== 'undefined' && window.CalendarManagement.onPageShow) {
+        window.CalendarManagement.onPageShow();
+      }
+    }
     if (navHr) navHr.classList.toggle('active', page === 'hr');
     if (navParticipation) navParticipation.classList.toggle('active', page === 'participation');
     if (navPayroll) navPayroll.classList.toggle('active', page === 'payroll');
+    if (navCalendar) navCalendar.classList.toggle('active', page === 'calendar');
   }
   window.addEventListener('hashchange', renderRoute);
   if (!window.location.hash || window.location.hash === '#') {

@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>[R&DM] 인력 정보</title>
   <link rel="stylesheet" href="style.css">
+  <!-- FullCalendar 5.11.5 (제출 관리 캘린더) -->
+  <link href="https://cdn.jsdelivr.net/npm/fullcalendar@5.11.5/main.min.css" rel="stylesheet">
   <!-- HR/Payroll 전용 테이블 레이아웃 격리 스타일 -->
   <style>
     /* 인력 정보 관리 페이지 전용 테이블 레이아웃 */
@@ -194,14 +196,16 @@
 </head>
 <body>
   <div class="dashboard">
-    <aside class="sidebar" aria-label="메인 메뉴">
+    <aside class="sidebar" id="sidebar" aria-label="메인 메뉴">
       <div class="sidebar-header">
+        <button type="button" class="sidebar-toggle" id="sidebar-toggle" aria-label="메뉴 접기/펼치기" title="메뉴 접기/펼치기">☰</button>
         <h1 class="sidebar-title">R&DM</h1>
       </div>
       <nav class="sidebar-nav">
-        <a href="#/hr" class="sidebar-link active" data-page="hr" id="nav-hr">인력 정보 관리</a>
-        <a href="#/participation" class="sidebar-link" data-page="participation" id="nav-participation">참여율 관리</a>
-        <a href="#/payroll" class="sidebar-link" data-page="payroll" id="nav-payroll">인건비 관리</a>
+        <a href="#/hr" class="sidebar-link active" data-page="hr" id="nav-hr"><span class="sidebar-link-icon" aria-hidden="true">👤</span><span class="sidebar-link-text">인력 정보 관리</span></a>
+        <a href="#/participation" class="sidebar-link" data-page="participation" id="nav-participation"><span class="sidebar-link-icon" aria-hidden="true">📊</span><span class="sidebar-link-text">참여율 관리</span></a>
+        <a href="#/payroll" class="sidebar-link" data-page="payroll" id="nav-payroll"><span class="sidebar-link-icon" aria-hidden="true">💰</span><span class="sidebar-link-text">인건비 관리</span></a>
+        <a href="#/calendar" class="sidebar-link" data-page="calendar" id="nav-calendar"><span class="sidebar-link-icon" aria-hidden="true">📅</span><span class="sidebar-link-text">제출 일정 관리</span></a>
       </nav>
     </aside>
 
@@ -505,6 +509,16 @@
           </div>
         </div>
       </div>
+
+      <!-- 제출 관리 캘린더 페이지 -->
+      <div id="page-calendar" class="page" hidden>
+        <div class="container">
+          <header class="header">
+            <h1 class="header-title">[R&DM] 제출 일정 관리</h1>
+          </header>
+          <div id="calendar-wrap" class="calendar-wrap"></div>
+        </div>
+      </div>
     </main>
 
     <!-- 퀵 내비게이션 (인건비/참여율 등 데이터가 긴 페이지 공통) -->
@@ -648,10 +662,65 @@
     </div>
   </div>
 
+  <!-- 제출 일정 등록 모달 -->
+  <div id="calendar-event-modal" class="modal calendar-event-modal" aria-hidden="true" hidden>
+    <div class="modal-content calendar-event-modal-content">
+      <div class="modal-header">
+        <h2 id="calendar-event-modal-title">일정 등록</h2>
+        <button type="button" class="close-btn" id="calendar-event-modal-close" aria-label="닫기">&times;</button>
+      </div>
+      <form id="calendar-event-form" class="modal-form calendar-event-form">
+        <div class="form-row calendar-event-form-row">
+          <div class="form-group calendar-event-form-group">
+            <label for="calendar-event-date">날짜</label>
+            <input type="text" id="calendar-event-date" class="calendar-event-input calendar-event-date-input" readonly>
+          </div>
+          <div class="form-group calendar-event-form-group">
+            <label for="calendar-event-time">제출 마감 시간</label>
+            <input type="time" id="calendar-event-time" class="calendar-event-input" value="18:00">
+          </div>
+        </div>
+        <div class="form-group calendar-event-form-group">
+          <label>과제 성격(구분)</label>
+          <div class="calendar-event-type-row" role="group" aria-label="과제 성격 선택">
+            <label class="calendar-event-type-label">
+              <input type="radio" name="calendar-event-type" value="existing" checked>
+              <span>기존</span>
+            </label>
+            <label class="calendar-event-type-label">
+              <input type="radio" name="calendar-event-type" value="new">
+              <span>신규</span>
+            </label>
+          </div>
+        </div>
+        <div class="form-group calendar-event-form-group">
+          <label for="calendar-event-project">과제 선택</label>
+          <input type="text" id="calendar-event-project" class="calendar-event-input" list="calendar-event-project-list" placeholder="기존 과제 선택 또는 새로 입력" required>
+          <datalist id="calendar-event-project-list"></datalist>
+        </div>
+        <div class="form-group calendar-event-form-group">
+          <label for="calendar-event-item">제출 항목</label>
+          <input type="text" id="calendar-event-item" class="calendar-event-input" placeholder="예: 중간보고서, 최종보고서 등">
+        </div>
+        <div class="form-group calendar-event-form-group">
+          <label for="calendar-event-method">제출 방법</label>
+          <input type="text" id="calendar-event-method" class="calendar-event-input" placeholder="예: 온라인 시스템 제출, 담당자 메일 발송 등">
+        </div>
+        <div class="form-actions">
+          <button type="button" class="cancel-btn" id="calendar-event-cancel">취소</button>
+          <button type="submit" class="submit-btn" id="calendar-event-submit">등록</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/fullcalendar@5.11.5/main.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@fullcalendar/core@5.11.5/locales-all.global.min.js"></script>
   <script src="app.js"></script>
   <script src="MonthlyPayroll.js"></script>
   <script src="ParticipationManagement.js"></script>
+  <script src="CalendarManagement.js"></script>
   <script src="QuickNav.js"></script>
 </body>
 </html>

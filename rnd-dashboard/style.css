@@ -53,11 +53,47 @@ body {
   flex-direction: column;
   flex-shrink: 0;
   box-shadow: var(--shadow-sm);
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
+  max-height: 100vh;
+  transition: width 0.3s ease, min-width 0.3s ease;
+}
+
+.sidebar.sidebar--collapsed {
+  width: 56px;
+  min-width: 56px;
 }
 
 .sidebar-header {
-  padding: 1.25rem 1rem;
+  padding: 1rem 0.75rem;
   border-bottom: 1px solid #e2e8f0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.sidebar-toggle {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  border-radius: 0.5rem;
+  font-size: 1.25rem;
+  cursor: pointer;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.2s, color 0.2s;
+}
+
+.sidebar-toggle:hover {
+  background: rgba(37, 99, 235, 0.1);
+  color: var(--primary-color);
 }
 
 .sidebar-title {
@@ -65,6 +101,21 @@ body {
   font-weight: 700;
   color: var(--text-primary);
   letter-spacing: -0.025em;
+  white-space: nowrap;
+  overflow: hidden;
+  transition: opacity 0.3s;
+}
+
+.sidebar--collapsed .sidebar-title {
+  opacity: 0;
+  width: 0;
+  overflow: hidden;
+  padding: 0;
+  margin: 0;
+}
+
+.sidebar--collapsed .sidebar-header {
+  justify-content: center;
 }
 
 .sidebar-nav {
@@ -72,10 +123,15 @@ body {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
 }
 
 .sidebar-link {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
   padding: 0.65rem 1rem;
   margin: 0 0.5rem;
   font-size: 0.9rem;
@@ -97,10 +153,44 @@ body {
   font-weight: 600;
 }
 
+.sidebar-link-icon {
+  flex-shrink: 0;
+  font-size: 1.1rem;
+}
+
+.sidebar-link-text {
+  white-space: nowrap;
+  overflow: hidden;
+  transition: opacity 0.3s;
+}
+
+.sidebar--collapsed .sidebar-link-text {
+  opacity: 0;
+  width: 0;
+  overflow: hidden;
+  padding: 0;
+}
+
+.sidebar--collapsed .sidebar-link {
+  justify-content: center;
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+  margin: 0 0.35rem;
+}
+
 .main-area {
   flex: 1;
   overflow: auto;
   min-width: 0;
+}
+
+/* 캘린더 페이지 활성 시 브라우저 스크롤 방지 */
+.main-area:has(#page-calendar:not([hidden])) {
+  overflow: hidden;
+}
+
+body:has(#page-calendar:not([hidden])) {
+  overflow: hidden;
 }
 
 .page {
@@ -2446,10 +2536,36 @@ body {
 }
 
 /* 구분 컬럼 너비 - #participation-view-annual 내 격리 */
-#participation-view-annual .participation-annual-table th:nth-child(2),
-#participation-view-annual .participation-annual-table td:nth-child(2) {
+/* 구분 컬럼 (3번째) */
+#participation-view-annual .participation-annual-table th:nth-child(3),
+#participation-view-annual .participation-annual-table td:nth-child(3) {
   width: 60px;
   min-width: 60px;
+}
+
+/* 3책 5공 컬럼 (연간 요약, 2번째) */
+#participation-view-annual .participation-annual-th-35,
+#participation-view-annual .participation-annual-table .participation-annual-35 {
+  width: 70px;
+  min-width: 70px;
+}
+
+#participation-view-annual .participation-annual-table .participation-annual-35--over {
+  color: #dc2626;
+  font-weight: 700;
+}
+
+/* 플로팅 패널 내 3책 5공 표시 */
+#page-participation .participation-floating-35 {
+  margin-left: 0.75rem;
+  font-size: 0.9rem;
+  color: #334155;
+  font-weight: 500;
+}
+
+#page-participation .participation-floating-35--over {
+  color: #ff0000;
+  font-weight: 700;
 }
 
 /* 가로 스크롤 방지: 표 전체 화면에 꽉 차게 */
@@ -2755,6 +2871,37 @@ body {
   color: #4b5563;
 }
 
+/* 3책 5공 배지: 책=빨간색, 공=파란색 */
+#page-participation .participation-badge--3ch5g-ch {
+  background-color: #fee2e2;
+  color: #dc2626;
+}
+
+#page-participation .participation-badge--3ch5g-gong {
+  background-color: #dbeafe;
+  color: #1d4ed8;
+}
+
+/* 3책 5공 배지 토글: 클릭 시 역할 전환 */
+#page-participation .participation-badge--toggle {
+  cursor: pointer;
+  user-select: none;
+}
+
+#page-participation .participation-badge--toggle:hover {
+  opacity: 0.85;
+}
+
+/* 3책 5공 체크박스 (카드 하단, 참여율 합산 미반영 왼쪽) */
+#page-participation .participation-3ch5g-target-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
 #page-participation .participation-person-name-text {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2833,6 +2980,7 @@ body {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  flex-wrap: wrap;
 }
 
 .participation-type-select {
@@ -3016,12 +3164,23 @@ body {
   border: 1px solid #e2e8f0;
 }
 
+/* 카드 하단 체크박스 통합 (3책 5공 | 참여율 합산 미반영) - 우측 정렬 */
+#page-participation .participation-card-bottom-toggles {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  margin-left: auto;
+  padding-right: 10px;
+}
+
+#page-participation .participation-card-bottom-toggles .participation-summary-toggle {
+  margin-left: 0;
+}
+
 .participation-summary-toggle {
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
-  margin-left: auto;
-  padding-right: 10px;
   font-size: 0.8rem;
   color: var(--text-secondary);
   white-space: nowrap;
@@ -3114,9 +3273,9 @@ body {
   text-overflow: ellipsis;
 }
 
-/* 1월~12월 컬럼: 나머지 공간을 12등분 (table-layout: fixed 에 의해 균등 분배) */
-.participation-annual-table th:nth-child(n+3):nth-child(-n+14),
-.participation-annual-table td:nth-child(n+3):nth-child(-n+14) {
+/* 1월~12월 컬럼: 나머지 공간을 12등분 (이름|3책5공|구분|1~12월) */
+.participation-annual-table th:nth-child(n+4):nth-child(-n+15),
+.participation-annual-table td:nth-child(n+4):nth-child(-n+15) {
   width: auto;
 }
 
@@ -3186,4 +3345,374 @@ body {
 
 .quick-nav-fab .quick-nav-btn[hidden] {
   display: none !important;
+}
+
+/* ========== 제출 일정 관리 캘린더 페이지 ========== */
+
+#page-calendar {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+#page-calendar .container {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  max-width: none;
+  width: 100%;
+  padding-bottom: 0;
+  overflow: hidden !important;
+}
+
+#page-calendar .calendar-wrap {
+  margin-top: 0.25rem;
+  margin-bottom: 0;
+  padding: 1rem;
+  padding-bottom: 20px;
+  height: calc((100vh - 150px) * 0.98);
+  background-color: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+#page-calendar #calendar {
+  font-family: inherit;
+  font-size: 0.9rem;
+  width: 100% !important;
+  max-width: none !important;
+  height: 100% !important;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden !important;
+}
+
+#page-calendar .fc {
+  width: 100% !important;
+  height: 100% !important;
+  overflow: hidden !important;
+}
+
+#page-calendar .fc-view-harness {
+  height: 100% !important;
+  overflow: hidden !important;
+}
+
+#page-calendar .fc-scroller-harness,
+#page-calendar .fc-scroller {
+  height: 100% !important;
+}
+
+#page-calendar .fc-scrollgrid {
+  overflow: hidden !important;
+}
+
+#page-calendar .fc-scrollgrid-liquid {
+  height: 100% !important;
+}
+
+/* 높이 해결: 테이블 두 가지만 적용 */
+#page-calendar .fc-scrollgrid-sync-table,
+#page-calendar .fc-daygrid-body table {
+  height: 100% !important;
+  table-layout: fixed;
+}
+
+/* 행(tr) 강제 확장: 5개 주간 행이 흰색 박스를 5등분 */
+#page-calendar .fc-daygrid-body tbody tr {
+  height: calc(100% / 5) !important;
+}
+
+/* 6번째 행 숨기기 */
+#page-calendar .fc-daygrid-body tbody tr:nth-child(6) {
+  display: none !important;
+}
+
+/* 각 칸: height 1px = 테이블에서 "가능한 최대로 늘어나라" 신호 */
+#page-calendar .fc-daygrid-day {
+  height: 1px !important;
+}
+
+/* 날짜 칸 내부 프레임 */
+#page-calendar .fc-daygrid-day-frame {
+  height: 100% !important;
+}
+
+#page-calendar .fc {
+  --fc-border-color: var(--border-color);
+  --fc-button-bg-color: transparent;
+  --fc-button-border-color: transparent;
+  --fc-button-hover-bg-color: rgba(0, 0, 0, 0.05);
+  --fc-button-hover-border-color: transparent;
+  --fc-today-bg-color: rgba(37, 99, 235, 0.06);
+  --fc-event-bg-color: var(--primary-color);
+  --fc-event-border-color: var(--primary-color);
+}
+
+#page-calendar .fc .fc-button-primary {
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+#page-calendar .fc .fc-button-primary:hover {
+  color: #64748b;
+}
+
+#page-calendar .fc-toolbar {
+  flex-shrink: 0;
+  align-items: center;
+}
+
+#page-calendar .fc-toolbar-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+#page-calendar .fc-col-header-cell-cushion,
+#page-calendar .fc-daygrid-day-number {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+}
+
+/* 숫자 위치 강제 교정: 왼쪽 끝 정렬 */
+#page-calendar .fc-daygrid-day-top {
+  display: flex !important;
+  flex-direction: row !important;
+  justify-content: flex-start !important;
+  position: relative;
+  z-index: 2;
+  font-size: 0;
+}
+
+#page-calendar .fc-daygrid-day-number {
+  padding-left: 8px !important;
+  padding-top: 5px !important;
+  font-size: 0.85rem;
+}
+
+/* 숫자 외에 제멋대로 생성된 모든 텍스트 노드 차단 */
+#page-calendar .fc-daygrid-day-top > *:not(.fc-daygrid-day-number) {
+  display: none !important;
+}
+
+#page-calendar .fc-daygrid-day-frame::before {
+  content: none !important;
+}
+
+#page-calendar .fc-daygrid-more-link {
+  display: none !important;
+}
+
+#page-calendar .fc-daygrid-day-top .fc-daygrid-day-number {
+  text-align: left;
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+#page-calendar .fc-daygrid-day-top .fc-daygrid-day-number::before,
+#page-calendar .fc-daygrid-day-top .fc-daygrid-day-number::after {
+  display: none !important;
+  content: none !important;
+}
+
+/* 일정 막대: 날짜 숫자와 겹치지 않도록 상단 여백 */
+#page-calendar .fc-daygrid-day-events {
+  margin-top: 10px;
+  position: relative;
+  z-index: 1;
+}
+
+#page-calendar .fc-daygrid-day.fc-day-today .fc-daygrid-day-number {
+  color: var(--primary-color);
+  font-weight: 600;
+}
+
+/* 주말 색상: 일요일=빨강, 토요일=파랑 */
+#page-calendar .fc-day-sun .fc-daygrid-day-number,
+#page-calendar .fc-col-header-cell.fc-day-sun .fc-col-header-cell-cushion {
+  color: #FF0000 !important;
+}
+
+#page-calendar .fc-day-sat .fc-daygrid-day-number,
+#page-calendar .fc-col-header-cell.fc-day-sat .fc-col-header-cell-cushion {
+  color: #0000FF !important;
+}
+
+/* 공휴일: 날짜 숫자 빨간색, 배경 연한 빨강 */
+#page-calendar .fc-daygrid-day.fc-day-holiday .fc-daygrid-day-number {
+  color: #FF0000 !important;
+}
+
+#page-calendar .fc-bg-event.fc-event-holiday {
+  background-color: #FFF0F0 !important;
+}
+
+/* 이전/다음 달 날짜: 훨씬 옅은 회색, 강제 노출 */
+#page-calendar .fc-daygrid-day.fc-day-other {
+  background-color: #fafafa;
+  visibility: visible !important;
+}
+
+#page-calendar .fc-daygrid-day.fc-day-other .fc-daygrid-day-top {
+  opacity: 1 !important;
+  visibility: visible !important;
+}
+
+#page-calendar .fc-daygrid-day.fc-day-other .fc-daygrid-day-number {
+  color: #d3d3d3 !important;
+  display: block !important;
+}
+
+#page-calendar .calendar-event-badge {
+  display: inline-block;
+  padding: 0.2rem 0.5rem;
+  border-radius: 0.35rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  background-color: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+#page-calendar .calendar-event-badge-time {
+  font-size: 0.65rem;
+  font-weight: 600;
+  opacity: 0.9;
+  margin-left: 0.1em;
+}
+
+#page-calendar .fc-event {
+  border: none;
+  background: transparent;
+}
+
+#page-calendar .fc-daygrid-event {
+  margin: 2px 4px;
+}
+
+/* 제출 일정 모달 */
+.calendar-event-modal .modal-content {
+  max-width: 480px;
+}
+
+.calendar-event-form.modal-form {
+  padding: 1.25rem 1.5rem;
+}
+
+.calendar-event-form .form-group {
+  margin-bottom: 1rem;
+  width: 100%;
+  min-width: 0;
+}
+
+.calendar-event-form-row {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-end;
+  margin-bottom: 1rem;
+}
+
+.calendar-event-form-row .calendar-event-form-group {
+  flex: 1;
+  margin-bottom: 0;
+}
+
+.calendar-event-form-group {
+  margin-bottom: 1rem;
+}
+
+.calendar-event-form .form-actions {
+  margin-top: 1.25rem;
+  margin-bottom: 0;
+}
+
+.calendar-event-input {
+  width: 100%;
+  min-width: 0;
+  padding: 0.6rem 0.75rem;
+  font-size: 0.9rem;
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+  box-sizing: border-box;
+}
+
+.calendar-event-modal .calendar-event-date-input {
+  background: #f8fafc;
+  cursor: default;
+}
+
+.calendar-event-modal input[type="time"] {
+  min-height: 42px;
+}
+
+/* 과제 성격 라디오 버튼 */
+.calendar-event-type-row {
+  display: flex;
+  gap: 1.25rem;
+  align-items: center;
+  padding: 0.5rem 0;
+}
+
+.calendar-event-type-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.calendar-event-type-label input[type="radio"] {
+  margin: 0;
+  width: 1rem;
+  height: 1rem;
+  accent-color: var(--primary-color);
+}
+
+/* 캘린더 이벤트 배지: [신규] 오렌지 강조 */
+.calendar-event-badge--new {
+  background-color: #FF8C00 !important;
+  color: #ffffff !important;
+  border-color: #e67e00 !important;
+}
+
+#page-calendar .fc-event.fc-event-new .fc-daygrid-event {
+  background: rgba(255, 140, 0, 0.15);
+}
+
+/* ========== 캘린더 격자 바닥까지 강제 확장 (최하단 우선 적용) ========== */
+
+#page-calendar .fc-scroller-harness,
+#page-calendar .fc-scroller {
+  height: 100% !important;
+  overflow: hidden !important;
+}
+
+/* 강제 배분: daygrid-body와 table 높이 100% */
+#page-calendar .fc-daygrid-body,
+#page-calendar .fc-daygrid-body table {
+  height: 100% !important;
+}
+
+/* 5개 행: 정밀 높이 (요일 헤더 30px 제외 후 5등분) */
+#page-calendar .fc-daygrid-body tbody tr {
+  height: calc((100% - 30px) / 5) !important;
+}
+
+/* 스크롤 봉인: overflow hidden으로 스크롤바 제거 */
+#page-calendar,
+#page-calendar .container,
+#page-calendar .calendar-wrap {
+  overflow: hidden !important;
 }

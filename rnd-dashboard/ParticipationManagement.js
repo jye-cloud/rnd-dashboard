@@ -118,6 +118,21 @@
     return totals;
   }
 
+  function get35ChGongForPerson(personId) {
+    var projects = (state.projects || []).filter(function (p) { return p.is3Ch5GongTarget === true; });
+    var ch = 0;
+    var gong = 0;
+    projects.forEach(function (proj) {
+      (proj.members || []).forEach(function (memb) {
+        if (memb.personId !== personId) return;
+        var r = memb.role || '참여';
+        if (r === '책임') ch++;
+        else gong++;
+      });
+    });
+    return { ch: ch, gong: gong };
+  }
+
   function getMonthlyTotalsByTypeForPerson(personId, projects) {
     var projs = projects || (state.projects || []).filter(function (p) { return p.includeInSummary !== false; });
     var cash = {};
@@ -255,10 +270,15 @@
       if (!Array.isArray(s.projects) || s.projects.length === 0) {
         s.projects = [{ id: 1, title: '새 과제', includeInSummary: true, members: [] }];
       }
-      // 프로젝트 기본 필드 보정 (includeInSummary 기본 true, 기준일 정규화)
+      // 프로젝트 기본 필드 보정 (includeInSummary 기본 true, 기준일 정규화, 3책5공 대상)
       s.projects = s.projects.map(function (p) {
         if (p.includeInSummary === undefined) p.includeInSummary = true;
+        if (p.is3Ch5GongTarget === undefined) p.is3Ch5GongTarget = false;
         if (!Array.isArray(p.members)) p.members = [];
+        p.members = (p.members || []).map(function (m) {
+          if (m.role === undefined) m.role = '참여';
+          return m;
+        });
         var baseYear = s.selectedYear || defaultYear;
         var rawBaseDate = (p.newPersonnelBaseDate && String(p.newPersonnelBaseDate)) || (baseYear + '-01-01');
         // 예전 버전에서 저장된 "YYYY-MM-DD ()" 처럼 괄호가 섞인 값을 정규식으로 정리
@@ -321,6 +341,7 @@
     if (!member) return;
     if (!member.type1) member.type1 = '기존'; // 구분1
     if (!member.type2) member.type2 = '현금'; // 구분2
+    if (!member.role) member.role = '참여'; // 3책 5공 역할
     if (member.note == null) member.note = '';
     if (!member.rates) member.rates = {};
     for (var m = 1; m <= 12; m++) {
@@ -407,7 +428,11 @@
       return '<tr><td class="participation-floating-label ' + labelCls + '"><span class="participation-floating-bullet ' + bulletCls + '"></span>' + label + '</td>' + cells + '</tr>';
     }
 
+    var c35 = get35ChGongForPerson(currentFocusPersonId);
+    var c35Text = (c35.ch > 0 || c35.gong > 0) ? (c35.ch + '책 ' + c35.gong + '공') : '-';
+    var c35Cls = (c35.ch > 3 || c35.gong > 5) ? ' participation-floating-35--over' : '';
     var title = '<strong>' + name + '</strong>님의 참여율';
+    var c35Span = '<span class="participation-floating-35' + c35Cls + '">' + c35Text + '</span>';
     var headerCells = '';
     for (var h = 1; h <= 12; h++) {
       var hCls = h === currentFocusMonth ? ' participation-floating-th--focus' : '';
@@ -420,7 +445,7 @@
     var row4 = buildRow('미합산 반영 - 현물', 'participation-floating-label--excluded', 'participation-floating-bullet--excluded', sumExcludedKind, false);
 
     innerEl.innerHTML =
-      '<div class="participation-floating-panel-title">' + title + '</div>' +
+      '<div class="participation-floating-panel-title">' + title + ' ' + c35Span + '</div>' +
       '<table class="participation-floating-table">' +
       '<thead><tr><th class="participation-floating-th-label">항목</th>' + headerCells + '</tr></thead>' +
       '<tbody>' + row1 + row2 + row3 + row4 + '</tbody></table>';
@@ -447,7 +472,7 @@
         target.closest('.participation-project-card') || // 카드/테이블 영역
         target.closest('.participation-floating-panel') || // 패널 자체
         target.closest('.participation-person-search') || // 검색 영역
-        target.closest('.participation-summary-toggle') || // 요약 포함 토글
+        target.closest('.participation-card-bottom-toggles') || // 3책 5공, 참여율 합산 미반영 토글
         target.closest('.participation-candidate-area')   // 투입 후보군 리스트
       ) {
         return;
@@ -718,17 +743,39 @@
         row.setAttribute('data-idx', String(idx));
         row.setAttribute('data-row-index', String(idx));
 
-        // 성명 셀: 배지 + 이름 (배지는 기준일 기반 자동 분류)
+        // 성명 셀: 책/공 배지(클릭 토글, 상시 노출) + 신규/기존 배지 + 이름
         var nameCell = document.createElement('span');
         nameCell.className = 'participation-person-name participation-person-name-with-badge';
+        var role35 = (member.role || '참여') === '책임' ? '책' : '공';
+        var badge35 = document.createElement('span');
+        badge35.className = 'participation-badge participation-badge--3ch5g participation-badge--3ch5g-' + (member.role === '책임' ? 'ch' : 'gong') + ' participation-badge--toggle';
+        badge35.textContent = role35;
+        badge35.title = '클릭 시 역할 전환 (책임 ↔ 참여)';
+        badge35.addEventListener('click', function (e) {
+          e.stopPropagation();
+          var nextRole = (member.role || '참여') === '책임' ? '참여' : '책임';
+          var newProjects2 = state.projects.map(function (p) {
+            if (p.id !== proj.id) return p;
+            var newMembers2 = (p.members || []).map(function (m) {
+              if (m.personId !== member.personId) return m;
+              return Object.assign({}, m, { role: nextRole });
+            });
+            return Object.assign({}, p, { members: newMembers2 });
+          });
+          setProjects(newProjects2);
+          renderProjectView();
+          if (annualTableWrap && viewAnnual && !viewAnnual.hidden) renderAnnualView();
+          updateMonitorPanel();
+        });
+        nameCell.appendChild(badge35);
         var personType = getPersonType(person, baseDate);
         var badge = document.createElement('span');
         badge.className = 'participation-badge participation-badge--' + (personType === '신규' ? 'new' : 'existing');
         badge.textContent = personType;
+        nameCell.appendChild(badge);
         var nameTxt = document.createElement('span');
         nameTxt.className = 'participation-person-name-text';
         nameTxt.textContent = person ? (person.name || member.personId) : member.personId;
-        nameCell.appendChild(badge);
         nameCell.appendChild(nameTxt);
         row.appendChild(nameCell);
 
@@ -1196,31 +1243,52 @@
         candidateArea.hidden = true;
       }
 
-      // 연간 요약 포함 체크박스
+      // 우측 하단 체크박스 통합: 3책 5공 | 참여율 합산 미반영
+      var togglesWrap = document.createElement('div');
+      togglesWrap.className = 'participation-card-bottom-toggles';
+
+      var ch35Wrap = document.createElement('label');
+      ch35Wrap.className = 'participation-3ch5g-target-wrap';
+      var ch35Check = document.createElement('input');
+      ch35Check.type = 'checkbox';
+      ch35Check.checked = proj.is3Ch5GongTarget === true;
+      ch35Check.addEventListener('change', function () {
+        var newProjects = state.projects.map(function (p) {
+          if (p.id !== proj.id) return p;
+          return Object.assign({}, p, { is3Ch5GongTarget: ch35Check.checked });
+        });
+        setProjects(newProjects);
+        renderProjectView();
+        if (annualTableWrap && viewAnnual && !viewAnnual.hidden) renderAnnualView();
+      });
+      var ch35Text = document.createElement('span');
+      ch35Text.textContent = '3책 5공';
+      ch35Wrap.appendChild(ch35Check);
+      ch35Wrap.appendChild(ch35Text);
+
       var summaryWrap = document.createElement('label');
       summaryWrap.className = 'participation-summary-toggle';
 
       var summaryCheckbox = document.createElement('input');
       summaryCheckbox.type = 'checkbox';
-      // 기본값: includeInSummary === true → 체크 해제(요약에 포함)
       summaryCheckbox.checked = proj.includeInSummary === false;
       summaryCheckbox.addEventListener('change', function () {
         var newProjects = (state.projects || []).map(function (p) {
           if (p.id !== proj.id) return p;
-          // 체크되었을 때만 요약에서 미반영(includeInSummary: false)
           return Object.assign({}, p, { includeInSummary: !summaryCheckbox.checked });
         });
         setProjects(newProjects);
-        // 연간 요약 뷰가 열려 있다면 즉시 재계산
         renderAnnualView();
       });
 
       var summaryText = document.createElement('span');
-      summaryText.textContent = '참여율 합산 미반영 프로젝트';
+      summaryText.textContent = '참여율 합산 미반영';
 
       summaryWrap.appendChild(summaryCheckbox);
       summaryWrap.appendChild(summaryText);
-      addRow.appendChild(summaryWrap);
+      togglesWrap.appendChild(ch35Wrap);
+      togglesWrap.appendChild(summaryWrap);
+      addRow.appendChild(togglesWrap);
 
       card.appendChild(titleRow);
       card.appendChild(list);
@@ -1253,11 +1321,12 @@
       ? state.projects.filter(function (p) { return p.includeInSummary !== false; })
       : [];
 
-    // 테이블 기본 구조
+    // 테이블 기본 구조 (이름 | 3책 5공 | 구분 | 1~12월)
     var html = '';
     html += '<table class="participation-annual-table">';
     html += '<thead><tr>';
     html += '<th>이름</th>';
+    html += '<th class="participation-annual-th-35">3책 5공</th>';
     html += '<th>구분</th>';
     for (var m = 1; m <= 12; m++) {
       html += '<th>' + m + '월</th>';
@@ -1267,7 +1336,7 @@
 
     if (!persons || persons.length === 0) {
       var emptyMsg = searchTerm ? '검색 결과가 없습니다.' : '데이터가 없습니다.';
-      html += '<tr><td colspan="14" class="participation-annual-empty">' + emptyMsg + '</td></tr>';
+      html += '<tr><td colspan="15" class="participation-annual-empty">' + emptyMsg + '</td></tr>';
       html += '</tbody></table>';
       annualTableWrap.innerHTML = html;
       return;
@@ -1275,6 +1344,7 @@
 
     persons.forEach(function (person) {
       var byType = getMonthlyTotalsByTypeForPerson(person.id, projects);
+      var c35 = get35ChGongForPerson(person.id);
       var name = person.name || person.id || '-';
       var loss = person.lossDate || person['자격상실일'];
       if (loss) name += ' (퇴사)';
@@ -1283,18 +1353,25 @@
       var showKind = (annualTypeFilter === 'all' || annualTypeFilter === 'kind');
       var useRowspan = annualTypeFilter === 'all';
 
+      var c35Text = (c35.ch > 0 || c35.gong > 0) ? (c35.ch + '책 ' + c35.gong + '공') : '-';
+      var c35Cls = 'participation-annual-35';
+      if (c35.ch > 3 || c35.gong > 5) c35Cls += ' participation-annual-35--over';
+
       function buildRow(typeLabel, values, isKindRow) {
         var rowHtml = '';
         var includeRow = (isKindRow && showKind) || (!isKindRow && showCash);
         if (includeRow) {
           var nameCell;
+          var c35Cell;
           if (useRowspan) {
             nameCell = isKindRow ? '' : ('<td rowspan="2" class="participation-annual-name participation-annual-name-cell">' + name + '</td>');
+            c35Cell = isKindRow ? '' : ('<td rowspan="2" class="' + c35Cls + '">' + c35Text + '</td>');
           } else {
             nameCell = '<td class="participation-annual-name participation-annual-name-cell">' + name + '</td>';
+            c35Cell = '<td class="' + c35Cls + '">' + c35Text + '</td>';
           }
           var typeCell = '<td class="participation-annual-type participation-annual-type--' + (isKindRow ? 'kind' : 'cash') + '">' + typeLabel + '</td>';
-          rowHtml = '<tr>' + nameCell + typeCell;
+          rowHtml = '<tr>' + nameCell + c35Cell + typeCell;
           for (var mm = 1; mm <= 12; mm++) {
             var v = values[mm] || 0;
             var cls = 'participation-annual-cell';
