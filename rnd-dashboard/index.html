@@ -291,6 +291,15 @@
         <button type="button" id="search-btn" class="search-btn">검색</button>
       </div>
       <div class="toolbar-actions">
+        <button type="button" id="hr-backup-btn" class="ui-btn ui-btn--ghost" title="인력 데이터를 JSON 파일로 백업">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          <span>데이터 백업</span>
+        </button>
+        <button type="button" id="hr-restore-btn" class="ui-btn ui-btn--ghost" title="JSON 백업 파일에서 데이터 복구">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          <span>데이터 복구</span>
+        </button>
+        <input type="file" id="hr-restore-input" accept=".json,application/json" hidden>
         <button type="button" id="delete-all-btn" class="danger-btn">전체 삭제(임시)</button>
         <button type="button" id="add-btn" class="add-btn">신규 인력 등록</button>
         <input type="file" id="legacy-excel-input" accept=".xlsx,.xls" hidden>
