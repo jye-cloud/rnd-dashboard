@@ -3558,7 +3558,7 @@ body:has(#page-calendar:not([hidden])) {
   max-width: none;
   width: 100%;
   min-width: 1400px;
-  padding: 2rem 30px 2rem 80px;
+  padding: 20px 30px 2rem 80px;
   padding-bottom: 0;
   overflow-x: initial !important;
   overflow-y: hidden;
