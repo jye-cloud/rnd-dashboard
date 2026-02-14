@@ -961,11 +961,8 @@ body:has(#page-calendar:not([hidden])) {
   box-sizing: border-box;
 }
 
-/* Header - 상단 고정 (스크롤 시에도 유지) */
+/* Header - 스크롤 시 자연스럽게 사라짐 (position: static) */
 .header {
-  position: sticky;
-  top: 0;
-  z-index: 1001;
   margin-bottom: 2rem;
   padding: 0;
   background: var(--bg-color);

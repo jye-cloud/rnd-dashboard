@@ -43,6 +43,7 @@
   var methodInput = document.getElementById('calendar-event-method');
   var form = document.getElementById('calendar-event-form');
   var submitBtn = document.getElementById('calendar-event-submit');
+  var deleteBtn = document.getElementById('calendar-event-delete');
   var selectedDateStr = null;
   var editingEventId = null;
 
@@ -250,6 +251,7 @@
       }
       modalTitle.textContent = '일정 수정';
       if (submitBtn) submitBtn.textContent = '수정';
+      if (deleteBtn) deleteBtn.style.display = '';
     } else {
       projectInput.value = '';
       itemInput.value = '';
@@ -258,6 +260,7 @@
       if (typeExisting && typeNew) typeExisting.checked = true;
       modalTitle.textContent = '일정 등록';
       if (submitBtn) submitBtn.textContent = '등록';
+      if (deleteBtn) deleteBtn.style.display = 'none';
     }
     modal.classList.add('active');
     modal.removeAttribute('hidden');
@@ -323,6 +326,14 @@
     closeModal();
   }
 
+  function handleDelete() {
+    if (!editingEventId) return;
+    var events = loadEvents().filter(function (ev) { return ev.id !== editingEventId; });
+    saveEvents(events);
+    refreshCalendar();
+    closeModal();
+  }
+
   function refreshCalendar() {
     if (!calendar) return;
     var events = loadEvents();
@@ -342,6 +353,7 @@
 
   if (modalClose) modalClose.addEventListener('click', closeModal);
   if (modalCancel) modalCancel.addEventListener('click', closeModal);
+  if (deleteBtn) deleteBtn.addEventListener('click', handleDelete);
   if (form) form.addEventListener('submit', handleSubmit);
   modal.addEventListener('click', function (e) {
     if (e.target === modal) closeModal();
