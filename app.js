@@ -30,13 +30,6 @@
   const excelUploadBtn = document.getElementById('excel-upload-btn');
   const legacyExcelInput = document.getElementById('legacy-excel-input');
   const legacyExcelBtn = document.getElementById('legacy-excel-btn');
-  const hrBackupBtn = document.getElementById('hr-backup-btn');
-  const hrRestoreBtn = document.getElementById('hr-restore-btn');
-  const hrRestoreInput = document.getElementById('hr-restore-input');
-  const hrMigrateBtn = document.getElementById('hr-migrate-btn');
-  const hrNotebookMigrateBtn = document.getElementById('hr-notebook-migrate-btn');
-  const hrNotebookMigrateInput = document.getElementById('hr-notebook-migrate-input');
-  const deleteAllBtn = document.getElementById('delete-all-btn');
   const statusAll = document.getElementById('status-all');
   const statusEmployed = document.getElementById('status-employed');
   const statusRetired = document.getElementById('status-retired');
@@ -1710,115 +1703,6 @@
       saveUIState();
       applyFilters();
       updateStatusCardsUI();
-    });
-  }
-
-  // 임시: 전체 삭제 버튼
-  // 데이터 백업 (JSON 다운로드)
-  if (hrBackupBtn) {
-    hrBackupBtn.addEventListener('click', function () {
-      try {
-        var data = (fs && fs.isConfigured()) ? hrData : (function () {
-          var raw = localStorage.getItem(STORAGE_KEY);
-          return raw ? JSON.parse(raw) : [];
-        })();
-        var blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-        var url = URL.createObjectURL(blob);
-        var a = document.createElement('a');
-        a.href = url;
-        a.download = 'personnel_data_backup.json';
-        a.click();
-        URL.revokeObjectURL(url);
-      } catch (e) {
-        console.error('백업 실패:', e);
-        alert('백업 중 오류가 발생했습니다.');
-      }
-    });
-  }
-
-  // 데이터 복구 (JSON 파일 업로드)
-  if (hrRestoreBtn && hrRestoreInput) {
-    hrRestoreBtn.addEventListener('click', function () {
-      hrRestoreInput.value = '';
-      hrRestoreInput.click();
-    });
-    hrRestoreInput.addEventListener('change', function () {
-      var file = hrRestoreInput.files && hrRestoreInput.files[0];
-      if (!file) return;
-      var reader = new FileReader();
-      reader.onload = function () {
-        try {
-          var data = JSON.parse(reader.result);
-          if (!Array.isArray(data)) {
-            alert('잘못된 파일 형식입니다.\n인력 데이터는 배열 형태의 JSON이어야 합니다.');
-            return;
-          }
-          if (fs && fs.isConfigured()) {
-            fs.saveHr(data);
-          } else {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-          }
-          alert('데이터가 성공적으로 복구되었습니다.');
-          location.reload();
-        } catch (e) {
-          console.error('복구 실패:', e);
-          alert('잘못된 파일 형식입니다.\n유효한 JSON 파일을 선택해 주세요.');
-        }
-      };
-      reader.readAsText(file, 'UTF-8');
-    });
-  }
-
-  if (hrMigrateBtn && fs && fs.isConfigured) {
-    hrMigrateBtn.style.display = '';
-    hrMigrateBtn.addEventListener('click', function () {
-      if (!confirm('현재 브라우저 LocalStorage에 있는 인력/인건비/참여율/캘린더 데이터를 Firestore로 업로드합니다. 진행할까요?')) return;
-      fs.migrateFromLocalStorage()
-        .then(function () {
-          alert('마이그레이션이 완료되었습니다. 페이지를 새로고침하면 Firestore 데이터가 표시됩니다.');
-          location.reload();
-        })
-        .catch(function (e) {
-          alert('마이그레이션 실패: ' + (e && e.message ? e.message : String(e)));
-        });
-    });
-  }
-
-  if (hrNotebookMigrateBtn && hrNotebookMigrateInput && fs && fs.uploadFromProjectJson) {
-    hrNotebookMigrateBtn.addEventListener('click', function () {
-      hrNotebookMigrateInput.value = '';
-      hrNotebookMigrateInput.click();
-    });
-    hrNotebookMigrateInput.addEventListener('change', function () {
-      var file = hrNotebookMigrateInput.files && hrNotebookMigrateInput.files[0];
-      if (!file) return;
-      var reader = new FileReader();
-      reader.onload = function () {
-        try {
-          var data = JSON.parse(reader.result);
-          fs.uploadFromProjectJson(data)
-            .then(function () {
-              alert('노트북 데이터 이사가 완료되었습니다. 페이지를 새로고침합니다.');
-              location.reload();
-            })
-            .catch(function (e) {
-              alert('이사 실패: ' + (e && e.message ? e.message : String(e)));
-            });
-        } catch (e) {
-          alert('파일 형식이 올바르지 않습니다. total_project_data.json (personnelData, salaryData 등 포함)을 선택해 주세요.');
-        }
-        hrNotebookMigrateInput.value = '';
-      };
-      reader.readAsText(file, 'UTF-8');
-    });
-  }
-
-  if (deleteAllBtn) {
-    deleteAllBtn.addEventListener('click', function () {
-      var ok = confirm('정말 전체 삭제할까요?\n\n• 표 데이터가 전부 삭제됩니다.\n• 브라우저 로컬 저장소 데이터도 함께 초기화됩니다.');
-      if (!ok) return;
-      deleteAllData();
-      alert('전체 삭제가 완료되었습니다.');
     });
   }
 
