@@ -10,21 +10,32 @@
   <!-- HR/Payroll 전용 테이블 레이아웃 격리 스타일 -->
   <style>
     /* 인력 정보 관리 페이지 전용 테이블 레이아웃 */
+    #page-hr .table-wrap,
+    #page-hr .table-container {
+      width: 100% !important;
+      overflow-x: hidden !important;
+    }
     #page-hr #hr-table {
-      table-layout: fixed;
-      width: 100%;
+      table-layout: fixed !important;
+      width: 100% !important;
     }
     #page-hr #hr-table th,
     #page-hr #hr-table td {
       box-sizing: border-box;
-      height: 42px !important;   /* 슬림한 행 높이 강제 */
-      padding: 0 6px;            /* 불필요 여백 최소화 */
-      vertical-align: middle;    /* 수직 중앙 정렬 */
-      border: none;              /* 기본 테두리 제거 (세로선 제거) */
-      border-bottom: 1px solid #eeeeee; /* 아주 연한 가로 구분선만 유지 */
-      overflow: hidden;          /* 버튼/내용이 행 높이를 넘어서지 않도록 차단 */
-      white-space: nowrap;
+      height: 42px !important;
+      padding: 0 5px;
+      vertical-align: middle;
+      border: none;
+      border-bottom: 1px solid #eeeeee;
+      overflow: hidden;
       text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    #page-hr #hr-table td.cell-major {
+      white-space: normal;
+      word-break: break-all;
+      font-size: 0.85rem;
+      line-height: 1.2;
     }
     #page-hr #hr-table input,
     #page-hr #hr-table select,
@@ -47,84 +58,36 @@
       font-weight: 600;
       border-bottom: 2px solid #dddddd; /* 본문보다 살짝 더 짙은 가로선으로 머리글 강조 */
     }
-    /* 컬럼 너비 고정 (인력 정보 관리) */
-    /* 1: No */
+    /* 컬럼 너비: 좁음/중간/넓음 분배 (노트북 화면 내 전체 표시) */
+    /* 좁은 칸: No, 구분, 성별, 상세, 수정/삭제 */
     #page-hr #hr-table th:nth-child(1),
-    #page-hr #hr-table td:nth-child(1) {
-      width: 50px;
-    }
-    /* 2: 구분 */
+    #page-hr #hr-table td:nth-child(1) { width: 40px; min-width: 40px; }
     #page-hr #hr-table th:nth-child(2),
-    #page-hr #hr-table td:nth-child(2) {
-      width: 80px;
-    }
-    /* 3: 성명 */
-    #page-hr #hr-table th:nth-child(3),
-    #page-hr #hr-table td:nth-child(3) {
-      width: 80px;
-    }
-    /* 4: 소속 - 비고 전까지는 고정 폭으로 정렬 */
-    #page-hr #hr-table th:nth-child(4),
-    #page-hr #hr-table td:nth-child(4) {
-      width: 120px;
-    }
-    /* 5: 생년월일 */
-    #page-hr #hr-table th:nth-child(5),
-    #page-hr #hr-table td:nth-child(5) {
-      width: 120px;
-    }
-    /* 6: 성별 - 한 글자만 들어가므로 타이트하게 */
+    #page-hr #hr-table td:nth-child(2) { width: 52px; min-width: 52px; }
     #page-hr #hr-table th:nth-child(6),
-    #page-hr #hr-table td:nth-child(6) {
-      width: 60px;
-      text-align: center;
-    }
-    /* 7: 자격취득일 */
-    #page-hr #hr-table th:nth-child(7),
-    #page-hr #hr-table td:nth-child(7) {
-      width: 120px;
-    }
-    /* 8: 자격상실일 */
-    #page-hr #hr-table th:nth-child(8),
-    #page-hr #hr-table td:nth-child(8) {
-      width: 120px;
-    }
-    /* 9: 연구자번호 */
-    #page-hr #hr-table th:nth-child(9),
-    #page-hr #hr-table td:nth-child(9) {
-      width: 130px;
-    }
-    /* 10: 최종학위 */
-    #page-hr #hr-table th:nth-child(10),
-    #page-hr #hr-table td:nth-child(10) {
-      width: 120px;
-    }
-    /* 11: 학과 - 전체 표 폭 조절을 위해 적당히 */
-    #page-hr #hr-table th:nth-child(11),
-    #page-hr #hr-table td:nth-child(11) {
-      width: 130px !important;
-    }
-    /* 12: 비고 - 남은 공간을 유연하게 사용 (min-width 확보) */
+    #page-hr #hr-table td:nth-child(6) { width: 48px; min-width: 48px; text-align: center; }
     #page-hr #hr-table th:nth-child(12),
-    #page-hr #hr-table td:nth-child(12) {
-      min-width: 100px;
-    }
-    /* 13: 상세 - 버튼 1개가 겨우 들어갈 정도로 타이트하게 */
+    #page-hr #hr-table td:nth-child(12) { width: 58px; min-width: 58px; white-space: nowrap; padding: 0 4px; }
     #page-hr #hr-table th:nth-child(13),
-    #page-hr #hr-table td:nth-child(13) {
-      width: 70px !important;
-      white-space: nowrap;
-      padding-left: 0;
-      padding-right: 0;
-    }
-    /* 14: 수정/삭제 - 버튼 2개가 딱 들어가는 최소 폭 (아이콘만 타이트하게) */
-    #page-hr #hr-table th:nth-child(14),
-    #page-hr #hr-table td:nth-child(14) {
-      width: 90px !important;   /* 아이콘 2개가 딱 들어갈 정도의 최소 너비 */
-      white-space: nowrap;      /* 버튼이 줄바꿈되지 않도록 고정 */
-      padding-left: 0;
-      padding-right: 0;
-    }
+    #page-hr #hr-table td:nth-child(13) { width: 78px; min-width: 78px; white-space: nowrap; padding: 0 4px; }
+    /* 중간 칸: 성명, 생년월일, 자격취득일, 자격상실일, 최종학위, 학과 */
+    #page-hr #hr-table th:nth-child(3),
+    #page-hr #hr-table td:nth-child(3) { width: 64px; min-width: 64px; }
+    #page-hr #hr-table th:nth-child(5),
+    #page-hr #hr-table td:nth-child(5) { width: 82px; min-width: 82px; }
+    #page-hr #hr-table th:nth-child(7),
+    #page-hr #hr-table td:nth-child(7) { width: 82px; min-width: 82px; }
+    #page-hr #hr-table th:nth-child(8),
+    #page-hr #hr-table td:nth-child(8) { width: 82px; min-width: 82px; }
+    #page-hr #hr-table th:nth-child(10),
+    #page-hr #hr-table td:nth-child(10) { width: 72px; min-width: 72px; }
+    #page-hr #hr-table th:nth-child(11),
+    #page-hr #hr-table td:nth-child(11) { width: 72px; min-width: 72px; }
+    /* 넓은 칸: 소속, 연구자번호 (나머지 여백 활용) */
+    #page-hr #hr-table th:nth-child(4),
+    #page-hr #hr-table td:nth-child(4) { width: 9%; }
+    #page-hr #hr-table th:nth-child(9),
+    #page-hr #hr-table td:nth-child(9) { width: 10%; }
 
     /* 인력 정보 관리 테이블: 행 hover 시, 세로선 없이 행 전체를 은은하게 하이라이트 */
     #page-hr #hr-table tbody tr:hover td {
@@ -263,7 +226,6 @@
           <div class="period-query" aria-label="기간별 조회">
             <div class="period-query-head">
               <h3 class="subsection-title">기간별 조회</h3>
-              <span class="period-query-hint" id="period-query-hint">조회 결과</span>
             </div>
 
             <div class="period-query-body">
@@ -281,15 +243,15 @@
               </div>
 
               <div class="stats-big stats-big--query" aria-label="기간별 조회 입사/퇴사">
-                <div class="stats-big-item">
-                  <span class="stats-big-value stats-big-value--query" id="stats-joined">0</span>
-                  <span class="stats-big-unit">입사</span>
+                  <div class="stats-big-item">
+                    <span class="stats-big-value stats-big-value--query" id="stats-joined">0</span>
+                    <span class="stats-big-unit">입사</span>
+                  </div>
+                  <div class="stats-big-item">
+                    <span class="stats-big-value stats-big-value--query" id="stats-left">0</span>
+                    <span class="stats-big-unit">퇴사</span>
+                  </div>
                 </div>
-                <div class="stats-big-item">
-                  <span class="stats-big-value stats-big-value--query" id="stats-left">0</span>
-                  <span class="stats-big-unit">퇴사</span>
-                </div>
-              </div>
             </div>
           </div>
         </div>
@@ -298,12 +260,16 @@
         <div class="top-col top-col-right">
           <h2 class="section-title">월말 기준 재직 인원 조회 📅</h2>
           <div class="point-in-time-controls">
-            <label for="pity-year">연도</label>
-            <select id="pity-year" class="ui-select ui-select--lg"></select>
-            <label for="pity-month">월</label>
-            <select id="pity-month" class="ui-select ui-select--lg"></select>
-            <button type="button" id="pity-query-btn" class="ui-btn ui-btn--primary ui-btn--lg pity-query-btn">조회</button>
-            <button type="button" id="pity-clear-btn" class="ui-btn ui-btn--ghost ui-btn--lg pity-clear-btn" title="조회 결과 지우기">지우기</button>
+            <div class="point-in-time-controls-top">
+              <label for="pity-year">연도</label>
+              <select id="pity-year" class="ui-select ui-select--lg"></select>
+              <label for="pity-month">월</label>
+              <select id="pity-month" class="ui-select ui-select--lg"></select>
+            </div>
+            <div class="point-in-time-controls-buttons">
+              <button type="button" id="pity-query-btn" class="ui-btn ui-btn--primary ui-btn--lg pity-query-btn">조회</button>
+              <button type="button" id="pity-clear-btn" class="ui-btn ui-btn--ghost ui-btn--lg pity-clear-btn" title="조회 결과 지우기">지우기</button>
+            </div>
           </div>
           <div class="pity-summary-card" id="pity-summary-card" hidden>
             <p class="pity-summary-text" id="pity-summary-text"></p>
@@ -337,7 +303,7 @@
     </div>
 
     <div class="bottom-section">
-      <div class="table-wrap" style="overflow-x: auto;">
+      <div class="table-wrap">
         <div class="table-container">
           <table class="data-table" id="hr-table">
             <thead>
@@ -353,7 +319,6 @@
                 <th>연구자번호</th>
                 <th>최종학위</th>
                 <th>학과</th>
-                <th>비고</th>
                 <th>상세</th>
                 <th>수정/삭제</th>
               </tr>
@@ -452,15 +417,15 @@
           <section class="payroll-summary-cards" aria-label="인건비 요약">
             <div class="payroll-summary-group payroll-summary-group--month" aria-label="월간 지표">
               <div class="payroll-summary-card payroll-summary-card--actual">
-                <span class="payroll-summary-card-label" id="payroll-card-title-month-actual">--.--월 실제 지급 총액</span>
+                <span class="payroll-summary-card-label" id="payroll-card-title-month-actual">--.-- 실 지급 총액</span>
                 <span class="payroll-summary-card-row"><span class="payroll-summary-card-value" id="payroll-card-total-actual">0</span><span class="payroll-summary-card-unit">원</span></span>
               </div>
               <div class="payroll-summary-card payroll-summary-card--allocation" data-filter="allocation" role="button" tabindex="0" title="클릭 시 환급 대상자만 표시 (다시 클릭 시 전체)">
-                <span class="payroll-summary-card-label" id="payroll-card-title-month-allocation">--.--월 과제 환급 총액</span>
+                <span class="payroll-summary-card-label" id="payroll-card-title-month-allocation">--.-- 환급 총액</span>
                 <span class="payroll-summary-card-row"><span class="payroll-summary-card-value" id="payroll-card-total-allocation">0</span><span class="payroll-summary-card-unit">원</span></span>
               </div>
               <div class="payroll-summary-card payroll-summary-card--rate">
-                <span class="payroll-summary-card-label" id="payroll-card-title-month-rate">--.--월 인건비 환급률</span>
+                <span class="payroll-summary-card-label" id="payroll-card-title-month-rate">--.-- 환급률</span>
                 <span class="payroll-summary-card-row"><span class="payroll-summary-card-value" id="payroll-card-refund-rate">0</span><span class="payroll-summary-card-unit">%</span></span>
               </div>
             </div>
@@ -519,13 +484,13 @@
           <div id="calendar-wrap" class="calendar-wrap"></div>
         </div>
       </div>
-    </main>
 
-    <!-- 퀵 내비게이션 (인건비/참여율 등 데이터가 긴 페이지 공통) -->
-    <div id="quick-nav-fab" class="quick-nav-fab" aria-label="퀵 내비게이션" hidden>
-      <button type="button" class="quick-nav-btn quick-nav-btn--top" id="quick-nav-top" title="맨 위로" aria-label="맨 위로">△</button>
-      <button type="button" class="quick-nav-btn quick-nav-btn--bottom" id="quick-nav-bottom" title="맨 아래로" aria-label="맨 아래로">▽</button>
-    </div>
+      <!-- 퀵 내비게이션: main-area 내부 → 가로 스크롤 시 콘텐츠와 함께 이동 -->
+      <div id="quick-nav-fab" class="quick-nav-fab" aria-label="퀵 내비게이션" hidden>
+        <button type="button" class="quick-nav-btn quick-nav-btn--top" id="quick-nav-top" title="맨 위로" aria-label="맨 위로">▲</button>
+        <button type="button" class="quick-nav-btn quick-nav-btn--bottom" id="quick-nav-bottom" title="맨 아래로" aria-label="맨 아래로">▼</button>
+      </div>
+    </main>
   </div>
 
   <!-- 신규 등록/수정 모달 -->

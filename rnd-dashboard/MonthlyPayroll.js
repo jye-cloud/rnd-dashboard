@@ -1264,9 +1264,9 @@
     // 제목 동적 반영
     var shortYear = String(year).slice(2);
     var mm = String(month).padStart(2, '0');
-    titleMonthActual.textContent = shortYear + '.' + mm + '월 실제 지급 총액';
-    titleMonthAllocation.textContent = shortYear + '.' + mm + '월 과제 환급 총액';
-    titleMonthRate.textContent = shortYear + '.' + mm + '월 인건비 환급률';
+    titleMonthActual.textContent = shortYear + '.' + mm + ' 실 지급 총액';
+    titleMonthAllocation.textContent = shortYear + '.' + mm + ' 환급 총액';
+    titleMonthRate.textContent = shortYear + '.' + mm + ' 환급률';
     titleYearActual.textContent = year + '년 누적 지급액';
     titleYearAllocation.textContent = year + '년 누적 환급액';
     titleYearRate.textContent = year + '년 누적 환급률';

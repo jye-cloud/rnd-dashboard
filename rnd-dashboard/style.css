@@ -30,18 +30,30 @@
   --del-w: 50px;
 }
 
+html {
+  overflow: hidden;
+  height: 100%;
+}
+
 body {
+  display: block !important;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
   background-color: var(--bg-color);
   color: var(--text-primary);
   line-height: 1.6;
   min-height: 100vh;
+  width: 100%;
+  overflow: hidden;
+  height: 100%;
 }
 
 /* ========== 대시보드 레이아웃 (좌측 메뉴 바) ========== */
 .dashboard {
   display: flex;
   min-height: 100vh;
+  height: 100vh;
+  width: 100%;
+  overflow: hidden;
 }
 
 .sidebar {
@@ -178,15 +190,22 @@ body {
   margin: 0 0.35rem;
 }
 
+/* 본문 영역 스크롤 독립화: body 스크롤 없이 main-area 내부에서만 스크롤 */
 .main-area {
-  flex: 1;
-  overflow: auto;
+  flex: 1 1 auto;
   min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100vh;
+  overflow: auto;
+  padding-right: 80px !important; /* 퀵링크가 내용을 가리지 않도록 */
 }
 
 /* 캘린더 페이지 활성 시 브라우저 스크롤 방지 */
+/* 제출 일정 페이지: 세로는 고정, 가로는 1200px 미만 시 스크롤 */
 .main-area:has(#page-calendar:not([hidden])) {
-  overflow: hidden;
+  overflow-y: hidden;
+  overflow-x: auto;
 }
 
 body:has(#page-calendar:not([hidden])) {
@@ -196,6 +215,8 @@ body:has(#page-calendar:not([hidden])) {
 .page {
   display: none;
   min-height: 100%;
+  min-width: 1400px;
+  width: 100%;
 }
 
 .page.active {
@@ -373,60 +394,89 @@ body:has(#page-calendar:not([hidden])) {
   margin-right: 0.5rem;
 }
 
-/* 상단 요약 카드 4개 — 연도/월 선택 바 아래, 테이블 위 */
+/* 인건비 페이지: 카드와 표 가로 너비 100% 일치 (성명↔환급상세 수직 정렬) */
+#page-payroll .payroll-summary-cards,
+#page-payroll .payroll-table-wrap {
+  margin-left: 0;
+  margin-right: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+/* 표의 border(1px)와 동일하게 카드 영역도 1px inset → 첫 카드=성명 시작, 마지막 카드=환급상세 끝 */
+#page-payroll .payroll-summary-cards {
+  padding-left: 1px;
+  padding-right: 1px;
+}
+
 .payroll-summary-cards {
-  display: flex;
+  display: flex !important;
   flex-wrap: nowrap;
+  justify-content: space-between;
   gap: 20px;
   margin-bottom: 1.25rem;
+  overflow: visible !important;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .payroll-summary-group {
   display: flex;
   flex: 1 1 0;
+  flex-wrap: nowrap;
   gap: 20px;
+  min-width: 0;
 }
 
 .payroll-summary-divider-vertical {
   width: 1px;
   background: var(--border-color);
   align-self: stretch;
+  flex: 0 0 1px;
 }
 
 .payroll-summary-card {
-  flex: 1 1 180px;
+  flex: 1 1 0;
+  width: auto;
   min-width: 0;
   background: #fff;
   border: 1px solid var(--border-color);
   border-radius: 0.75rem;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
-  padding: 1rem 1.25rem;
+  padding: 12px 16px !important;
   display: flex;
   flex-direction: column;
-  gap: 0.6rem;
+  gap: 0.4rem;
 }
 
-/* 카드 타이틀: 왼쪽 정렬 */
+/* 카드 제목: 왼쪽 끝 고정 */
 .payroll-summary-card-label {
-  font-size: 0.85rem;
+  font-size: 0.8rem;
   color: var(--text-secondary);
   font-weight: 500;
-  text-align: left;
+  text-align: left !important;
+  white-space: nowrap !important;
+  display: block !important;
+  word-break: keep-all !important;
 }
 
-/* 금액·비율: 오른쪽 정렬 + 우측 여백 */
+/* 금액·수치 영역: 오른쪽 정렬, 여백 확보 */
 .payroll-summary-card-row {
-  display: flex;
-  align-items: baseline;
+  display: flex !important;
+  justify-content: flex-end !important;
+  align-items: baseline !important;
   flex-wrap: nowrap;
-  justify-content: flex-end;
-  padding-right: 15px;
+  text-align: right !important;
+  padding-right: 20px;
 }
 
 .payroll-summary-card-value {
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-  font-size: 1.1rem;
+  font-size: 1rem;
+  text-align: right !important;
+  white-space: nowrap !important;
+  display: inline-block !important;
+  word-break: keep-all !important;
 }
 
 .payroll-summary-card-unit {
@@ -434,6 +484,9 @@ body:has(#page-calendar:not([hidden])) {
   color: var(--text-secondary);
   font-weight: 500;
   margin-left: 0.15rem;
+  white-space: nowrap !important;
+  display: inline-block !important;
+  word-break: keep-all !important;
 }
 
 /* 과제 환급 총액: 파란색 계열 강조 (신뢰감) */
@@ -556,6 +609,7 @@ body:has(#page-calendar:not([hidden])) {
 }
 
 .payroll-table-wrap {
+  width: 100%;
   background: var(--card-bg);
   border-radius: 0.75rem;
   box-shadow: var(--shadow-md);
@@ -564,8 +618,8 @@ body:has(#page-calendar:not([hidden])) {
 }
 
 .payroll-table {
-  width: 100%;
-  min-width: 1000px;
+  width: 100% !important;
+  min-width: 100%;
   border-collapse: collapse;
   font-size: 0.9rem;
   table-layout: fixed;
@@ -899,14 +953,22 @@ body:has(#page-calendar:not([hidden])) {
 }
 
 .container {
-  max-width: 1400px;
+  width: 100%;
+  max-width: none;
+  min-width: 1400px;
   margin: 0 auto;
-  padding: 2rem;
+  padding: 20px 30px 2rem 80px; /* 상단 20px: 카드·헤더 여유, 우측 80px: 퀵링크 침범 방지 */
+  box-sizing: border-box;
 }
 
-/* Header */
+/* Header - 상단 고정 (스크롤 시에도 유지) */
 .header {
+  position: sticky;
+  top: 0;
+  z-index: 1001;
   margin-bottom: 2rem;
+  padding: 0;
+  background: var(--bg-color);
 }
 
 .header-title {
@@ -914,6 +976,7 @@ body:has(#page-calendar:not([hidden])) {
   font-weight: 700;
   color: var(--text-primary);
   letter-spacing: -0.025em;
+  white-space: nowrap;
 }
 
 /* ========== 상단 3분할 레이아웃 (Top Section) ========== */
@@ -947,14 +1010,17 @@ body:has(#page-calendar:not([hidden])) {
 }
 
 .top-grid {
-  display: grid;
-  grid-template-columns: 1fr 1.2fr 1fr;
+  display: flex !important;
+  flex-wrap: nowrap !important;
   gap: 1rem;
-  align-items: stretch;
+  align-items: stretch !important;
   margin-top: 0.5rem;
+  width: 100%;
 }
 
 .top-col {
+  flex: 1 !important;
+  min-width: 0;
   padding: 1rem;
   min-height: 138px;
   border: 1px solid var(--border-color);
@@ -963,19 +1029,80 @@ body:has(#page-calendar:not([hidden])) {
   display: flex;
   flex-direction: column;
   justify-content: flex-start;
+  align-items: stretch;
+}
+
+/* 카드 내부 요소 줄바꿈 방지 - 창이 좁아지면 가로 스크롤 */
+.top-col .section-title,
+.top-col .btn-row,
+.top-col .company-sub-buttons,
+.top-col .dual-row,
+.top-col .point-in-time-controls,
+.top-col .point-in-time-controls-top,
+.top-col .point-in-time-controls-buttons,
+.top-col .stats-meta,
+.top-col .stats-big,
+.top-col .stats-controls,
+.top-col .period-query,
+.top-col .period-query-body,
+.top-col .section-footnote,
+.top-col .ui-btn,
+.top-col .ui-select,
+.top-col label {
+  white-space: nowrap;
 }
 
 .top-col-left {
   background: linear-gradient(180deg, rgba(37, 99, 235, 0.06) 0%, rgba(255, 255, 255, 1) 100%);
   position: relative;
+  align-items: flex-start;
+}
+/* 1번 카드: 타이틀 중앙 정렬 */
+.top-col-left .section-title {
+  text-align: center;
+  width: 100%;
+}
+
+/* 1번 카드: 버튼 그룹 너비 100%, 카드 폭에 맞춰 균등 배분 */
+.top-col-left .btn-row,
+.top-col-left .company-sub-buttons {
+  width: 100% !important;
+  display: flex;
+  justify-content: space-between;
+  padding-left: 0;
+  margin-left: 0;
+}
+.top-col-left .btn-row .ui-btn,
+.top-col-left .company-sub-buttons .ui-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: none;
+}
+
+/* 1번 카드: 겸직 버튼·안내 문구 상단 버튼 그룹 왼쪽 끝과 수직 정렬 */
+.top-col-left .dual-row {
+  justify-content: flex-start;
+  align-items: flex-start;
+  width: 100%;
+  padding-left: 0;
+  margin-left: 0;
+}
+.top-col-left .section-footnote {
+  align-self: flex-end;
+  text-align: right;
 }
 
 .top-col-center {
   background: linear-gradient(180deg, rgba(16, 185, 129, 0.06) 0%, rgba(255, 255, 255, 1) 100%);
+  box-sizing: border-box !important;
+  padding-right: 25px !important;
 }
 
 .top-col-right {
+  overflow: hidden;
+  min-width: 0;
   background: linear-gradient(180deg, rgba(245, 158, 11, 0.07) 0%, rgba(255, 255, 255, 1) 100%);
+  align-items: center;
 }
 
 /* 섹션 타이틀 / 정보 위계 */
@@ -1001,7 +1128,7 @@ body:has(#page-calendar:not([hidden])) {
   gap: 0.6rem;
   margin-top: 0;
   margin-bottom: 0.5rem;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 .today-date {
   font-size: 0.78rem;
@@ -1026,6 +1153,7 @@ body:has(#page-calendar:not([hidden])) {
   justify-content: center;
   gap: 0.4rem;
   user-select: none;
+  flex-shrink: 0;
 }
 .ui-btn:hover {
   border-color: rgba(37, 99, 235, 0.55);
@@ -1075,16 +1203,16 @@ body:has(#page-calendar:not([hidden])) {
   font-size: 0.82rem;
 }
 
-/* 섹션1(인원 현황) 버튼은 크게 유지 */
+/* 섹션1(인원 현황) 버튼은 크게 유지, 유연한 너비 */
 .top-col-left .ui-btn {
   height: 44px;
-  min-width: 120px;
+  min-width: min-content;
   padding: 0 14px;
   font-size: 0.95rem;
 }
 .top-col-left .ui-btn--lg {
   height: 46px;
-  min-width: 128px;
+  min-width: min-content;
   font-size: 0.98rem;
 }
 
@@ -1113,13 +1241,19 @@ body:has(#page-calendar:not([hidden])) {
   justify-content: center;
 }
 .btn-row .ui-btn {
-  flex: 1 1 0;
+  flex-shrink: 0;
   max-width: 180px;
 }
 .company-sub-buttons {
-  margin-top: 0.6rem;
-  padding-top: 0.75rem;
+  margin-top: 0.75rem;
+  padding-top: 0;
   border-top: 1px solid var(--border-color);
+  display: flex;
+  justify-content: flex-start;
+  align-items: flex-start;
+  gap: 0.6rem;
+  flex-wrap: nowrap;
+  width: 100%;
 }
 
 /* 중앙: Entry/Exit Stats */
@@ -1148,33 +1282,40 @@ body:has(#page-calendar:not([hidden])) {
 .stats-divider {
   height: 1px;
   background: var(--border-color);
-  margin: 0.75rem 0 0.9rem;
+  margin: 0.75rem 0 0.75rem;
+  flex-shrink: 0;
 }
 
 .period-query {
   width: 100%;
+  padding: 0.75rem 0;
 }
 
+/* 1줄: 타이틀(왼쪽) + 날짜 문구(오른쪽) */
 .period-query-head {
   display: flex;
-  align-items: baseline;
   justify-content: space-between;
+  align-items: center;
   gap: 0.75rem;
-  margin-bottom: 0.65rem;
+  margin-bottom: 0.35rem;
+}
+.period-query-head .subsection-title {
+  margin: 0;
 }
 
+/* 2줄: 선택 박스(왼쪽) + 수치(오른쪽), gap 15px */
 .period-query-body {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.9rem;
+  gap: 15px;
+  width: 100%;
   flex-wrap: nowrap;
 }
 
 .stats-controls {
   display: flex;
   justify-content: center;
-  align-items: flex-end;
+  align-items: center;
   gap: 0.75rem;
   flex-wrap: wrap;
 }
@@ -1187,12 +1328,12 @@ body:has(#page-calendar:not([hidden])) {
 .period-query .stats-controls {
   justify-content: flex-start;
   align-items: center;
-  flex-wrap: nowrap; /* 한 줄 고정 */
+  flex-wrap: nowrap;
   gap: 0.75rem;
 }
 
 .period-query .stats-controls .field {
-  flex-direction: row; /* 라벨/셀렉트 한 줄 */
+  flex-direction: row;
   align-items: center;
   gap: 0.5rem;
 }
@@ -1203,7 +1344,8 @@ body:has(#page-calendar:not([hidden])) {
 }
 
 .period-query .ui-select {
-  min-width: 140px;
+  width: 90px !important;
+  min-width: 90px !important;
 }
 
 .stats-big {
@@ -1218,14 +1360,22 @@ body:has(#page-calendar:not([hidden])) {
   margin: 0.5rem 0 0.15rem;
 }
 
+/* 기간별 조회 입사/퇴사: 오른쪽 끝 배치, 가로 배치, 세로 여백 제거 */
 .stats-big--query {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 20px;
   margin: 0;
-  justify-content: flex-end;
-  gap: 1.1rem;
-  padding: 0;
+  margin-left: auto;
+  margin-right: 25px;
+  flex-shrink: 0;
 }
 
 .stats-big-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   text-align: center;
 }
 
@@ -1258,28 +1408,45 @@ body:has(#page-calendar:not([hidden])) {
 /* 오른쪽: Point-in-Time */
 .top-col-right .point-in-time-controls {
   display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+  min-width: 0;
+}
+.top-col-right .point-in-time-controls-top {
+  display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 0.5rem;
   justify-content: center;
+  gap: 0.5rem;
+  flex-wrap: nowrap;
+}
+.top-col-right .point-in-time-controls-buttons {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 15px;
+  flex-shrink: 0;
 }
 
-.top-col-right .point-in-time-controls label {
+.top-col-right .point-in-time-controls-top label {
   font-size: 0.9rem;
   font-weight: 600;
   color: var(--text-secondary);
 }
 
 .top-col-right .pity-summary-card {
-  margin-top: 0.5rem;
-  padding: 0.75rem 1rem;
+  width: 100%;
+  min-width: 250px;
+  margin: 1rem auto 0;
+  padding: 20px;
+  align-self: stretch;
 }
 
 /* 현황 카드 및 회사 버튼 (공통) */
 .status-cards {
   display: flex;
   gap: 0.5rem;
-  flex-wrap: wrap;
+  flex-wrap: nowrap !important;
 }
 
 .status-card {
@@ -1310,13 +1477,6 @@ body:has(#page-calendar:not([hidden])) {
   opacity: 1;
 }
 
-.company-sub-buttons {
-  display: flex;
-  justify-content: center;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-
 .company-btn {
   color: rgba(15, 23, 42, 0.62);
   font-weight: 650;
@@ -1336,7 +1496,9 @@ body:has(#page-calendar:not([hidden])) {
 .dual-row {
   display: flex;
   justify-content: flex-start;
-  margin-top: 0.4rem;
+  align-items: flex-start;
+  margin-top: 0.75rem;
+  width: 100%;
 }
 
 .dual-btn {
@@ -1384,9 +1546,21 @@ body:has(#page-calendar:not([hidden])) {
 
 .point-in-time-controls {
   display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.point-in-time-controls-top {
+  display: flex;
   align-items: center;
   gap: 0.5rem;
-  flex-wrap: wrap;
+}
+
+.point-in-time-controls-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 15px;
 }
 
 .point-in-time-controls label {
@@ -1420,13 +1594,14 @@ body:has(#page-calendar:not([hidden])) {
 }
 
 .pity-summary-card {
-  margin-top: 0.75rem;
-  padding: 1rem 1.25rem;
+  margin: 0.75rem auto 0;
+  padding: 20px;
   background: linear-gradient(135deg, rgba(37, 99, 235, 0.08) 0%, rgba(37, 99, 235, 0.04) 100%);
   border: 1px solid rgba(37, 99, 235, 0.2);
   border-radius: 0.5rem;
+  min-width: 250px;
   min-height: 110px;
-  max-height: 170px;
+  max-height: 200px;
   overflow-y: auto;
 }
 
@@ -1439,6 +1614,8 @@ body:has(#page-calendar:not([hidden])) {
   font-size: 1rem;
   font-weight: 600;
   color: var(--text-primary);
+  margin: 0;
+  padding: 0;
 }
 
 /* [섹션3] 월말 스냅샷 결과 위계 */
@@ -1446,7 +1623,7 @@ body:has(#page-calendar:not([hidden])) {
   font-size: 1rem;
   font-weight: 700;
   color: rgba(15, 23, 42, 0.78);
-  margin-bottom: 0.35rem;
+  margin-bottom: 0.5rem;
 }
 
 .pity-result-main {
@@ -1454,7 +1631,8 @@ body:has(#page-calendar:not([hidden])) {
   font-weight: 900;
   letter-spacing: -0.02em;
   color: rgba(15, 23, 42, 0.92);
-  margin-bottom: 0.65rem;
+  margin-bottom: 1rem;
+  margin-top: 0.25rem;
   white-space: nowrap;
 }
 
@@ -1467,6 +1645,7 @@ body:has(#page-calendar:not([hidden])) {
   font-weight: 600;
   color: rgba(100, 116, 139, 0.82);
   line-height: 1.55;
+  margin-top: 0.15rem;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1480,7 +1659,7 @@ body:has(#page-calendar:not([hidden])) {
   align-items: center;
   gap: 1rem;
   margin-bottom: 1.75rem;
-  flex-wrap: wrap;
+  flex-wrap: nowrap !important;
 }
 
 .search-section {
@@ -1527,8 +1706,9 @@ body:has(#page-calendar:not([hidden])) {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  flex-wrap: wrap;
+  flex-wrap: nowrap !important;
   justify-content: flex-end;
+  flex-shrink: 0;
 }
 
 /* 검색 라인 버튼 높이 통일 (검색/전체삭제/신규/엑셀) */
@@ -1542,6 +1722,7 @@ body:has(#page-calendar:not([hidden])) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
 }
 
 .toolbar .excel-upload-btn.icon-only {
@@ -1644,9 +1825,11 @@ body:has(#page-calendar:not([hidden])) {
 .table-wrap {
   flex: 1;
   min-width: 0;
+  width: 100%;
 }
 
 .table-container {
+  width: 100%;
   background-color: var(--card-bg);
   border-radius: 0.75rem;
   box-shadow: var(--shadow-md);
@@ -1748,7 +1931,8 @@ body:has(#page-calendar:not([hidden])) {
 }
 
 .data-table {
-  width: 100%;
+  width: 100% !important;
+  min-width: 100%;
   border-collapse: collapse;
   font-size: 0.9rem;
   table-layout: fixed;
@@ -2136,14 +2320,15 @@ body:has(#page-calendar:not([hidden])) {
   margin-top: 0.5rem;
 }
 
-/* Responsive - Tablet & small desktop */
+/* Responsive - Tablet & small desktop (레이아웃 유지, 가로 스크롤로 보호) */
 @media (max-width: 768px) {
   .container {
-    padding: 1rem;
+    padding: 2rem 30px 2rem 80px;
+    min-width: 1400px;
   }
 
   .top-grid {
-    grid-template-columns: 1fr;
+    flex-wrap: nowrap !important;
   }
 
   .top-col {
@@ -2173,10 +2358,11 @@ body:has(#page-calendar:not([hidden])) {
   }
 
   .toolbar {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 0.75rem;
-    margin-bottom: 1rem;
+    flex-direction: row;
+    flex-wrap: nowrap !important;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1.75rem;
   }
 
   .search-section {
@@ -2189,7 +2375,7 @@ body:has(#page-calendar:not([hidden])) {
   }
 
   .toolbar-actions {
-    width: 100%;
+    flex-wrap: nowrap !important;
   }
 
   .add-btn,
@@ -2273,12 +2459,11 @@ body:has(#page-calendar:not([hidden])) {
   }
 }
 
-/* Responsive - Mobile */
+/* Responsive - Mobile (레이아웃 유지, 가로 스크롤) */
 @media (max-width: 480px) {
   .container {
-    padding: 0.75rem;
-    padding-left: max(0.75rem, env(safe-area-inset-left));
-    padding-right: max(0.75rem, env(safe-area-inset-right));
+    padding: 2rem 30px 2rem 80px;
+    min-width: 1400px;
   }
 
   .header {
@@ -2291,34 +2476,36 @@ body:has(#page-calendar:not([hidden])) {
 
   .toolbar {
     gap: 0.5rem;
+    flex-wrap: nowrap !important;
+    flex-direction: row !important;
   }
 
   .search-section {
-    flex-direction: column;
+    flex-direction: row;
   }
 
   .search-btn {
-    width: 100%;
+    flex-shrink: 0;
   }
 
   .toolbar-actions {
-    flex-direction: column;
+    flex-direction: row !important;
+    flex-wrap: nowrap !important;
   }
 
   .toolbar-actions .excel-upload-btn,
   .toolbar-actions .legacy-excel-btn,
   .toolbar-actions .add-btn {
-    width: 100%;
+    width: auto;
   }
 
   .table-container {
-    margin-left: -0.75rem;
-    margin-right: -0.75rem;
-    border-radius: 0;
+    width: 100%;
   }
 
   .data-table {
-    min-width: 1000px;
+    width: 100% !important;
+    min-width: 100%;
     font-size: 0.8rem;
   }
 
@@ -2570,7 +2757,8 @@ body:has(#page-calendar:not([hidden])) {
 
 /* 가로 스크롤 방지: 표 전체 화면에 꽉 차게 */
 #participation-view-annual .participation-table-wrap {
-  overflow-x: hidden;
+  width: 100%;
+  overflow-x: auto;
   max-width: 100%;
 }
 
@@ -2579,9 +2767,11 @@ body:has(#page-calendar:not([hidden])) {
   flex-direction: column;
   gap: 1.25rem;
   margin-bottom: 1rem;
+  width: 100%;
 }
 
 .participation-project-card {
+  width: 100%;
   background: var(--card-bg);
   border: 1px solid var(--border-color);
   border-radius: 0.75rem;
@@ -2667,7 +2857,7 @@ body:has(#page-calendar:not([hidden])) {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  flex-wrap: wrap;
+  flex-wrap: nowrap !important;
 }
 
 #page-participation .participation-candidate-btn {
@@ -3236,6 +3426,7 @@ body:has(#page-calendar:not([hidden])) {
 }
 
 .participation-table-wrap {
+  width: 100%;
   overflow-x: auto;
   background: var(--card-bg);
   border-radius: 0.75rem;
@@ -3243,7 +3434,8 @@ body:has(#page-calendar:not([hidden])) {
 }
 
 .participation-annual-table {
-  width: 100%;
+  width: 100% !important;
+  min-width: 100%;
   border-collapse: collapse;
   font-size: 0.9rem;
   table-layout: fixed;
@@ -3305,15 +3497,18 @@ body:has(#page-calendar:not([hidden])) {
 }
 
 /* ========== 퀵 내비게이션 FAB (인건비/참여율 등 공통) ========== */
+/* position: fixed → 가로 스크롤 시에도 브라우저 우측 끝에 고정 */
 .quick-nav-fab {
-  position: fixed;
+  position: fixed !important;
   top: 50%;
-  right: 24px;
+  right: 20px;
   transform: translateY(-50%);
-  z-index: 10;
+  z-index: 1000;
+  width: 40px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  align-items: center;
+  gap: 4px;
 }
 
 .quick-nav-fab[hidden] {
@@ -3321,26 +3516,24 @@ body:has(#page-calendar:not([hidden])) {
 }
 
 .quick-nav-fab .quick-nav-btn {
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   padding: 0;
   border: none;
   border-radius: 0;
   background: transparent;
-  color: #9da3a7; /* 중간 톤의 회색 아이콘 */
-  font-size: 0.95rem; /* 기존보다 약간 더 작고 날렵하게 */
+  color: rgba(150, 163, 175, 0.5);
+  font-size: 0.75rem;
   line-height: 1;
   cursor: pointer;
-  /* 둥근 배경 없이 삼각형 아이콘만 떠 있는 느낌의 드롭 섀도우 */
-  filter: drop-shadow(0px 2px 2px rgba(0, 0, 0, 0.15));
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  transition: color 0.2s;
 }
 
 .quick-nav-fab .quick-nav-btn:hover {
-  color: #6b7280; /* 살짝 더 진한 회색으로 변화 */
-  filter: drop-shadow(0px 3px 4px rgba(0, 0, 0, 0.25));
+  color: rgba(150, 163, 175, 0.85);
 }
 
 .quick-nav-fab .quick-nav-btn[hidden] {
@@ -3353,7 +3546,8 @@ body:has(#page-calendar:not([hidden])) {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  overflow: hidden;
+  overflow-x: initial !important;
+  overflow-y: hidden;
 }
 
 #page-calendar .container {
@@ -3363,8 +3557,11 @@ body:has(#page-calendar:not([hidden])) {
   min-height: 0;
   max-width: none;
   width: 100%;
+  min-width: 1400px;
+  padding: 2rem 30px 2rem 80px;
   padding-bottom: 0;
-  overflow: hidden !important;
+  overflow-x: initial !important;
+  overflow-y: hidden;
 }
 
 #page-calendar .calendar-wrap {
@@ -3378,7 +3575,8 @@ body:has(#page-calendar:not([hidden])) {
   border-radius: 0.75rem;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow-x: initial !important;
+  overflow-y: hidden;
 }
 
 #page-calendar #calendar {
@@ -3710,9 +3908,10 @@ body:has(#page-calendar:not([hidden])) {
   height: calc((100% - 30px) / 5) !important;
 }
 
-/* 스크롤 봉인: overflow hidden으로 스크롤바 제거 */
+/* 가로 스크롤: 페이지 레벨에서 스크롤 (캘린더가 찌그러지지 않고 화면 밖으로) */
 #page-calendar,
 #page-calendar .container,
 #page-calendar .calendar-wrap {
-  overflow: hidden !important;
+  overflow-x: initial !important;
+  overflow-y: hidden;
 }

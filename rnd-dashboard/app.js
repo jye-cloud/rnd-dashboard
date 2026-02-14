@@ -706,7 +706,7 @@
     if (data.length === 0) {
       const tr = document.createElement('tr');
       tr.innerHTML = `
-        <td colspan="14" class="empty-state">
+        <td colspan="13" class="empty-state">
           <p>등록된 인력 정보가 없습니다.</p>
         </td>
       `;
@@ -764,7 +764,6 @@
         <td>${item.researcherId || '-'}</td>
         <td>${item.finalDegree || '-'}</td>
         <td class="cell-major" title="${item.major ? item.major : ''}">${item.major || '-'}</td>
-        <td class="cell-remark">${item.remark ? item.remark : '-'}</td>
         <td>
           <div class="btn-group"
                style="
