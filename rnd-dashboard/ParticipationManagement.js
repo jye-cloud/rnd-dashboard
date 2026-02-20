@@ -23,9 +23,10 @@
   var annualTableWrap = document.getElementById('participation-annual-table-wrap');
   var addProjectBtn = document.getElementById('participation-add-project-btn');
 
-  // ====== 데이터 원천: hrData ======
+  // ====== 데이터 원천: Firestore 또는 LocalStorage ======
   function getHrData() {
     try {
+      if (window.firestoreService) return window.firestoreService.getHrData();
       var raw = localStorage.getItem(HR_STORAGE_KEY);
       return raw ? JSON.parse(raw) : [];
     } catch (e) {
@@ -252,55 +253,66 @@
     renderProjectView();
   }
 
+  function normalizeParticipationState(s, defaultYear) {
+    if (!s || typeof s !== 'object') return null;
+    if (typeof s.selectedYear !== 'number') s.selectedYear = defaultYear;
+    if (!Array.isArray(s.projects) || s.projects.length === 0) {
+      s.projects = [{ id: 1, title: '새 과제', includeInSummary: true, members: [] }];
+    }
+    s.projects = s.projects.map(function (p) {
+      if (p.includeInSummary === undefined) p.includeInSummary = true;
+      if (p.is3Ch5GongTarget === undefined) p.is3Ch5GongTarget = false;
+      if (!Array.isArray(p.members)) p.members = [];
+      p.members = (p.members || []).map(function (m) {
+        if (m.role === undefined) m.role = '참여';
+        return m;
+      });
+      var baseYear = s.selectedYear || defaultYear;
+      var rawBaseDate = (p.newPersonnelBaseDate && String(p.newPersonnelBaseDate)) || (baseYear + '-01-01');
+      var cleanedBase = String(rawBaseDate).replace(/\(.*\)/g, '').trim();
+      var normalizedBase = normalizeDateStr(cleanedBase, baseYear + '-01-01').slice(0, 10);
+      p.newPersonnelBaseDate = normalizedBase;
+      return p;
+    });
+    return s;
+  }
+
   function loadState() {
     var hrData = getHrData();
     var years = extractYearsFromHrData(hrData);
     var defaultYear = years.indexOf(2026) !== -1 ? 2026 : years[0];
+    var defaultState = {
+      selectedYear: defaultYear,
+      projects: [{ id: 1, title: '새 과제', includeInSummary: true, members: [] }]
+    };
     try {
-      var raw = localStorage.getItem(PARTICIPATION_STORAGE_KEY);
-      if (!raw) {
-        return {
-          selectedYear: defaultYear,
-          projects: [{ id: 1, title: '새 과제', includeInSummary: true, members: [] }]
-        };
+      var raw;
+      if (window.firestoreService && window.firestoreService.isConfigured()) {
+        raw = window.firestoreService.getParticipationState();
+        if (raw && (raw.projects || raw.selectedYear != null)) {
+          var normalized = normalizeParticipationState(JSON.parse(JSON.stringify(raw)), defaultYear);
+          if (normalized) return normalized;
+        }
+        return defaultState;
       }
+      raw = localStorage.getItem(PARTICIPATION_STORAGE_KEY);
+      if (!raw) return defaultState;
       var s = JSON.parse(raw);
-      if (!s || typeof s !== 'object') throw new Error('bad state');
-      if (typeof s.selectedYear !== 'number') s.selectedYear = defaultYear;
-      if (!Array.isArray(s.projects) || s.projects.length === 0) {
-        s.projects = [{ id: 1, title: '새 과제', includeInSummary: true, members: [] }];
-      }
-      // 프로젝트 기본 필드 보정 (includeInSummary 기본 true, 기준일 정규화, 3책5공 대상)
-      s.projects = s.projects.map(function (p) {
-        if (p.includeInSummary === undefined) p.includeInSummary = true;
-        if (p.is3Ch5GongTarget === undefined) p.is3Ch5GongTarget = false;
-        if (!Array.isArray(p.members)) p.members = [];
-        p.members = (p.members || []).map(function (m) {
-          if (m.role === undefined) m.role = '참여';
-          return m;
-        });
-        var baseYear = s.selectedYear || defaultYear;
-        var rawBaseDate = (p.newPersonnelBaseDate && String(p.newPersonnelBaseDate)) || (baseYear + '-01-01');
-        // 예전 버전에서 저장된 "YYYY-MM-DD ()" 처럼 괄호가 섞인 값을 정규식으로 정리
-        var cleanedBase = String(rawBaseDate).replace(/\(.*\)/g, '').trim();
-        // normalizeDateStr로 YYYY-MM-DD 형태만 남기고, 앞 10자리만 사용
-        var normalizedBase = normalizeDateStr(cleanedBase, baseYear + '-01-01').slice(0, 10);
-        p.newPersonnelBaseDate = normalizedBase;
-        return p;
-      });
-      return s;
+      var out = normalizeParticipationState(s, defaultYear);
+      return out || defaultState;
     } catch (e) {
       console.warn('참여율 state 초기화 오류, 기본값 사용:', e);
-      return {
-        selectedYear: defaultYear,
-        projects: [{ id: 1, title: '새 과제', includeInSummary: true, members: [], newPersonnelBaseDate: defaultYear + '-01-01' }]
-      };
+      return { selectedYear: defaultYear, projects: [{ id: 1, title: '새 과제', includeInSummary: true, members: [], newPersonnelBaseDate: defaultYear + '-01-01' }] };
     }
   }
 
   function saveState() {
     try {
-      localStorage.setItem(PARTICIPATION_STORAGE_KEY, JSON.stringify(state));
+      if (window.firestoreService && window.firestoreService.isConfigured()) {
+        window.firestoreService.saveParticipationState(state);
+      } else {
+        localStorage.setItem(PARTICIPATION_STORAGE_KEY, JSON.stringify(state));
+      }
     } catch (e) {
       console.error('참여율 state 저장 실패:', e);
     }
@@ -1480,6 +1492,20 @@
     document.addEventListener('DOMContentLoaded', onParticipationRoute);
   } else {
     onParticipationRoute();
+  }
+
+  if (window.firestoreService && window.firestoreService.subscribeParticipation) {
+    window.firestoreService.subscribeParticipation(function (newState) {
+      if (!newState || typeof newState !== 'object') return;
+      var hrData = getHrData();
+      var years = extractYearsFromHrData(hrData);
+      var defaultYear = years.indexOf(2026) !== -1 ? 2026 : years[0];
+      var normalized = normalizeParticipationState(JSON.parse(JSON.stringify(newState)), defaultYear);
+      if (normalized) {
+        state = normalized;
+        renderAll();
+      }
+    });
   }
 })();
 

@@ -49,6 +49,7 @@
 
   function loadEvents() {
     try {
+      if (window.firestoreService) return window.firestoreService.getCalendarEvents();
       var raw = localStorage.getItem(CALENDAR_STORAGE_KEY);
       return raw ? JSON.parse(raw) : [];
     } catch (e) {
@@ -58,7 +59,11 @@
 
   function saveEvents(events) {
     try {
-      localStorage.setItem(CALENDAR_STORAGE_KEY, JSON.stringify(events));
+      if (window.firestoreService && window.firestoreService.isConfigured()) {
+        window.firestoreService.saveCalendarEvents(events);
+      } else {
+        localStorage.setItem(CALENDAR_STORAGE_KEY, JSON.stringify(events));
+      }
     } catch (e) {
       console.error('캘린더 이벤트 저장 실패:', e);
     }
@@ -66,6 +71,10 @@
 
   function getProjects() {
     try {
+      if (window.firestoreService) {
+        var state = window.firestoreService.getParticipationState();
+        if (state && Array.isArray(state.projects)) return state.projects;
+      }
       var raw = localStorage.getItem(PARTICIPATION_STORAGE_KEY);
       var state = raw ? JSON.parse(raw) : null;
       return (state && Array.isArray(state.projects)) ? state.projects : [];
@@ -360,6 +369,12 @@
   });
 
   window.CalendarManagement = { onPageShow: onPageShow };
+
+  if (window.firestoreService && window.firestoreService.subscribeCalendar) {
+    window.firestoreService.subscribeCalendar(function () {
+      if (calendar) refreshCalendar();
+    });
+  }
 
   if ((window.location.hash || '').replace(/^#\/?/, '') === 'calendar') {
     onPageShow();

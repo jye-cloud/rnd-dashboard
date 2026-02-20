@@ -30,9 +30,6 @@
   const excelUploadBtn = document.getElementById('excel-upload-btn');
   const legacyExcelInput = document.getElementById('legacy-excel-input');
   const legacyExcelBtn = document.getElementById('legacy-excel-btn');
-  const hrBackupBtn = document.getElementById('hr-backup-btn');
-  const hrRestoreBtn = document.getElementById('hr-restore-btn');
-  const hrRestoreInput = document.getElementById('hr-restore-input');
   const deleteAllBtn = document.getElementById('delete-all-btn');
   const statusAll = document.getElementById('status-all');
   const statusEmployed = document.getElementById('status-employed');
@@ -126,7 +123,8 @@
   }
   renderRoute();
 
-  let hrData = loadData();
+  var fs = window.firestoreService;
+  let hrData = fs ? fs.getHrData() : [];
   let editingId = null;
   let filteredData = [...hrData];
   let statusFilter = '재직';
@@ -172,23 +170,28 @@
     periodQueryHintEl.textContent = label || '조회 결과';
   }
 
-  // 데이터 로드 (로컬스토리지 또는 구글 스프레드시트에서)
+  // 데이터 로드: Firestore 사용 시 실시간 구독으로 갱신되며, 여기서는 초기/폴백용
   function loadData() {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      return raw ? JSON.parse(raw) : [];
+      return fs ? fs.getHrData() : (function () {
+        var raw = localStorage.getItem(STORAGE_KEY);
+        return raw ? JSON.parse(raw) : [];
+      })();
     } catch (e) {
       console.error('데이터 로드 실패:', e);
       return [];
     }
   }
 
-  // 데이터 저장 (로컬스토리지 또는 구글 스프레드시트로)
+  // 데이터 저장: Firestore 또는 LocalStorage에 즉시 반영
   function saveData() {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(hrData));
+      if (fs && fs.isConfigured()) {
+        fs.saveHr(hrData);
+      } else {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(hrData));
+      }
       saveUIState();
-      // TODO: 구글 스프레드시트 연동 시 여기에 API 호출 추가
       updateStats();
     } catch (e) {
       console.error('데이터 저장 실패:', e);
@@ -202,7 +205,11 @@
     selectedRowId = null;
     editingId = null;
     try {
-      localStorage.removeItem(STORAGE_KEY);
+      if (fs && fs.isConfigured()) {
+        fs.saveHr([]);
+      } else {
+        localStorage.removeItem(STORAGE_KEY);
+      }
       localStorage.removeItem(UI_STATE_KEY);
     } catch (e) {
       console.error('전체 삭제 실패:', e);
@@ -1701,55 +1708,6 @@
   }
 
   // 임시: 전체 삭제 버튼
-  // 데이터 백업 (JSON 다운로드)
-  if (hrBackupBtn) {
-    hrBackupBtn.addEventListener('click', function () {
-      try {
-        var raw = localStorage.getItem(STORAGE_KEY);
-        var data = raw ? JSON.parse(raw) : [];
-        var blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-        var url = URL.createObjectURL(blob);
-        var a = document.createElement('a');
-        a.href = url;
-        a.download = 'personnel_data_backup.json';
-        a.click();
-        URL.revokeObjectURL(url);
-      } catch (e) {
-        console.error('백업 실패:', e);
-        alert('백업 중 오류가 발생했습니다.');
-      }
-    });
-  }
-
-  // 데이터 복구 (JSON 파일 업로드)
-  if (hrRestoreBtn && hrRestoreInput) {
-    hrRestoreBtn.addEventListener('click', function () {
-      hrRestoreInput.value = '';
-      hrRestoreInput.click();
-    });
-    hrRestoreInput.addEventListener('change', function () {
-      var file = hrRestoreInput.files && hrRestoreInput.files[0];
-      if (!file) return;
-      var reader = new FileReader();
-      reader.onload = function () {
-        try {
-          var data = JSON.parse(reader.result);
-          if (!Array.isArray(data)) {
-            alert('잘못된 파일 형식입니다.\n인력 데이터는 배열 형태의 JSON이어야 합니다.');
-            return;
-          }
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-          alert('데이터가 성공적으로 복구되었습니다.');
-          location.reload();
-        } catch (e) {
-          console.error('복구 실패:', e);
-          alert('잘못된 파일 형식입니다.\n유효한 JSON 파일을 선택해 주세요.');
-        }
-      };
-      reader.readAsText(file, 'UTF-8');
-    });
-  }
-
   if (deleteAllBtn) {
     deleteAllBtn.addEventListener('click', function () {
       var ok = confirm('정말 전체 삭제할까요?\n\n• 표 데이터가 전부 삭제됩니다.\n• 브라우저 로컬 저장소 데이터도 함께 초기화됩니다.');
@@ -1968,4 +1926,21 @@
         legacyExcelInput.value = '';
       });
   });
+
+  // Firestore 실시간 구독: 원격 변경 시 테이블·통계 자동 갱신
+  if (window.firestoreService && window.firestoreService.subscribeHr) {
+    var uiStateLoaded = false;
+    window.firestoreService.subscribeHr(function (data) {
+      hrData = Array.isArray(data) ? data : [];
+      applyFilters();
+      renderTable();
+      updateStatusCardsUI();
+      updateStats();
+      updateYearCumulativeUI();
+      if (!uiStateLoaded) {
+        loadUIState();
+        uiStateLoaded = true;
+      }
+    });
+  }
 })();

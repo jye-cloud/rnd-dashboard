@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <script>
+    (function() {
+      const auth = sessionStorage.getItem('rnd-dashboard-auth');
+      const urlParams = new URLSearchParams(window.location.search);
+      if (urlParams.get('logout') === '1') {
+        sessionStorage.removeItem('rnd-dashboard-auth');
+        window.location.href = window.location.pathname;
+        return;
+      }
+      if (!auth) {
+        document.documentElement.style.display = 'none';
+        window.onload = function() {
+          document.documentElement.style.display = 'block';
+        };
+      } else {
+        document.documentElement.classList.add('auth-bypass');
+      }
+    })();
+  </script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>[R&DM] 과제 관리</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    html:not(.auth-bypass) .dashboard { visibility: hidden !important; }
+    html.auth-bypass .dashboard { visibility: visible; }
+    .auth-overlay {
+      position: fixed !important; top: 0 !important; left: 0 !important; right: 0 !important; bottom: 0 !important;
+      width: 100% !important; height: 100% !important; z-index: 2147483647 !important;
+      display: flex !important; align-items: center; justify-content: center;
+      background: linear-gradient(135deg, #f8fafc 0%, #eff6ff 50%, #e0f2fe 100%);
+      visibility: visible !important; opacity: 1 !important;
+    }
+    html.auth-bypass .auth-overlay { display: none !important; }
+    .auth-modal { width: 90%; max-width: 400px; background: #fff; border-radius: 1rem; box-shadow: 0 25px 50px -12px rgb(15 23 42 / 0.25); padding: 2rem; text-align: center; }
+    .auth-modal-logo { font-size: 1.5rem; font-weight: 700; color: #2563eb; margin-bottom: 0.5rem; }
+    .auth-modal-title { font-size: 1rem; color: #64748b; margin-bottom: 1.5rem; }
+    .auth-modal input[type="password"] { width: 100%; padding: 0.75rem 1rem; border: 1px solid #e2e8f0; border-radius: 0.5rem; font-size: 1rem; box-sizing: border-box; }
+    .auth-modal .auth-submit-btn { width: 100%; margin-top: 1rem; padding: 0.75rem 1rem; background: #2563eb; color: #fff; border: none; border-radius: 0.5rem; font-size: 1rem; font-weight: 600; cursor: pointer; }
+    .auth-modal .auth-error { margin-top: 0.75rem; font-size: 0.875rem; color: #ef4444; display: none; }
+    .auth-modal .auth-error.visible { display: block; }
+    body { display: none !important; }
+    body.body-ready { display: block !important; }
+    .projects-stats-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+    .projects-stat-card {
+      flex: 1 1 160px;
+      min-width: 140px;
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 0.75rem;
+      padding: 1rem 1.25rem;
+      box-shadow: var(--shadow-sm);
+    }
+    .projects-stat-label {
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      margin-bottom: 0.35rem;
+    }
+    .projects-stat-value {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--primary-color);
+    }
+    .projects-stat-value.projects-stat--danger { color: var(--danger-color); }
+    .projects-stat-value.projects-stat--success { color: var(--success-color); }
+    .projects-table-wrap {
+      background: var(--card-bg);
+      border-radius: 0.75rem;
+      box-shadow: var(--shadow-md);
+      overflow: auto;
+      border: 1px solid var(--border-color);
+    }
+    .projects-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+    }
+    .projects-table th,
+    .projects-table td {
+      padding: 0.65rem 0.85rem;
+      border-bottom: 1px solid var(--border-color);
+      text-align: left;
+    }
+    .projects-table thead th {
+      background: #f5f5f5;
+      font-weight: 600;
+      color: var(--text-primary);
+      white-space: nowrap;
+    }
+    .projects-table tbody tr {
+      cursor: default;
+      transition: background 0.15s;
+    }
+    .projects-table tbody tr:hover {
+      background: #f8fafc;
+    }
+    .projects-table .project-edit-btn {
+      font-size: 0.75rem;
+      padding: 0.25rem 0.5rem;
+      cursor: pointer;
+    }
+    .projects-badge { display: inline-block; padding: 0.2rem 0.5rem; border-radius: 0.35rem; font-size: 0.75rem; font-weight: 600; }
+    .projects-badge--rd { background: #dbeafe; color: #1d4ed8; margin-right: 0.25rem; }
+    .projects-badge--end { background: #e5e7eb; color: #4b5563; }
+    .projects-badge--ongoing { background: #d1fae5; color: #047857; }
+    .projects-badge--scheduled { background: #dbeafe; color: #1d4ed8; }
+    .projects-badge--unselected { background: #fee2e2; color: #dc2626; }
+    .projects-col-toggle {
+      display: flex;
+      justify-content: flex-end;
+      margin-bottom: 0.75rem;
+    }
+    .projects-col-dropdown {
+      position: relative;
+    }
+    .projects-col-panel {
+      display: none;
+      position: absolute;
+      top: 100%;
+      right: 0;
+      margin-top: 4px;
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 0.5rem;
+      box-shadow: var(--shadow-lg);
+      padding: 0.75rem 1rem;
+      z-index: 100;
+      min-width: 180px;
+    }
+    .projects-col-panel.open { display: block; }
+    .projects-col-panel label { display: flex; align-items: center; gap: 0.5rem; padding: 0.35rem 0; cursor: pointer; font-size: 0.875rem; }
+    .projects-table .col-opt { display: none; }
+    .project-modal .modal-content { max-width: 960px; }
+    .project-modal .form-row--full { grid-template-columns: 1fr; }
+    .project-modal .form-group--radio, .project-modal .form-group--checkbox { flex-direction: row; align-items: center; gap: 0.5rem; }
+    .project-modal .radio-group, .project-modal .checkbox-group { display: flex; flex-wrap: wrap; gap: 0.75rem 1.5rem; }
+    .project-modal .radio-group label, .project-modal .checkbox-group label { margin-bottom: 0; cursor: pointer; }
+    .project-modal .year-budget-table { width: 100%; border-collapse: collapse; font-size: 0.875rem; margin-top: 0.5rem; }
+    .project-modal .year-budget-table th, .project-modal .year-budget-table td { padding: 0.65rem 0.85rem; border: 1px solid var(--border-color); vertical-align: middle; }
+    .project-modal .year-budget-table th { background: #f5f5f5; font-weight: 600; text-align: center; }
+    .project-modal .year-budget-table td.yb-num, .project-modal .year-budget-table td.yb-del-cell { text-align: center; }
+    .project-modal .year-budget-table td.yb-amount, .project-modal .year-budget-table td.yb-subtotal { text-align: right; }
+    .project-modal .year-budget-table td.yb-amount input { min-width: 110px; text-align: right; }
+    .project-modal .year-budget-table th:nth-child(4), .project-modal .year-budget-table th:nth-child(5), .project-modal .year-budget-table th:nth-child(6), .project-modal .year-budget-table th:nth-child(7) { text-align: right; }
+    .project-modal .year-budget-table input { width: 100%; padding: 0.5rem 0.65rem; border: 1px solid var(--border-color); border-radius: 0.35rem; box-sizing: border-box; }
+    .project-modal .year-budget-table input.yb-date { min-width: 110px; }
+    .project-modal .year-budget-total { margin-top: 1rem; padding: 0.75rem 1rem; background: #f0f9ff; border-radius: 0.5rem; font-weight: 700; font-size: 1.1rem; text-align: right; }
+    .project-modal .section-title { font-size: 0.95rem; font-weight: 600; margin: 1.25rem 0 0.5rem; color: var(--text-primary); }
+  </style>
+</head>
+<body>
+  <script>
+    (function(){ var auth = sessionStorage.getItem('rnd-dashboard-auth'); document.body.classList.add('body-ready'); if (auth === '1') document.documentElement.classList.add('auth-bypass'); })();
+  </script>
+  <div id="auth-overlay" class="auth-overlay" aria-label="비밀번호 입력">
+    <div class="auth-modal">
+      <div class="auth-modal-logo">CI_R&DM</div>
+      <p class="auth-modal-title">접속을 위해 비밀번호를 입력해 주세요</p>
+      <form id="auth-form" autocomplete="off">
+        <input type="password" id="auth-password" placeholder="비밀번호" required autofocus aria-label="비밀번호">
+        <button type="submit" class="auth-submit-btn">확인</button>
+      </form>
+      <p id="auth-error" class="auth-error" role="alert">비밀번호가 올바르지 않습니다.</p>
+    </div>
+  </div>
+  <script>
+    (function(){
+      var AUTH_KEY = 'rnd-dashboard-auth';
+      var PASSWORD = '60hertz!!';
+      var form = document.getElementById('auth-form');
+      var input = document.getElementById('auth-password');
+      var errorEl = document.getElementById('auth-error');
+      if (form && input) {
+        form.addEventListener('submit', function(e) {
+          e.preventDefault();
+          errorEl.classList.remove('visible');
+          if (input.value === PASSWORD) {
+            try { sessionStorage.setItem(AUTH_KEY, '1'); } catch(err) {}
+            document.documentElement.classList.add('auth-bypass');
+          } else {
+            errorEl.classList.add('visible');
+            input.value = '';
+            input.focus();
+          }
+        });
+      }
+    })();
+  </script>
+  <div class="dashboard">
+    <aside class="sidebar" id="sidebar" aria-label="메인 메뉴">
+      <div class="sidebar-header">
+        <button type="button" class="sidebar-toggle" id="sidebar-toggle" aria-label="메뉴 접기/펼치기" title="메뉴 접기/펼치기">☰</button>
+        <h1 class="sidebar-title">CI_R&DM</h1>
+      </div>
+      <nav class="sidebar-nav">
+        <a href="index.html" class="sidebar-link" id="nav-hr"><span class="sidebar-link-icon" aria-hidden="true">👤</span><span class="sidebar-link-text">인력 정보 관리</span></a>
+        <a href="index.html#/participation" class="sidebar-link" id="nav-participation"><span class="sidebar-link-icon" aria-hidden="true">📊</span><span class="sidebar-link-text">참여율 관리</span></a>
+        <a href="index.html#/payroll" class="sidebar-link" id="nav-payroll"><span class="sidebar-link-icon" aria-hidden="true">💰</span><span class="sidebar-link-text">인건비 관리</span></a>
+        <a href="index.html#/calendar" class="sidebar-link" id="nav-calendar"><span class="sidebar-link-icon" aria-hidden="true">📅</span><span class="sidebar-link-text">제출 일정 관리</span></a>
+        <a href="projects.html" class="sidebar-link active" id="nav-projects"><span class="sidebar-link-icon" aria-hidden="true">📋</span><span class="sidebar-link-text">과제 관리</span></a>
+      </nav>
+    </aside>
+
+    <main class="main-area">
+      <div class="container">
+        <header class="header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.75rem">
+          <h1 class="header-title">[R&DM] 과제 관리</h1>
+          <button type="button" class="ui-btn ui-btn--primary" id="project-add-btn">과제 등록</button>
+        </header>
+
+        <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1rem;flex-wrap:wrap">
+          <span class="section-footnote">연도 필터:</span>
+          <select id="project-year-filter" class="ui-select" style="min-width:120px;padding:0.5rem 0.75rem;border-radius:0.5rem;border:1px solid var(--border-color)">
+            <option value="" selected>전체</option>
+            <option value="2026">2026년</option>
+            <option value="2025">2025년</option>
+            <option value="2024">2024년</option>
+            <option value="2023">2023년</option>
+            <option value="2022">2022년</option>
+            <option value="2021">2021년</option>
+          </select>
+          <span class="section-footnote" id="project-filter-hint">리스트: 전체 / 통계: 2026년 기준</span>
+        </div>
+        <section class="projects-stats-grid" aria-label="성과 대시보드">
+          <div class="projects-stat-card">
+            <div class="projects-stat-label">총 제안</div>
+            <div class="projects-stat-value" id="stat-total">0</div>
+          </div>
+          <div class="projects-stat-card">
+            <div class="projects-stat-label">수행 중 (계속)</div>
+            <div class="projects-stat-value projects-stat--success" id="stat-continue">0</div>
+          </div>
+          <div class="projects-stat-card">
+            <div class="projects-stat-label">수행 중 (신규)</div>
+            <div class="projects-stat-value projects-stat--success" id="stat-new">0</div>
+          </div>
+          <div class="projects-stat-card">
+            <div class="projects-stat-label">미선정</div>
+            <div class="projects-stat-value projects-stat--danger" id="stat-unselected">0</div>
+          </div>
+          <div class="projects-stat-card">
+            <div class="projects-stat-label">당해 지원금 합계</div>
+            <div class="projects-stat-value" id="stat-year-sum">0</div>
+          </div>
+          <div class="projects-stat-card">
+            <div class="projects-stat-label">총 지원금 합계</div>
+            <div class="projects-stat-value" id="stat-total-sum">0</div>
+          </div>
+        </section>
+
+        <div class="projects-col-toggle">
+          <div class="projects-col-dropdown">
+            <button type="button" class="ui-btn ui-btn--ghost" id="col-toggle-btn">열 선택</button>
+            <div class="projects-col-panel" id="col-panel">
+              <label><input type="checkbox" data-col="부처"> 부처</label>
+              <label><input type="checkbox" data-col="예산"> 예산</label>
+              <label><input type="checkbox" data-col="과제명"> 과제명</label>
+              <label><input type="checkbox" data-col="기관명"> 기관명</label>
+              <label><input type="checkbox" data-col="연구기간"> 연구기간</label>
+              <label><input type="checkbox" data-col="지원금당해"> 지원금(당해)</label>
+              <label><input type="checkbox" data-col="지원금총"> 지원금(총)</label>
+              <label><input type="checkbox" data-col="비고"> 비고</label>
+            </div>
+          </div>
+        </div>
+
+        <div class="projects-table-wrap">
+          <table class="projects-table" id="projects-table">
+            <thead>
+              <tr>
+                <th>No</th>
+                <th>구분 1</th>
+                <th>구분 2</th>
+                <th>진행 여부</th>
+                <th>키워드</th>
+                <th>책임자</th>
+                <th>시작일</th>
+                <th>종료일</th>
+                <th class="col-opt" data-col="부처">부처</th>
+                <th class="col-opt" data-col="예산">예산</th>
+                <th class="col-opt" data-col="과제명">과제명</th>
+                <th class="col-opt" data-col="기관명">기관명</th>
+                <th class="col-opt" data-col="연구기간">연구기간</th>
+                <th class="col-opt" data-col="지원금당해">지원금(당해)</th>
+                <th class="col-opt" data-col="지원금총">지원금(총)</th>
+                <th class="col-opt" data-col="비고">비고</th>
+                <th style="width:60px">수정</th>
+              </tr>
+            </thead>
+            <tbody id="projects-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- 과제 등록 모달 -->
+  <div id="project-modal" class="modal project-modal" aria-hidden="true">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="project-modal-title">과제 등록</h2>
+        <button type="button" class="close-btn" id="project-modal-close" aria-label="닫기">&times;</button>
+      </div>
+      <form id="project-form" class="modal-form">
+        <div class="form-row">
+          <div class="form-group">
+            <label for="project-keywords">별칭(키워드) *</label>
+            <input type="text" id="project-keywords" required placeholder="예: AI, 머신러닝">
+          </div>
+          <div class="form-group">
+            <label for="project-name">과제명 *</label>
+            <input type="text" id="project-name" required placeholder="과제명">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="project-business">사업명</label>
+            <input type="text" id="project-business" placeholder="사업명">
+          </div>
+          <div class="form-group">
+            <label for="project-department">부처</label>
+            <input type="text" id="project-department" placeholder="부처">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="project-institution">전문기관</label>
+            <input type="text" id="project-institution" placeholder="전문기관">
+          </div>
+          <div class="form-group">
+            <label for="project-manager">책임자 *</label>
+            <input type="text" id="project-manager" required placeholder="책임자">
+          </div>
+        </div>
+        <div class="section-title">분류(선택)</div>
+        <div class="form-row">
+          <div class="form-group form-group--checkbox">
+            <div class="checkbox-group">
+              <label><input type="checkbox" id="project-isRd" name="project-isRd"> R&D 여부 (체크 시 목록에서 [R&D] 뱃지 표시)</label>
+            </div>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>구분 1</label>
+            <div class="radio-group">
+              <label><input type="radio" name="project-division1" value="과제"> 과제</label>
+              <label><input type="radio" name="project-division1" value="지원사업"> 지원사업</label>
+              <label><input type="radio" name="project-division1" value="용역"> 용역</label>
+              <label><input type="radio" name="project-division1" value="기타"> 기타</label>
+            </div>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>구분 2</label>
+            <div class="radio-group">
+              <label><input type="radio" name="project-division2" value="계속"> 계속</label>
+              <label><input type="radio" name="project-division2" value="신규"> 신규</label>
+            </div>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="project-status">진행 여부</label>
+            <select id="project-status">
+              <option value="">선택하세요</option>
+              <option value="종료">종료</option>
+              <option value="수행 중">수행 중</option>
+              <option value="예정">예정</option>
+              <option value="미선정">미선정</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="section-title">연차별 예산 입력</div>
+        <div class="form-row form-row--full">
+          <div class="form-group">
+            <button type="button" class="ui-btn ui-btn--ghost" id="project-add-year-btn">+ 연차 추가</button>
+            <div class="year-budget-wrap" style="margin-top:0.5rem">
+              <table class="year-budget-table" id="year-budget-table">
+                <thead>
+                  <tr>
+                    <th style="width:50px">연차</th>
+                    <th style="min-width:110px">시작일</th>
+                    <th style="min-width:110px">종료일</th>
+                    <th style="min-width:130px">지원금</th>
+                    <th style="min-width:130px">현금</th>
+                    <th style="min-width:130px">현물</th>
+                    <th style="min-width:120px">소계</th>
+                    <th style="width:50px"></th>
+                  </tr>
+                </thead>
+                <tbody id="year-budget-tbody"></tbody>
+              </table>
+            </div>
+            <div class="year-budget-total" id="year-budget-total">총 사업비: 0원</div>
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button type="button" class="cancel-btn" id="project-modal-cancel">취소</button>
+          <button type="submit" class="submit-btn">저장</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-firestore-compat.js"></script>
+  <script src="firebase-config.example.js"></script>
+  <script src="firebase-config.js"></script>
+  <script src="firebase.js"></script>
+  <script src="firestore-service.js"></script>
+  <script src="projects.js"></script>
+</body>
+</html>

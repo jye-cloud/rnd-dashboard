@@ -1,0 +1,336 @@
+/**
+ * Firestore 실시간 연동 및 LocalStorage 마이그레이션
+ * - configure 되었을 때: Firestore onSnapshot / setDoc 사용
+ * - configure 안 되었을 때: LocalStorage 사용 (기존 동작 유지)
+ */
+(function () {
+  'use strict';
+
+  var db = window.__firebaseDb;
+  var configured = window.__firebaseConfigured;
+
+  var HR_STORAGE_KEY = 'hr-management-data';
+  var UI_STATE_KEY = 'hr-management-ui-state';
+  var PAYROLL_STORAGE_KEY = 'hr-payroll-data';
+  var PARTICIPATION_STORAGE_KEY = 'hr-participation-data-v2';
+  var CALENDAR_STORAGE_KEY = 'hr-calendar-events';
+  var PROJECTS_STORAGE_KEY = 'projects-data';
+
+  var COLL = {
+    hr: 'hrPersonnel',
+    payroll: 'payroll',
+    participation: 'participation',
+    calendar: 'calendarEvents',
+    projects: 'projects'
+  };
+  var DOC_ID = 'data';
+
+  var _hrData = [];
+  var _payrollState = { snapshots: {}, draft: {}, contractSalaries: {}, contractSalaryByMonth: {} };
+  var _participationState = null;
+  var _calendarEvents = [];
+
+  var _hrCallbacks = [];
+  var _payrollCallbacks = [];
+  var _participationCallbacks = [];
+  var _calendarCallbacks = [];
+  var _projectsData = [];
+  var _projectsCallbacks = [];
+
+  function safeParse(str, fallback) {
+    try {
+      return str ? JSON.parse(str) : fallback;
+    } catch (e) {
+      return fallback;
+    }
+  }
+
+  function getHrData() {
+    if (configured) return _hrData;
+    return safeParse(localStorage.getItem(HR_STORAGE_KEY), []);
+  }
+
+  function getPayrollState() {
+    if (configured) return _payrollState;
+    var raw = localStorage.getItem(PAYROLL_STORAGE_KEY);
+    var state = raw ? JSON.parse(raw) : {};
+    return normalizePayrollState(state);
+  }
+
+  function getParticipationState() {
+    if (configured) return _participationState;
+    return safeParse(localStorage.getItem(PARTICIPATION_STORAGE_KEY), null);
+  }
+
+  function getCalendarEvents() {
+    if (configured) return _calendarEvents;
+    return safeParse(localStorage.getItem(CALENDAR_STORAGE_KEY), []);
+  }
+
+  function normalizePayrollState(state) {
+    if (!state) state = {};
+    var snapshots = state.snapshots || {};
+    var draft = state.draft || {};
+    var contractSalaries = state.contractSalaries || {};
+    var contractSalaryByMonth = state.contractSalaryByMonth || {};
+    Object.keys(state).forEach(function (key) {
+      if (key === 'snapshots' || key === 'draft' || key === 'contractSalaries' || key === 'contractSalaryByMonth') return;
+      if (/^\d{4}-\d{2}$/.test(key) && state[key] && typeof state[key] === 'object') draft[key] = state[key];
+    });
+    return { snapshots: snapshots, draft: draft, contractSalaries: contractSalaries, contractSalaryByMonth: contractSalaryByMonth };
+  }
+
+  function subscribeHr(callback) {
+    if (typeof callback !== 'function') return;
+    _hrCallbacks.push(callback);
+    if (configured) {
+      var ref = db.collection(COLL.hr).doc(DOC_ID);
+      ref.onSnapshot(
+        function (snap) {
+          var data = snap.exists && snap.data() && snap.data().items ? snap.data().items : [];
+          _hrData = Array.isArray(data) ? data : [];
+          _hrCallbacks.forEach(function (cb) {
+            try { cb(_hrData); } catch (e) { console.error(e); }
+          });
+        },
+        function (err) { console.error('Firestore HR snapshot:', err); }
+      );
+    } else {
+      try { callback(getHrData()); } catch (e) { console.error(e); }
+    }
+  }
+
+  function saveHr(data) {
+    var items = Array.isArray(data) ? data : [];
+    if (configured) {
+      db.collection(COLL.hr).doc(DOC_ID).set({ items: items }).catch(function (e) {
+        console.error('Firestore HR 저장 실패:', e);
+      });
+    } else {
+      try { localStorage.setItem(HR_STORAGE_KEY, JSON.stringify(items)); } catch (e) { console.error(e); }
+    }
+  }
+
+  function subscribePayroll(callback) {
+    if (typeof callback !== 'function') return;
+    _payrollCallbacks.push(callback);
+    if (configured) {
+      var ref = db.collection(COLL.payroll).doc(DOC_ID);
+      ref.onSnapshot(
+        function (snap) {
+          var raw = snap.exists && snap.data() ? snap.data() : {};
+          _payrollState = normalizePayrollState(raw);
+          _payrollCallbacks.forEach(function (cb) {
+            try { cb(_payrollState); } catch (e) { console.error(e); }
+          });
+        },
+        function (err) { console.error('Firestore Payroll snapshot:', err); }
+      );
+    } else {
+      try { callback(getPayrollState()); } catch (e) { console.error(e); }
+    }
+  }
+
+  function savePayrollState(state) {
+    var normalized = normalizePayrollState(state || {});
+    if (configured) {
+      db.collection(COLL.payroll).doc(DOC_ID).set(normalized).catch(function (e) {
+        console.error('Firestore Payroll 저장 실패:', e);
+      });
+    } else {
+      try { localStorage.setItem(PAYROLL_STORAGE_KEY, JSON.stringify(normalized)); } catch (e) { console.error(e); }
+    }
+  }
+
+  function subscribeParticipation(callback) {
+    if (typeof callback !== 'function') return;
+    _participationCallbacks.push(callback);
+    if (configured) {
+      var ref = db.collection(COLL.participation).doc(DOC_ID);
+      ref.onSnapshot(
+        function (snap) {
+          _participationState = snap.exists && snap.data() ? snap.data() : null;
+          _participationCallbacks.forEach(function (cb) {
+            try { cb(_participationState); } catch (e) { console.error(e); }
+          });
+        },
+        function (err) { console.error('Firestore Participation snapshot:', err); }
+      );
+    } else {
+      try { callback(getParticipationState()); } catch (e) { console.error(e); }
+    }
+  }
+
+  function saveParticipationState(state) {
+    if (configured) {
+      db.collection(COLL.participation).doc(DOC_ID).set(state || {}).catch(function (e) {
+        console.error('Firestore Participation 저장 실패:', e);
+      });
+    } else {
+      try { localStorage.setItem(PARTICIPATION_STORAGE_KEY, JSON.stringify(state || {})); } catch (e) { console.error(e); }
+    }
+  }
+
+  function subscribeCalendar(callback) {
+    if (typeof callback !== 'function') return;
+    _calendarCallbacks.push(callback);
+    if (configured) {
+      var ref = db.collection(COLL.calendar).doc(DOC_ID);
+      ref.onSnapshot(
+        function (snap) {
+          var data = snap.exists && snap.data() && snap.data().events ? snap.data().events : [];
+          _calendarEvents = Array.isArray(data) ? data : [];
+          _calendarCallbacks.forEach(function (cb) {
+            try { cb(_calendarEvents); } catch (e) { console.error(e); }
+          });
+        },
+        function (err) { console.error('Firestore Calendar snapshot:', err); }
+      );
+    } else {
+      try { callback(getCalendarEvents()); } catch (e) { console.error(e); }
+    }
+  }
+
+  function saveCalendarEvents(events) {
+    var list = Array.isArray(events) ? events : [];
+    if (configured) {
+      db.collection(COLL.calendar).doc(DOC_ID).set({ events: list }).catch(function (e) {
+        console.error('Firestore Calendar 저장 실패:', e);
+      });
+    } else {
+      try { localStorage.setItem(CALENDAR_STORAGE_KEY, JSON.stringify(list)); } catch (e) { console.error(e); }
+    }
+  }
+
+  function getProjectsData() {
+    if (configured) return _projectsData;
+    return safeParse(localStorage.getItem(PROJECTS_STORAGE_KEY), []);
+  }
+
+  function subscribeProjects(callback) {
+    if (typeof callback !== 'function') return;
+    _projectsCallbacks.push(callback);
+    if (configured) {
+      var ref = db.collection(COLL.projects).doc(DOC_ID);
+      ref.onSnapshot(
+        function (snap) {
+          var data = snap.exists && snap.data() && snap.data().items ? snap.data().items : [];
+          _projectsData = Array.isArray(data) ? data : [];
+          _projectsCallbacks.forEach(function (cb) {
+            try { cb(_projectsData); } catch (e) { console.error(e); }
+          });
+        },
+        function (err) { console.error('Firestore Projects snapshot:', err); }
+      );
+    } else {
+      try { callback(getProjectsData()); } catch (e) { console.error(e); }
+    }
+  }
+
+  function saveProjects(items) {
+    var list = Array.isArray(items) ? items : [];
+    if (configured) {
+      db.collection(COLL.projects).doc(DOC_ID).set({ items: list }).catch(function (e) {
+        console.error('Firestore Projects 저장 실패:', e);
+      });
+    } else {
+      try {
+        localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(list));
+        _projectsData = list;
+        _projectsCallbacks.forEach(function (cb) { try { cb(list); } catch (e) { console.error(e); } });
+      } catch (e) { console.error(e); }
+    }
+  }
+
+  /**
+   * total_project_data.json 형식의 객체를 Firestore 각 컬렉션으로 업로드합니다.
+   * payload: { personnelData?, salaryData?, participationData?, calendarEvents? } (키 이름 변형 지원)
+   * @returns {Promise<{ hr: boolean, payroll: boolean, participation: boolean, calendar: boolean }>}
+   */
+  function uploadFromProjectJson(payload) {
+    if (!configured) {
+      return Promise.reject(new Error('Firebase가 설정되지 않았습니다.'));
+    }
+    if (!payload || typeof payload !== 'object') {
+      return Promise.reject(new Error('올바른 JSON 형식이 아닙니다.'));
+    }
+    var personnel = payload.personnelData || payload.hrData || payload.hr || [];
+    var salary = payload.salaryData || payload.payrollData || payload.payroll || {};
+    var participation = payload.participationData || payload.participation || null;
+    var calendar = payload.calendarEvents || payload.calendarData || payload.calendar || [];
+
+    var pHr = Array.isArray(personnel)
+      ? db.collection(COLL.hr).doc(DOC_ID).set({ items: personnel })
+      : Promise.resolve();
+    var pPayroll = salary && typeof salary === 'object' && (Object.keys(salary).length > 0 || salary.snapshots || salary.draft)
+      ? db.collection(COLL.payroll).doc(DOC_ID).set(normalizePayrollState(salary))
+      : Promise.resolve();
+    var pParticipation = participation && typeof participation === 'object' && (participation.projects || participation.selectedYear != null)
+      ? db.collection(COLL.participation).doc(DOC_ID).set(participation)
+      : Promise.resolve();
+    var pCalendar = Array.isArray(calendar)
+      ? db.collection(COLL.calendar).doc(DOC_ID).set({ events: calendar })
+      : Promise.resolve();
+
+    return Promise.all([pHr, pPayroll, pParticipation, pCalendar]).then(function () {
+      return { hr: true, payroll: true, participation: true, calendar: true };
+    });
+  }
+
+  /**
+   * LocalStorage 데이터를 Firestore로 한 번 업로드합니다.
+   * Firebase가 설정된 상태에서 한 번만 실행하면 됩니다.
+   * @returns {Promise<{ hr: boolean, payroll: boolean, participation: boolean, calendar: boolean }>}
+   */
+  function migrateFromLocalStorage() {
+    if (!configured) {
+      return Promise.reject(new Error('Firebase가 설정되지 않았습니다.'));
+    }
+    var hr = safeParse(localStorage.getItem(HR_STORAGE_KEY), []);
+    var payroll = safeParse(localStorage.getItem(PAYROLL_STORAGE_KEY), {});
+    var participation = safeParse(localStorage.getItem(PARTICIPATION_STORAGE_KEY), null);
+    var calendar = safeParse(localStorage.getItem(CALENDAR_STORAGE_KEY), []);
+
+    var pHr = Array.isArray(hr) && hr.length > 0
+      ? db.collection(COLL.hr).doc(DOC_ID).set({ items: hr })
+      : Promise.resolve();
+    var pPayroll = Object.keys(payroll).length > 0
+      ? db.collection(COLL.payroll).doc(DOC_ID).set(normalizePayrollState(payroll))
+      : Promise.resolve();
+    var pParticipation = participation && (participation.projects || participation.selectedYear != null)
+      ? db.collection(COLL.participation).doc(DOC_ID).set(participation)
+      : Promise.resolve();
+    var pCalendar = Array.isArray(calendar)
+      ? db.collection(COLL.calendar).doc(DOC_ID).set({ events: calendar })
+      : Promise.resolve();
+
+    return Promise.all([pHr, pPayroll, pParticipation, pCalendar]).then(function () {
+      return { hr: true, payroll: true, participation: true, calendar: true };
+    });
+  }
+
+  function isConfigured() {
+    return !!configured;
+  }
+
+  window.firestoreService = {
+    isConfigured: isConfigured,
+    getHrData: getHrData,
+    subscribeHr: subscribeHr,
+    saveHr: saveHr,
+    getPayrollState: getPayrollState,
+    subscribePayroll: subscribePayroll,
+    savePayrollState: savePayrollState,
+    getParticipationState: getParticipationState,
+    subscribeParticipation: subscribeParticipation,
+    saveParticipationState: saveParticipationState,
+    getCalendarEvents: getCalendarEvents,
+    subscribeCalendar: subscribeCalendar,
+    saveCalendarEvents: saveCalendarEvents,
+    getProjectsData: getProjectsData,
+    subscribeProjects: subscribeProjects,
+    saveProjects: saveProjects,
+    migrateFromLocalStorage: migrateFromLocalStorage,
+    uploadFromProjectJson: uploadFromProjectJson
+  };
+})();

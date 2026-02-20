@@ -33,6 +33,7 @@
 
   function getHrData() {
     try {
+      if (window.firestoreService) return window.firestoreService.getHrData();
       var raw = localStorage.getItem(HR_STORAGE_KEY);
       return raw ? JSON.parse(raw) : [];
     } catch (e) {
@@ -43,6 +44,9 @@
 
   function getPayrollState() {
     try {
+      if (window.firestoreService && window.firestoreService.isConfigured()) {
+        return window.firestoreService.getPayrollState();
+      }
       var raw = localStorage.getItem(PAYROLL_STORAGE_KEY);
       var state = raw ? JSON.parse(raw) : {};
       return normalizePayrollState(state);
@@ -90,7 +94,11 @@
   function savePayrollState(state) {
     var normalized = normalizePayrollState(state);
     try {
-      localStorage.setItem(PAYROLL_STORAGE_KEY, JSON.stringify(normalized));
+      if (window.firestoreService && window.firestoreService.isConfigured()) {
+        window.firestoreService.savePayrollState(normalized);
+      } else {
+        localStorage.setItem(PAYROLL_STORAGE_KEY, JSON.stringify(normalized));
+      }
     } catch (e) {
       console.error('인건비 데이터 저장 실패:', e);
     }
@@ -1331,5 +1339,13 @@
     });
   } else {
     onPayrollRoute();
+  }
+
+  if (window.firestoreService && window.firestoreService.subscribePayroll) {
+    window.firestoreService.subscribePayroll(function () {
+      if (document.getElementById('page-payroll') && !document.getElementById('page-payroll').hidden) {
+        renderPayrollTable();
+      }
+    });
   }
 })();

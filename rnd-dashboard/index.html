@@ -1,6 +1,28 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
+  <script>
+    (function() {
+      const auth = sessionStorage.getItem('rnd-dashboard-auth');
+      const urlParams = new URLSearchParams(window.location.search);
+      if (urlParams.get('logout') === '1') {
+        sessionStorage.removeItem('rnd-dashboard-auth');
+        window.location.href = window.location.pathname;
+        return;
+      }
+      if (!auth) {
+        document.documentElement.style.display = 'none';
+        window.onload = function() {
+          document.documentElement.style.display = 'block';
+          if (typeof showPasswordModal === 'function') {
+            showPasswordModal();
+          }
+        };
+      } else {
+        document.documentElement.classList.add('auth-bypass');
+      }
+    })();
+  </script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>[R&DM] 인력 정보</title>
@@ -155,20 +177,149 @@
       white-space: nowrap;
       text-align: center;
     }
+
+    /* ========== 비밀번호 인증 모달 ========== */
+    html:not(.auth-bypass) .dashboard { visibility: hidden !important; }
+    html.auth-bypass .dashboard { visibility: visible; }
+    .auth-overlay {
+      position: fixed !important;
+      top: 0 !important;
+      left: 0 !important;
+      right: 0 !important;
+      bottom: 0 !important;
+      width: 100% !important;
+      height: 100% !important;
+      z-index: 2147483647 !important;
+      display: flex !important;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(135deg, #f8fafc 0%, #eff6ff 50%, #e0f2fe 100%);
+      font-family: inherit;
+      visibility: visible !important;
+      opacity: 1 !important;
+    }
+    html.auth-bypass .auth-overlay {
+      display: none !important;
+    }
+    .auth-modal {
+      width: 90%;
+      max-width: 400px;
+      background: #ffffff;
+      border-radius: 1rem;
+      box-shadow: 0 25px 50px -12px rgb(15 23 42 / 0.25), 0 0 0 1px rgb(37 99 235 / 0.08);
+      padding: 2rem;
+      text-align: center;
+    }
+    .auth-modal-logo {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #2563eb;
+      letter-spacing: -0.025em;
+      margin-bottom: 0.5rem;
+    }
+    .auth-modal-title {
+      font-size: 1rem;
+      color: #64748b;
+      margin-bottom: 1.5rem;
+    }
+    .auth-modal input[type="password"] {
+      width: 100%;
+      padding: 0.75rem 1rem;
+      border: 1px solid #e2e8f0;
+      border-radius: 0.5rem;
+      font-size: 1rem;
+      box-sizing: border-box;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .auth-modal input[type="password"]:focus {
+      outline: none;
+      border-color: #2563eb;
+      box-shadow: 0 0 0 3px rgb(37 99 235 / 0.14);
+    }
+    .auth-modal .auth-submit-btn {
+      width: 100%;
+      margin-top: 1rem;
+      padding: 0.75rem 1rem;
+      background: #2563eb;
+      color: #fff;
+      border: none;
+      border-radius: 0.5rem;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .auth-modal .auth-submit-btn:hover {
+      background: #1d4ed8;
+    }
+    .auth-modal .auth-error {
+      margin-top: 0.75rem;
+      font-size: 0.875rem;
+      color: #ef4444;
+      display: none;
+    }
+    .auth-modal .auth-error.visible {
+      display: block;
+    }
+    /* body는 스크립트 실행 전까지 숨김, 스크립트가 body-ready 부여 시에만 표시 */
+    body { display: none !important; }
+    body.body-ready { display: block !important; }
   </style>
 </head>
 <body>
+  <div id="auth-overlay" class="auth-overlay" aria-label="비밀번호 입력">
+    <div class="auth-modal">
+      <div class="auth-modal-logo">CI_R&DM</div>
+      <p class="auth-modal-title">접속을 위해 비밀번호를 입력해 주세요</p>
+      <form id="auth-form" autocomplete="off">
+        <input type="password" id="auth-password" placeholder="비밀번호" required autofocus aria-label="비밀번호">
+        <button type="submit" class="auth-submit-btn">확인</button>
+      </form>
+      <p id="auth-error" class="auth-error" role="alert">비밀번호가 올바르지 않습니다.</p>
+    </div>
+  </div>
+  <script>
+    (function(){
+      var auth = sessionStorage.getItem('rnd-dashboard-auth');
+      document.body.classList.add('body-ready');
+      if (auth === '1') document.documentElement.classList.add('auth-bypass');
+    })();
+  </script>
+  <script>
+    (function(){
+      var AUTH_KEY = 'rnd-dashboard-auth';
+      var PASSWORD = '60hertz!!';
+      var form = document.getElementById('auth-form');
+      var input = document.getElementById('auth-password');
+      var errorEl = document.getElementById('auth-error');
+      if (form && input) {
+        form.addEventListener('submit', function(e) {
+          e.preventDefault();
+          errorEl.classList.remove('visible');
+          if (input.value === PASSWORD) {
+            try { sessionStorage.setItem(AUTH_KEY, '1'); } catch(err) {}
+            document.documentElement.classList.add('auth-bypass');
+          } else {
+            errorEl.classList.add('visible');
+            input.value = '';
+            input.focus();
+          }
+        });
+      }
+    })();
+  </script>
   <div class="dashboard">
     <aside class="sidebar" id="sidebar" aria-label="메인 메뉴">
       <div class="sidebar-header">
         <button type="button" class="sidebar-toggle" id="sidebar-toggle" aria-label="메뉴 접기/펼치기" title="메뉴 접기/펼치기">☰</button>
-        <h1 class="sidebar-title">R&DM</h1>
+        <h1 class="sidebar-title">CI_R&DM</h1>
       </div>
       <nav class="sidebar-nav">
         <a href="#/hr" class="sidebar-link active" data-page="hr" id="nav-hr"><span class="sidebar-link-icon" aria-hidden="true">👤</span><span class="sidebar-link-text">인력 정보 관리</span></a>
         <a href="#/participation" class="sidebar-link" data-page="participation" id="nav-participation"><span class="sidebar-link-icon" aria-hidden="true">📊</span><span class="sidebar-link-text">참여율 관리</span></a>
         <a href="#/payroll" class="sidebar-link" data-page="payroll" id="nav-payroll"><span class="sidebar-link-icon" aria-hidden="true">💰</span><span class="sidebar-link-text">인건비 관리</span></a>
         <a href="#/calendar" class="sidebar-link" data-page="calendar" id="nav-calendar"><span class="sidebar-link-icon" aria-hidden="true">📅</span><span class="sidebar-link-text">제출 일정 관리</span></a>
+        <a href="projects.html" class="sidebar-link" id="nav-projects"><span class="sidebar-link-icon" aria-hidden="true">📋</span><span class="sidebar-link-text">과제 관리</span></a>
       </nav>
     </aside>
 
@@ -291,15 +442,6 @@
         <button type="button" id="search-btn" class="search-btn">검색</button>
       </div>
       <div class="toolbar-actions">
-        <button type="button" id="hr-backup-btn" class="ui-btn ui-btn--ghost" title="인력 데이터를 JSON 파일로 백업">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          <span>데이터 백업</span>
-        </button>
-        <button type="button" id="hr-restore-btn" class="ui-btn ui-btn--ghost" title="JSON 백업 파일에서 데이터 복구">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-          <span>데이터 복구</span>
-        </button>
-        <input type="file" id="hr-restore-input" accept=".json,application/json" hidden>
         <button type="button" id="delete-all-btn" class="danger-btn">전체 삭제(임시)</button>
         <button type="button" id="add-btn" class="add-btn">신규 인력 등록</button>
         <input type="file" id="legacy-excel-input" accept=".xlsx,.xls" hidden>
@@ -689,6 +831,14 @@
     </div>
   </div>
 
+  <!-- Firebase (설정은 firebase-config.js 에서, 없으면 LocalStorage 사용) -->
+  <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-firestore-compat.js"></script>
+  <!-- firebase-config.example.js 먼저 로드 후, firebase-config.js 가 있으면 덮어씀 (gitignore 대상) -->
+  <script src="firebase-config.example.js"></script>
+  <script src="firebase-config.js"></script>
+  <script src="firebase.js"></script>
+  <script src="firestore-service.js"></script>
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/fullcalendar@5.11.5/main.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@fullcalendar/core@5.11.5/locales-all.global.min.js"></script>
