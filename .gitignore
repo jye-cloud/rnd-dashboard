@@ -1,0 +1,17 @@
+node_modules/
+.env
+.DS_Store
+# Firebase
+.firebase/
+firebase-debug.log
+firebase-debug.*.log
+
+# 로그/백업
+*.log
+*.bak
+
+# OS
+Thumbs.db
+
+# VS Code 개인 설정
+.vscode/

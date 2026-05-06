@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>[R&DM] 과제 수행 현황</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    /* ========== 인증 게이트 (auth-guard.js 와 함께 동작) ========== */
+    html:not(.auth-bypass) .dashboard { visibility: hidden !important; }
+    html.auth-bypass .dashboard { visibility: visible; }
+    .auth-overlay {
+      position: fixed !important; top: 0 !important; left: 0 !important; right: 0 !important; bottom: 0 !important;
+      width: 100% !important; height: 100% !important; z-index: 2147483647 !important;
+      display: flex !important; align-items: center; justify-content: center;
+      background: linear-gradient(135deg, #f8fafc 0%, #eff6ff 50%, #e0f2fe 100%);
+      visibility: visible !important; opacity: 1 !important;
+    }
+    html.auth-bypass .auth-overlay { display: none !important; }
+    .auth-modal {
+      width: 90%; max-width: 400px; background: #fff; border-radius: 1rem;
+      box-shadow: 0 25px 50px -12px rgb(15 23 42 / 0.25); padding: 2rem; text-align: center;
+    }
+    .auth-modal-logo { font-size: 1.5rem; font-weight: 700; color: #2563eb; margin-bottom: 0.5rem; }
+    .auth-modal-title { font-size: 1rem; color: #64748b; margin-bottom: 1.5rem; line-height: 1.5; }
+    .auth-modal .auth-error {
+      margin-top: 0.75rem; font-size: 0.875rem; color: #ef4444; display: none;
+    }
+    .auth-modal .auth-error.visible { display: block; }
+    body { display: none !important; }
+    body.body-ready { display: block !important; }
+    /* ========== 인증 게이트 끝 ========== */
+
+    /* ========== 페이지 스타일 ========== */
+    .history-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      flex-wrap: wrap;
+      margin-bottom: 1rem;
+    }
+    .history-toolbar-label {
+      font-size: 0.875rem;
+      color: var(--text-secondary);
+      font-weight: 500;
+    }
+    .history-toolbar select {
+      min-width: 140px;
+      padding: 0.5rem 0.75rem;
+      border-radius: 0.5rem;
+      border: 1px solid var(--border-color);
+      background: var(--card-bg);
+      font-size: 0.9rem;
+      font-family: inherit;
+    }
+    .history-toolbar-meta {
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      margin-left: auto;
+    }
+
+    /* 통계 카드 */
+    .history-stats-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+    .history-stat-card {
+      flex: 1 1 180px;
+      min-width: 160px;
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 0.75rem;
+      padding: 1rem 1.25rem;
+      box-shadow: var(--shadow-sm);
+      transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+      user-select: none;
+    }
+    .history-stat-card.clickable {
+      cursor: pointer;
+    }
+    .history-stat-card.clickable:hover {
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-md);
+      border-color: var(--primary-color);
+    }
+    .history-stat-card.is-active {
+      border-color: var(--primary-color);
+      border-width: 2px;
+      padding: calc(1rem - 1px) calc(1.25rem - 1px);
+      background: linear-gradient(135deg, rgba(37, 99, 235, 0.04), rgba(37, 99, 235, 0.09));
+    }
+    .history-stat-card.is-active .history-stat-label {
+      color: var(--primary-color);
+      font-weight: 600;
+    }
+    .history-stat-label {
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      margin-bottom: 0.4rem;
+    }
+    .history-stat-value {
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: var(--primary-color);
+      line-height: 1.1;
+      letter-spacing: -0.02em;
+    }
+    .history-stat-value--success { color: var(--success-color, #059669); }
+    .history-stat-value--scheduled { color: #1d4ed8; }
+    .history-stat-value--end { color: #4b5563; }
+    .history-stat-value-unit {
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: var(--text-secondary);
+      margin-left: 0.2rem;
+    }
+
+    /* 검색 + 활성 필터 칩 */
+    .history-search-row {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      flex-wrap: wrap;
+      margin-bottom: 0.85rem;
+    }
+    .history-search-wrap {
+      position: relative;
+      flex: 1;
+      min-width: 240px;
+      max-width: 460px;
+    }
+    .history-search-icon {
+      position: absolute;
+      left: 0.7rem;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-secondary);
+      pointer-events: none;
+      font-size: 0.95rem;
+    }
+    .history-search-input {
+      width: 100%;
+      padding: 0.55rem 2.2rem 0.55rem 2.2rem;
+      border: 1px solid var(--border-color);
+      border-radius: 0.5rem;
+      font-size: 0.9rem;
+      background: var(--card-bg);
+      font-family: inherit;
+      box-sizing: border-box;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .history-search-input:focus {
+      outline: none;
+      border-color: var(--primary-color);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+    }
+    .history-search-clear {
+      position: absolute;
+      right: 0.4rem;
+      top: 50%;
+      transform: translateY(-50%);
+      background: transparent;
+      border: none;
+      color: var(--text-secondary);
+      cursor: pointer;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.1rem;
+      line-height: 1;
+      padding: 0;
+    }
+    .history-search-clear:hover {
+      background: #f1f5f9;
+      color: var(--text-primary);
+    }
+    .history-search-wrap.has-value .history-search-clear {
+      display: inline-flex;
+    }
+    .history-active-filters {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+    .history-active-filters:empty { display: none; }
+    .history-filter-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      padding: 0.35rem 0.6rem 0.35rem 0.75rem;
+      background: #dbeafe;
+      color: #1d4ed8;
+      border-radius: 999px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      border: 1px solid rgba(37, 99, 235, 0.2);
+    }
+    .history-filter-chip-clear {
+      background: rgba(255, 255, 255, 0.7);
+      border: none;
+      cursor: pointer;
+      color: inherit;
+      font-size: 0.95rem;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 1;
+      padding: 0;
+    }
+    .history-filter-chip-clear:hover { background: #fff; }
+
+    /* 테이블 */
+    .history-table-wrap {
+      background: var(--card-bg);
+      border-radius: 0.75rem;
+      box-shadow: var(--shadow-md);
+      overflow: auto;
+      border: 1px solid var(--border-color);
+    }
+    .history-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+    }
+    .history-table th,
+    .history-table td {
+      padding: 0.7rem 0.85rem;
+      border-bottom: 1px solid var(--border-color);
+      text-align: left;
+      vertical-align: middle;
+    }
+    .history-table thead th {
+      background: #f5f5f5;
+      font-weight: 600;
+      color: var(--text-primary);
+      white-space: nowrap;
+      font-size: 0.85rem;
+    }
+    .history-table tbody tr:hover {
+      background: #f8fafc;
+    }
+    .history-table .col-amount {
+      text-align: right;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .history-table .col-status {
+      white-space: nowrap;
+    }
+    .history-empty {
+      text-align: center;
+      padding: 3rem 1rem;
+      color: var(--text-secondary);
+      font-size: 0.9rem;
+    }
+
+    /* 상태 배지 — projects.html 과 동일 */
+    .projects-badge { display: inline-block; padding: 0.2rem 0.5rem; border-radius: 0.35rem; font-size: 0.72rem; font-weight: 700; white-space: nowrap; }
+    .projects-badge--ongoing { background: #d1fae5; color: #047857; }
+    .projects-badge--scheduled { background: #dbeafe; color: #1d4ed8; }
+    .projects-badge--waiting { background: #fef3c7; color: #b45309; }
+    .projects-badge--unsubmitted { background: #ddd6fe; color: #5b21b6; }
+    .projects-badge--end { background: #e5e7eb; color: #4b5563; }
+
+    /* 총 N건 + 분류 카드 (상단 통합) */
+    .division-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 0.75rem;
+      padding: 1.25rem 1.5rem;
+      box-shadow: var(--shadow-sm);
+      margin-bottom: 1rem;
+    }
+    .division-card-header {
+      display: flex;
+      align-items: baseline;
+      gap: 0.6rem;
+      cursor: pointer;
+      user-select: none;
+      padding: 0.2rem 0.4rem;
+      margin: -0.2rem -0.4rem 0.6rem;
+      border-radius: 0.4rem;
+      transition: background 0.15s;
+      width: fit-content;
+    }
+    .division-card-header:hover {
+      background: #f1f5f9;
+    }
+    .division-card-label {
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+      font-weight: 500;
+    }
+    .division-card-value {
+      font-size: 1.85rem;
+      font-weight: 800;
+      color: var(--primary-color);
+      line-height: 1;
+      letter-spacing: -0.02em;
+    }
+    .division-card-unit {
+      font-size: 0.95rem;
+      font-weight: 500;
+      color: var(--text-secondary);
+    }
+    .division-card-divider {
+      height: 1px;
+      background: var(--border-color);
+      margin: 0.5rem 0 0.85rem;
+    }
+    .division-pills {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+    .division-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.45rem 0.85rem;
+      background: #f8fafc;
+      border: 1px solid var(--border-color);
+      border-radius: 999px;
+      font-size: 0.85rem;
+      color: var(--text-primary);
+      cursor: pointer;
+      font-family: inherit;
+      font-weight: 600;
+      transition: all 0.15s ease;
+    }
+    .division-pill:hover {
+      background: #fff;
+      border-color: var(--primary-color);
+      transform: translateY(-1px);
+      box-shadow: 0 2px 6px rgba(37, 99, 235, 0.1);
+    }
+    .division-pill.is-active {
+      background: var(--primary-color);
+      border-color: var(--primary-color);
+      color: #fff;
+    }
+    .division-pill-count {
+      color: var(--text-secondary);
+      font-weight: 500;
+    }
+    .division-pill.is-active .division-pill-count {
+      color: rgba(255, 255, 255, 0.85);
+    }
+  </style>
+</head>
+<body>
+  <div class="dashboard">
+    <aside class="sidebar" id="sidebar" aria-label="메인 메뉴">
+      <div class="sidebar-header">
+        <button type="button" class="sidebar-toggle" id="sidebar-toggle" aria-label="메뉴 접기/펼치기" title="메뉴 접기/펼치기">☰</button>
+        <h1 class="sidebar-title">CI_R&DM</h1>
+      </div>
+      <nav class="sidebar-nav">
+        <a href="dashboard.html" class="sidebar-link" id="nav-dashboard"><span class="sidebar-link-icon" aria-hidden="true">🏠</span><span class="sidebar-link-text">대시보드</span></a>
+        <a href="index.html" class="sidebar-link" id="nav-hr"><span class="sidebar-link-icon" aria-hidden="true">👤</span><span class="sidebar-link-text">인력 정보 관리</span></a>
+        <a href="index.html#/participation" class="sidebar-link" id="nav-participation"><span class="sidebar-link-icon" aria-hidden="true">📊</span><span class="sidebar-link-text">참여율 관리</span></a>
+        <a href="index.html#/payroll" class="sidebar-link" id="nav-payroll"><span class="sidebar-link-icon" aria-hidden="true">💰</span><span class="sidebar-link-text">인건비 관리</span></a>
+        <a href="index.html#/calendar" class="sidebar-link" id="nav-calendar"><span class="sidebar-link-icon" aria-hidden="true">📅</span><span class="sidebar-link-text">제출 일정 관리</span></a>
+        <a href="projects-history.html" class="sidebar-link active" id="nav-history"><span class="sidebar-link-icon" aria-hidden="true">📜</span><span class="sidebar-link-text">과제 수행 현황</span></a>
+        <a href="projects.html" class="sidebar-link" id="nav-projects"><span class="sidebar-link-icon" aria-hidden="true">📋</span><span class="sidebar-link-text">과제 관리</span></a>
+      </nav>
+    </aside>
+
+    <main class="main-area">
+      <div class="container">
+        <header class="header">
+          <h1 class="header-title">[R&DM] 과제 수행 현황</h1>
+        </header>
+
+        <div class="history-toolbar">
+          <span class="history-toolbar-label">연도</span>
+          <select id="history-year-filter">
+            <option value="" selected>전체 (현재까지)</option>
+            <option value="2026">2026년</option>
+            <option value="2025">2025년</option>
+            <option value="2024">2024년</option>
+            <option value="2023">2023년</option>
+            <option value="2022">2022년</option>
+            <option value="2021">2021년</option>
+          </select>
+          <span class="history-toolbar-meta" id="history-meta">전체 기간 수행 과제</span>
+        </div>
+
+        <!-- 총 N건 + 분류 카드 -->
+        <section class="division-card" aria-label="총 과제 + 분류">
+          <div class="division-card-header" id="division-clear-trigger" role="button" tabindex="0" title="분류 필터 해제">
+            <span class="division-card-label">총</span>
+            <span class="division-card-value" id="stat-history-total">0</span>
+            <span class="division-card-unit">건</span>
+          </div>
+          <div class="division-card-divider"></div>
+          <div class="division-pills" id="division-pills" role="group" aria-label="구분 1 분류 필터">
+            <button type="button" class="division-pill" data-division="과제">
+              <span>과제</span>
+              <span class="division-pill-count" id="stat-div-과제">0</span>
+            </button>
+            <button type="button" class="division-pill" data-division="지원사업">
+              <span>지원사업</span>
+              <span class="division-pill-count" id="stat-div-지원사업">0</span>
+            </button>
+            <button type="button" class="division-pill" data-division="용역">
+              <span>용역</span>
+              <span class="division-pill-count" id="stat-div-용역">0</span>
+            </button>
+            <button type="button" class="division-pill" data-division="기타">
+              <span>기타</span>
+              <span class="division-pill-count" id="stat-div-기타">0</span>
+            </button>
+          </div>
+        </section>
+
+        <!-- 통계 카드 -->
+        <section class="history-stats-grid" aria-label="과제 통계">
+          <div class="history-stat-card clickable" data-filter="수행" role="button" tabindex="0">
+            <div class="history-stat-label">수행</div>
+            <div class="history-stat-value history-stat-value--success">
+              <span id="stat-ongoing">0</span><span class="history-stat-value-unit">건</span>
+            </div>
+          </div>
+          <div class="history-stat-card clickable" data-filter="종료" role="button" tabindex="0">
+            <div class="history-stat-label">종료</div>
+            <div class="history-stat-value history-stat-value--end">
+              <span id="stat-ended">0</span><span class="history-stat-value-unit">건</span>
+            </div>
+          </div>
+          <div class="history-stat-card clickable" data-filter="예정" role="button" tabindex="0">
+            <div class="history-stat-label">예정</div>
+            <div class="history-stat-value history-stat-value--scheduled">
+              <span id="stat-scheduled">0</span><span class="history-stat-value-unit">건</span>
+            </div>
+          </div>
+          <div class="history-stat-card">
+            <div class="history-stat-label">총 지원금 합계</div>
+            <div class="history-stat-value">
+              <span id="stat-total-sum">0</span><span class="history-stat-value-unit" id="stat-total-sum-unit">원</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- 검색 + 활성 필터 칩 -->
+        <div class="history-search-row">
+          <div class="history-search-wrap" id="history-search-wrap">
+            <span class="history-search-icon" aria-hidden="true">🔍</span>
+            <input type="search" id="history-search" class="history-search-input"
+              placeholder="과제명, 담당자, 부처, 사업명으로 검색…" autocomplete="off"
+              aria-label="과제 검색">
+            <button type="button" class="history-search-clear" id="history-search-clear" aria-label="검색어 지우기">×</button>
+          </div>
+          <div id="history-active-filters" class="history-active-filters" aria-live="polite"></div>
+        </div>
+
+        <!-- 테이블 -->
+        <div class="history-table-wrap">
+          <table class="history-table" id="history-table">
+            <thead>
+              <tr>
+                <th>No</th>
+                <th>진행 여부</th>
+                <th>제출일</th>
+                <th>과제명</th>
+                <th>책임자</th>
+                <th>부처</th>
+                <th>사업명</th>
+                <th>전문기관</th>
+                <th>시작일</th>
+                <th>종료일</th>
+                <th class="col-amount">총 지원금</th>
+              </tr>
+            </thead>
+            <tbody id="history-tbody"></tbody>
+          </table>
+          <div id="history-empty" class="history-empty" style="display:none">표시할 과제가 없습니다.</div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Firebase -->
+  <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-auth-compat.js"></script>
+  <script src="firebase-config.example.js"></script>
+  <script src="firebase-config.js"></script>
+  <script src="firebase.js"></script>
+  <script src="auth-guard.js"></script>
+  <script src="firestore-service.js"></script>
+  <script src="projects-history.js"></script>
+</body>
+</html>

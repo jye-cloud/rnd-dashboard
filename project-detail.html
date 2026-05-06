@@ -312,6 +312,16 @@
       color: var(--text-secondary);
       font-size: 0.9rem;
     }
+    /* 삭제 버튼 — 위험 작업 강조 */
+    .ui-btn--danger {
+      background: #dc2626;
+      color: #ffffff;
+      border-color: #dc2626;
+    }
+    .ui-btn--danger:hover {
+      background: #b91c1c;
+      border-color: #b91c1c;
+    }
   </style>
 </head>
 <body>
@@ -330,6 +340,7 @@
         <a href="index.html#/participation" class="sidebar-link" id="nav-participation"><span class="sidebar-link-icon" aria-hidden="true">📊</span><span class="sidebar-link-text">참여율 관리</span></a>
         <a href="index.html#/payroll" class="sidebar-link" id="nav-payroll"><span class="sidebar-link-icon" aria-hidden="true">💰</span><span class="sidebar-link-text">인건비 관리</span></a>
         <a href="index.html#/calendar" class="sidebar-link" id="nav-calendar"><span class="sidebar-link-icon" aria-hidden="true">📅</span><span class="sidebar-link-text">제출 일정 관리</span></a>
+        <a href="projects-history.html" class="sidebar-link" id="nav-history"><span class="sidebar-link-icon" aria-hidden="true">📜</span><span class="sidebar-link-text">과제 수행 현황</span></a>
         <a href="projects.html" class="sidebar-link active" id="nav-projects"><span class="sidebar-link-icon" aria-hidden="true">📋</span><span class="sidebar-link-text">과제 관리</span></a>
       </nav>
     </aside>
@@ -340,6 +351,7 @@
         <div class="detail-actionbar">
           <a href="projects.html" class="detail-back-link" id="detail-back-link">← 목록으로</a>
           <div class="detail-actionbar-right">
+            <button type="button" class="ui-btn ui-btn--danger" id="detail-delete-top" style="display:none;">삭제</button>
             <button type="button" class="ui-btn ui-btn--ghost" id="detail-cancel-top">취소</button>
             <button type="button" class="ui-btn ui-btn--primary" id="detail-save-top">저장</button>
           </div>
@@ -370,24 +382,33 @@
                 <span class="detail-form-hint">목록에서 빠르게 식별할 수 있는 짧은 별칭</span>
               </div>
               <div class="detail-form-group">
-                <label class="detail-form-label" for="project-name">과제명 <span class="required">*</span></label>
-                <input type="text" class="detail-form-input" id="project-name" required placeholder="과제명 전체">
+                <label class="detail-form-label" for="project-manager">책임자 <span class="required">*</span></label>
+                <input type="text" class="detail-form-input" id="project-manager" required placeholder="책임자">
               </div>
               <div class="detail-form-group">
                 <label class="detail-form-label" for="project-business">사업명</label>
                 <input type="text" class="detail-form-input" id="project-business" placeholder="사업명">
               </div>
               <div class="detail-form-group">
-                <label class="detail-form-label" for="project-department">부처</label>
-                <input type="text" class="detail-form-input" id="project-department" placeholder="부처">
+                <label class="detail-form-label" for="project-name">과제명 <span class="required">*</span></label>
+                <input type="text" class="detail-form-input" id="project-name" required placeholder="과제명 전체">
+              </div>
+              <div class="detail-form-group">
+                <label class="detail-form-label" for="project-department">정부부처</label>
+                <select class="detail-form-select" id="project-department">
+                  <option value="">선택하세요</option>
+                  <!-- 옵션은 project-detail.js 가 동적으로 채움 -->
+                </select>
+                <input type="text" class="detail-form-input" id="project-department-custom"
+                  placeholder="새 부처명 입력 후 Enter" style="display:none; margin-top:0.5rem;">
               </div>
               <div class="detail-form-group">
                 <label class="detail-form-label" for="project-institution">전문기관</label>
-                <input type="text" class="detail-form-input" id="project-institution" placeholder="전문기관">
-              </div>
-              <div class="detail-form-group">
-                <label class="detail-form-label" for="project-manager">책임자 <span class="required">*</span></label>
-                <input type="text" class="detail-form-input" id="project-manager" required placeholder="책임자">
+                <select class="detail-form-select" id="project-institution" disabled>
+                  <option value="">먼저 정부부처를 선택하세요</option>
+                </select>
+                <input type="text" class="detail-form-input" id="project-institution-custom"
+                  placeholder="새 전문기관명 입력 후 Enter" style="display:none; margin-top:0.5rem;">
               </div>
             </div>
           </section>
@@ -401,15 +422,15 @@
               </div>
             </div>
 
-            <div class="detail-form-grid">
-              <div class="detail-form-group detail-form-group--full">
+            <div class="detail-form-grid" style="grid-template-columns: repeat(3, minmax(200px, 1fr));">
+              <div class="detail-form-group">
                 <label class="detail-form-label">과제 속성</label>
                 <div class="detail-checkbox-group">
                   <label><input type="checkbox" id="project-isRd"> R&amp;D 여부 (체크 시 목록에 [R&amp;D] 뱃지 표시)</label>
                 </div>
               </div>
               <div class="detail-form-group">
-                <label class="detail-form-label">구분 1</label>
+                <label class="detail-form-label">유형</label>
                 <div class="detail-radio-group">
                   <label><input type="radio" name="project-division1" value="과제"> 과제</label>
                   <label><input type="radio" name="project-division1" value="지원사업"> 지원사업</label>
@@ -418,21 +439,27 @@
                 </div>
               </div>
               <div class="detail-form-group">
-                <label class="detail-form-label">구분 2</label>
-                <div class="detail-radio-group">
-                  <label><input type="radio" name="project-division2" value="계속"> 계속</label>
-                  <label><input type="radio" name="project-division2" value="신규"> 신규</label>
-                </div>
-              </div>
-              <div class="detail-form-group">
                 <label class="detail-form-label" for="project-status">진행 여부</label>
                 <select class="detail-form-select" id="project-status">
                   <option value="">선택하세요</option>
-                  <option value="종료">종료</option>
-                  <option value="수행 중">수행 중</option>
                   <option value="예정">예정</option>
+                  <option value="수행">수행</option>
+                  <option value="종료">종료</option>
                   <option value="미선정">미선정</option>
+                  <option value="미제출">미제출</option>
                 </select>
+                <!-- 예정 선택 시: 제출일 입력 (필수) -->
+                <div id="project-submit-date-wrap" style="display:none; margin-top:0.5rem;">
+                  <label class="detail-form-label" for="project-submit-date" style="font-size:0.85rem; color:var(--text-secondary);">제출일 <span class="required">*</span></label>
+                  <input type="date" class="detail-form-input" id="project-submit-date">
+                  <span class="detail-form-hint">제출일이 지나면 자동으로 "대기" 상태로 표시됩니다</span>
+                </div>
+                <!-- 미제출 선택 시: 사유 (선택) -->
+                <div id="project-unsubmitted-wrap" style="display:none; margin-top:0.5rem;">
+                  <label class="detail-form-label" for="project-unsubmitted-reason" style="font-size:0.85rem; color:var(--text-secondary);">미제출 사유</label>
+                  <textarea class="detail-form-input" id="project-unsubmitted-reason" rows="2" placeholder="(선택) 미제출 사유를 입력하세요"></textarea>
+                </div>
+                <span class="detail-form-hint" style="margin-top:0.5rem;">"계속/신규"는 시작 연도 기준 자동 판정됩니다</span>
               </div>
             </div>
           </section>
@@ -481,6 +508,7 @@
           </section>
 
           <div class="detail-bottom-actions">
+            <button type="button" class="ui-btn ui-btn--danger" id="detail-delete-bottom" style="display:none;">삭제</button>
             <button type="button" class="ui-btn ui-btn--ghost" id="detail-cancel-bottom">취소</button>
             <button type="submit" class="ui-btn ui-btn--primary" id="detail-save-bottom">저장</button>
           </div>

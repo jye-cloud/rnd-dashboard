@@ -452,6 +452,8 @@
     .projects-badge { display: inline-block; padding: 0.2rem 0.5rem; border-radius: 0.35rem; font-size: 0.72rem; font-weight: 700; white-space: nowrap; }
     .projects-badge--ongoing    { background: #d1fae5; color: #047857; }
     .projects-badge--scheduled  { background: #dbeafe; color: #1d4ed8; }
+    .projects-badge--waiting    { background: #fef3c7; color: #b45309; }
+    .projects-badge--unsubmitted { background: #ddd6fe; color: #5b21b6; }
     .projects-badge--end        { background: #e5e7eb; color: #4b5563; }
     .projects-badge--unselected { background: #fee2e2; color: #dc2626; }
   </style>
@@ -509,8 +511,8 @@
                   <span>전체</span>
                   <span class="pill-stat-count">(<span id="pill-total">0</span>)</span>
                 </button>
-                <button type="button" class="pill-stat" data-status="수행 중">
-                  <span>수행 중</span>
+                <button type="button" class="pill-stat" data-status="수행">
+                  <span>수행</span>
                   <span class="pill-stat-count">(<span id="pill-ongoing">0</span>)</span>
                 </button>
                 <button type="button" class="pill-stat" data-status="예정">
@@ -609,7 +611,7 @@
 
           <div class="dash-card">
             <div class="dash-card-header">
-              <h2 class="dash-card-title">수행 중 과제</h2>
+              <h2 class="dash-card-title">수행 과제</h2>
               <a href="projects.html" class="dash-card-link">전체 보기 →</a>
             </div>
             <div id="recent-wrap">
@@ -624,7 +626,7 @@
                 </thead>
                 <tbody id="recent-tbody"></tbody>
               </table>
-              <div id="recent-empty" class="recent-empty">표시할 수행 중 과제가 없습니다.</div>
+              <div id="recent-empty" class="recent-empty">표시할 수행 과제가 없습니다.</div>
             </div>
           </div>
         </div>

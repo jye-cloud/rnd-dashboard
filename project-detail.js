@@ -184,20 +184,45 @@
 
   // ===== 데이터 로드 =====
 
+  // status 값에 따라 제출일 / 미제출 사유 입력란 표시/숨김
+  function updateStatusConditionalInputs() {
+    var statusEl = document.getElementById('project-status');
+    var submitWrap = document.getElementById('project-submit-date-wrap');
+    var unsubWrap  = document.getElementById('project-unsubmitted-wrap');
+    if (!statusEl) return;
+    var v = statusEl.value;
+    if (submitWrap) submitWrap.style.display = (v === '예정') ? '' : 'none';
+    if (unsubWrap)  unsubWrap.style.display  = (v === '미제출') ? '' : 'none';
+  }
+
   function fillFormWithItem(item) {
     setFormValue('project-keywords',   item.keywords || item.keyword || item['키워드']);
     setFormValue('project-name',       item.projectName || item['과제명']);
     setFormValue('project-business',   item.business || item['사업명']);
-    setFormValue('project-department', item.department || item['부처']);
-    setFormValue('project-institution',item.institution || item['기관명']);
+    // 정부부처 → 전문기관 순서로 (전문기관은 부처에 따라 옵션이 결정됨)
+    setDeptValue(item.department || item['부처'] || '');
+    setInstitutionValue(item.institution || item['기관명'] || '');
     setFormValue('project-manager',    item.manager || item['책임자']);
-    setFormValue('project-status',     item.status || item['진행 여부']);
+
+    // 진행 여부 — 저장된 값이 "수행 중" 이면 "수행" 옵션이 매칭됨 (정규화)
+    var savedStatus = item.status || item['진행 여부'] || '';
+    var statusNorm = String(savedStatus).replace(/\s/g, '');
+    if (statusNorm === '수행중' || statusNorm === '수행') savedStatus = '수행';
+    if (statusNorm === '대기') savedStatus = '예정';  // 자동 전환된 값이 저장되어 있을 경우 대비
+    setFormValue('project-status', savedStatus);
+
+    // 제출일 / 미제출 사유 로드
+    setFormValue('project-submit-date', item.submitDate || item['제출일'] || '');
+    setFormValue('project-unsubmitted-reason', item.unsubmittedReason || item['미제출 사유'] || '');
+
+    // 입력란 가시성 갱신
+    updateStatusConditionalInputs();
 
     var isRd = document.getElementById('project-isRd');
     if (isRd) isRd.checked = !!(item.isRd || item.rd || item['R&D 여부']);
 
     setRadio('project-division1', item.division1 || item['구분1']);
-    setRadio('project-division2', item.division2 || item['구분2']);
+    // division2(계속/신규)는 자동 계산이므로 입력 필드 없음 — 무시
 
     // year budgets
     if (tbodyEl) tbodyEl.innerHTML = '';
@@ -270,10 +295,16 @@
     var manager     = (document.getElementById('project-manager')     || {}).value || '';
     var status      = (document.getElementById('project-status')      || {}).value || '';
     var isRd        = (document.getElementById('project-isRd')        || {}).checked || false;
+    var submitDate  = (document.getElementById('project-submit-date') || {}).value || '';
+    var unsubReason = (document.getElementById('project-unsubmitted-reason') || {}).value || '';
     var div1El = document.querySelector('input[name="project-division1"]:checked');
-    var div2El = document.querySelector('input[name="project-division2"]:checked');
     var division1 = div1El ? div1El.value : '';
-    var division2 = div2El ? div2El.value : '';
+    // division2(계속/신규)는 startDate 기준으로 자동 계산되므로 저장하지 않음
+
+    // status가 "예정" 아닐 때는 submitDate 저장 안 함 (불필요한 데이터 방지)
+    if (status !== '예정') submitDate = '';
+    // status가 "미제출" 아닐 때는 사유 저장 안 함
+    if (status !== '미제출') unsubReason = '';
 
     var collected = collectYears();
     var years        = collected.years;
@@ -317,8 +348,10 @@
       manager: manager.trim(),
       isRd: isRd,
       division1: division1,
-      division2: division2,
+      // division2 (계속/신규) 는 startDate 기준 자동 판정 — 저장 안 함
       status: status,
+      submitDate: submitDate,            // 예정일 때만 값 있음
+      unsubmittedReason: unsubReason,    // 미제출일 때만 값 있음
       startDate: startDate,
       endDate: endDate,
       supportTotal: supportTotal,
@@ -332,10 +365,19 @@
     var keywords    = (document.getElementById('project-keywords')    || {}).value || '';
     var projectName = (document.getElementById('project-name')        || {}).value || '';
     var manager     = (document.getElementById('project-manager')     || {}).value || '';
+    var status      = (document.getElementById('project-status')      || {}).value || '';
+    var submitDate  = (document.getElementById('project-submit-date') || {}).value || '';
 
     if (!keywords.trim())    { alert('별칭(키워드)을 입력해 주세요.'); var el1 = document.getElementById('project-keywords'); if (el1) el1.focus(); return false; }
     if (!projectName.trim()) { alert('과제명을 입력해 주세요.');       var el2 = document.getElementById('project-name');     if (el2) el2.focus(); return false; }
     if (!manager.trim())     { alert('책임자를 입력해 주세요.');       var el3 = document.getElementById('project-manager');  if (el3) el3.focus(); return false; }
+    // 진행 여부가 "예정"이면 제출일 필수
+    if (status === '예정' && !submitDate) {
+      alert('진행 여부가 "예정"인 경우 제출일을 입력해 주세요.');
+      var el4 = document.getElementById('project-submit-date');
+      if (el4) el4.focus();
+      return false;
+    }
     return true;
   }
 
@@ -374,6 +416,48 @@
     window.location.href = 'projects.html';
   }
 
+  function deleteProject() {
+    // 신규 모드에서는 호출되지 않아야 함 (버튼이 hidden 처리됨)
+    if (isNewMode || !editingId) {
+      alert('삭제할 과제를 찾을 수 없습니다.');
+      return;
+    }
+
+    var svc = window.firestoreService;
+    if (!svc || typeof svc.saveProjects !== 'function') {
+      alert('데이터 저장 서비스에 연결할 수 없습니다.');
+      return;
+    }
+
+    var items = (svc.getProjectsData ? svc.getProjectsData() : []) || [];
+    items = Array.isArray(items) ? items.slice() : [];
+
+    var idx = items.findIndex(function (x) { return (x.id || x.docId) === editingId; });
+    if (idx < 0) {
+      alert('삭제할 과제를 찾을 수 없습니다. (이미 삭제되었을 수 있습니다)');
+      return;
+    }
+
+    var target = items[idx];
+    var label = target.projectName || target['과제명'] || target.keywords || '(이름 없음)';
+    var confirmMsg = '"' + label + '" 과제를 정말 삭제하시겠습니까?\n\n이 작업은 되돌릴 수 없으며, 모든 사용자에게 즉시 반영됩니다.';
+    if (!window.confirm(confirmMsg)) return;
+
+    items.splice(idx, 1);
+
+    try {
+      svc.saveProjects(items);
+    } catch (err) {
+      console.error('삭제 실패:', err);
+      alert('삭제 중 오류가 발생했습니다. 다시 시도해 주세요.');
+      return;
+    }
+
+    // 삭제 후 목록 페이지로 복귀
+    if (unsubscribe) { try { unsubscribe(); } catch (e) {} }
+    window.location.href = 'projects.html';
+  }
+
   function cancelAndGoBack() {
     // 사용자가 폼에 입력한 내용이 있을 때 confirm — 간단히 생략 (필요 시 추가)
     if (unsubscribe) { try { unsubscribe(); } catch (e) {} }
@@ -381,6 +465,245 @@
   }
 
   // ===== Init =====
+
+  // ===== 정부부처 / 전문기관 드롭다운 =====
+
+  var DEFAULT_AGENCIES = Object.freeze({
+    '과학기술정보통신부': ['정보통신기획평가원', '정보통신산업진흥원'],
+    '중소벤처기업부':     ['중소기업기술정보진흥원'],
+    '기상청':             ['한국기상산업기술원'],
+    '기후에너지환경부':   ['한국에너지공단', '한국에너지기술평가원', '한국환경산업기술원'],
+    '산업통상부':         []
+  });
+
+  var agencyMap = {}; // 작업용 (기본 + custom 합본)
+
+  function cloneDefaultAgencies() {
+    var out = {};
+    Object.keys(DEFAULT_AGENCIES).forEach(function (k) {
+      out[k] = DEFAULT_AGENCIES[k].slice();
+    });
+    return out;
+  }
+
+  function rebuildDeptSelect() {
+    var sel = document.getElementById('project-department');
+    if (!sel) return;
+    var prev = sel.value;
+    sel.innerHTML = '<option value="">선택하세요</option>';
+    Object.keys(agencyMap).forEach(function (dept) {
+      var opt = document.createElement('option');
+      opt.value = dept;
+      opt.textContent = dept;
+      sel.appendChild(opt);
+    });
+    var addOpt = document.createElement('option');
+    addOpt.value = '__add__';
+    addOpt.textContent = '+ 직접 입력';
+    sel.appendChild(addOpt);
+    // 이전 값 복원 (옵션이 사라졌으면 빈 값)
+    if (prev && prev !== '__add__' && agencyMap.hasOwnProperty(prev)) {
+      sel.value = prev;
+    } else if (prev !== '__add__') {
+      sel.value = prev || '';
+    }
+  }
+
+  function rebuildInstSelect(dept) {
+    var sel = document.getElementById('project-institution');
+    if (!sel) return;
+    var prev = sel.value;
+    if (!dept) {
+      sel.innerHTML = '<option value="">먼저 정부부처를 선택하세요</option>';
+      sel.disabled = true;
+      return;
+    }
+    sel.disabled = false;
+    sel.innerHTML = '<option value="">선택하세요</option>';
+    var list = (agencyMap[dept] || []);
+    list.forEach(function (inst) {
+      var opt = document.createElement('option');
+      opt.value = inst;
+      opt.textContent = inst;
+      sel.appendChild(opt);
+    });
+    var addOpt = document.createElement('option');
+    addOpt.value = '__add__';
+    addOpt.textContent = '+ 직접 입력';
+    sel.appendChild(addOpt);
+    if (prev && prev !== '__add__' && list.indexOf(prev) >= 0) {
+      sel.value = prev;
+    }
+  }
+
+  // 데이터 로드 시 호출 — 기존에 저장된 부처/기관이 옵션에 없으면 자동 추가
+  function setDeptValue(value) {
+    var deptSel = document.getElementById('project-department');
+    if (!deptSel) return;
+    if (value && !agencyMap.hasOwnProperty(value)) {
+      agencyMap[value] = [];
+    }
+    rebuildDeptSelect();
+    deptSel.value = value || '';
+    rebuildInstSelect(value);
+  }
+
+  function setInstitutionValue(value) {
+    var instSel = document.getElementById('project-institution');
+    if (!instSel) return;
+    var dept = (document.getElementById('project-department') || {}).value || '';
+    if (value && dept) {
+      if (!agencyMap[dept]) agencyMap[dept] = [];
+      if (agencyMap[dept].indexOf(value) < 0) {
+        agencyMap[dept].push(value);
+        rebuildInstSelect(dept);
+      }
+    }
+    instSel.value = value || '';
+  }
+
+  function setupDeptInstitutionDropdowns() {
+    agencyMap = cloneDefaultAgencies();
+    rebuildDeptSelect();
+    rebuildInstSelect(null);
+
+    var deptSel    = document.getElementById('project-department');
+    var instSel    = document.getElementById('project-institution');
+    var deptCustom = document.getElementById('project-department-custom');
+    var instCustom = document.getElementById('project-institution-custom');
+
+    // 부처 select 변경
+    if (deptSel) {
+      deptSel.addEventListener('change', function () {
+        var v = deptSel.value;
+        if (v === '__add__') {
+          if (deptCustom) {
+            deptCustom.style.display = '';
+            deptCustom.value = '';
+            deptCustom.focus();
+          }
+          deptSel.value = '';
+          rebuildInstSelect(null);
+        } else {
+          if (deptCustom) deptCustom.style.display = 'none';
+          rebuildInstSelect(v);
+        }
+      });
+    }
+
+    // 부처 직접 입력 — Enter 키
+    if (deptCustom) {
+      deptCustom.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          var newDept = deptCustom.value.trim();
+          if (newDept) {
+            if (!agencyMap[newDept]) agencyMap[newDept] = [];
+            rebuildDeptSelect();
+            if (deptSel) deptSel.value = newDept;
+            deptCustom.style.display = 'none';
+            rebuildInstSelect(newDept);
+            saveCustomAgency(newDept);
+          }
+        } else if (e.key === 'Escape') {
+          deptCustom.style.display = 'none';
+        }
+      });
+    }
+
+    // 전문기관 select 변경
+    if (instSel) {
+      instSel.addEventListener('change', function () {
+        var v = instSel.value;
+        if (v === '__add__') {
+          if (instCustom) {
+            instCustom.style.display = '';
+            instCustom.value = '';
+            instCustom.focus();
+          }
+          instSel.value = '';
+        } else {
+          if (instCustom) instCustom.style.display = 'none';
+        }
+      });
+    }
+
+    // 전문기관 직접 입력 — Enter 키
+    if (instCustom) {
+      instCustom.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          var newInst = instCustom.value.trim();
+          var dept = deptSel ? deptSel.value : '';
+          if (newInst && dept) {
+            if (!agencyMap[dept]) agencyMap[dept] = [];
+            if (agencyMap[dept].indexOf(newInst) < 0) {
+              agencyMap[dept].push(newInst);
+            }
+            rebuildInstSelect(dept);
+            if (instSel) instSel.value = newInst;
+            instCustom.style.display = 'none';
+            saveCustomAgency(dept);
+          } else if (!dept) {
+            alert('정부부처를 먼저 선택해 주세요.');
+          }
+        } else if (e.key === 'Escape') {
+          instCustom.style.display = 'none';
+        }
+      });
+    }
+
+    // Firestore에서 사용자가 추가한 부처/기관 로드
+    loadCustomAgenciesAsync();
+  }
+
+  function loadCustomAgenciesAsync() {
+    if (typeof firebase === 'undefined' || !firebase.firestore) return;
+    try {
+      firebase.firestore().collection('config').doc('agencies').get()
+        .then(function (doc) {
+          if (!doc.exists) return;
+          var data = doc.data();
+          if (!data || !data.customAgencies) return;
+          var custom = data.customAgencies;
+          Object.keys(custom).forEach(function (dept) {
+            if (!agencyMap[dept]) agencyMap[dept] = [];
+            (custom[dept] || []).forEach(function (inst) {
+              if (agencyMap[dept].indexOf(inst) < 0) agencyMap[dept].push(inst);
+            });
+          });
+          // 현재 선택값 보존하면서 옵션 갱신
+          var deptSel = document.getElementById('project-department');
+          var currentDept = deptSel ? deptSel.value : '';
+          rebuildDeptSelect();
+          if (currentDept) {
+            if (deptSel) deptSel.value = currentDept;
+            rebuildInstSelect(currentDept);
+          }
+        })
+        .catch(function (e) {
+          console.warn('[project-detail] custom agencies 로드 실패:', e);
+        });
+    } catch (e) {
+      console.warn('[project-detail] firestore 호출 실패:', e);
+    }
+  }
+
+  function saveCustomAgency(dept) {
+    if (typeof firebase === 'undefined' || !firebase.firestore) return;
+    try {
+      // 해당 부처의 전체 기관 목록을 저장 (merge)
+      var payload = {};
+      payload[dept] = (agencyMap[dept] || []).slice();
+      firebase.firestore().collection('config').doc('agencies').set({
+        customAgencies: payload
+      }, { merge: true }).catch(function (e) {
+        console.warn('[project-detail] custom agency 저장 실패:', e);
+      });
+    } catch (e) {
+      console.warn('[project-detail] firestore set 실패:', e);
+    }
+  }
 
   function init() {
     // sidebar toggle
@@ -398,6 +721,17 @@
     tbodyEl = document.getElementById('year-budget-tbody');
     totalEl = document.getElementById('year-budget-total');
 
+    // 정부부처 / 전문기관 드롭다운 셋업 (Firestore 데이터 로드 전에 옵션 채움)
+    setupDeptInstitutionDropdowns();
+
+    // 진행 여부 변경 → 제출일/미제출 사유 입력란 가시성 토글
+    var statusSelectEl = document.getElementById('project-status');
+    if (statusSelectEl) {
+      statusSelectEl.addEventListener('change', updateStatusConditionalInputs);
+    }
+    // 신규 등록 모드에서도 초기 상태 적용 (초기엔 모두 숨김)
+    updateStatusConditionalInputs();
+
     // URL 파싱
     readURL();
     setHeaderTexts();
@@ -408,6 +742,8 @@
     var saveBottomBtn   = document.getElementById('detail-save-bottom');
     var cancelTopBtn    = document.getElementById('detail-cancel-top');
     var cancelBottomBtn = document.getElementById('detail-cancel-bottom');
+    var deleteTopBtn    = document.getElementById('detail-delete-top');
+    var deleteBottomBtn = document.getElementById('detail-delete-bottom');
     var formEl          = document.getElementById('project-detail-form');
     var backLink        = document.getElementById('detail-back-link');
 
@@ -416,6 +752,14 @@
     if (saveBottomBtn) saveBottomBtn.addEventListener('click', function (e) { e.preventDefault(); saveProject(); });
     if (cancelTopBtn) cancelTopBtn.addEventListener('click', cancelAndGoBack);
     if (cancelBottomBtn) cancelBottomBtn.addEventListener('click', cancelAndGoBack);
+    if (deleteTopBtn) deleteTopBtn.addEventListener('click', deleteProject);
+    if (deleteBottomBtn) deleteBottomBtn.addEventListener('click', deleteProject);
+
+    // 편집 모드일 때만 삭제 버튼 표시 (신규 등록 모드에서는 숨김)
+    if (!isNewMode) {
+      if (deleteTopBtn) deleteTopBtn.style.display = '';
+      if (deleteBottomBtn) deleteBottomBtn.style.display = '';
+    }
     if (backLink) {
       backLink.addEventListener('click', function (e) {
         e.preventDefault();

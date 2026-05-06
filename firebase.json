@@ -1,5 +1,6 @@
 {
   "hosting": {
+    "site": "rnd-60hz",
     "public": ".",
     "ignore": [
       "firebase.json",

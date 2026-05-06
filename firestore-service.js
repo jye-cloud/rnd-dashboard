@@ -14,12 +14,14 @@
   var PAYROLL_STORAGE_KEY = 'hr-payroll-data';
   var PARTICIPATION_STORAGE_KEY = 'hr-participation-data-v2';
   var CALENDAR_STORAGE_KEY = 'hr-calendar-events';
+  var PROJECTS_STORAGE_KEY = 'rnd-projects-data';
 
   var COLL = {
     hr: 'hrPersonnel',
     payroll: 'payroll',
     participation: 'participation',
-    calendar: 'calendarEvents'
+    calendar: 'calendarEvents',
+    projects: 'projects'
   };
   var DOC_ID = 'data';
 
@@ -27,11 +29,13 @@
   var _payrollState = { snapshots: {}, draft: {}, contractSalaries: {}, contractSalaryByMonth: {} };
   var _participationState = null;
   var _calendarEvents = [];
+  var _projectsData = [];
 
   var _hrCallbacks = [];
   var _payrollCallbacks = [];
   var _participationCallbacks = [];
   var _calendarCallbacks = [];
+  var _projectsCallbacks = [];
 
   function safeParse(str, fallback) {
     try {
@@ -61,6 +65,11 @@
   function getCalendarEvents() {
     if (configured) return _calendarEvents;
     return safeParse(localStorage.getItem(CALENDAR_STORAGE_KEY), []);
+  }
+
+  function getProjectsData() {
+    if (configured) return _projectsData;
+    return safeParse(localStorage.getItem(PROJECTS_STORAGE_KEY), []);
   }
 
   function normalizePayrollState(state) {
@@ -199,6 +208,45 @@
   }
 
   /**
+   * 과제 (projects) 컬렉션 실시간 구독
+   * 다른 컬렉션과 동일한 패턴: { items: [...] } 형태로 단일 문서에 저장
+   */
+  function subscribeProjects(callback) {
+    if (typeof callback !== 'function') return;
+    _projectsCallbacks.push(callback);
+    if (configured) {
+      var ref = db.collection(COLL.projects).doc(DOC_ID);
+      ref.onSnapshot(
+        function (snap) {
+          var data = snap.exists && snap.data() && snap.data().items ? snap.data().items : [];
+          _projectsData = Array.isArray(data) ? data : [];
+          _projectsCallbacks.forEach(function (cb) {
+            try { cb(_projectsData); } catch (e) { console.error(e); }
+          });
+        },
+        function (err) { console.error('Firestore Projects snapshot:', err); }
+      );
+    } else {
+      try { callback(getProjectsData()); } catch (e) { console.error(e); }
+    }
+  }
+
+  /**
+   * 과제 (projects) 저장
+   * 전체 배열을 단일 문서에 덮어쓰기 (다른 컬렉션과 동일한 패턴)
+   */
+  function saveProjects(data) {
+    var items = Array.isArray(data) ? data : [];
+    if (configured) {
+      db.collection(COLL.projects).doc(DOC_ID).set({ items: items }).catch(function (e) {
+        console.error('Firestore Projects 저장 실패:', e);
+      });
+    } else {
+      try { localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(items)); } catch (e) { console.error(e); }
+    }
+  }
+
+  /**
    * total_project_data.json 형식의 객체를 Firestore 각 컬렉션으로 업로드합니다.
    * payload: { personnelData?, salaryData?, participationData?, calendarEvents? } (키 이름 변형 지원)
    * @returns {Promise<{ hr: boolean, payroll: boolean, participation: boolean, calendar: boolean }>}
@@ -246,6 +294,7 @@
     var payroll = safeParse(localStorage.getItem(PAYROLL_STORAGE_KEY), {});
     var participation = safeParse(localStorage.getItem(PARTICIPATION_STORAGE_KEY), null);
     var calendar = safeParse(localStorage.getItem(CALENDAR_STORAGE_KEY), []);
+    var projects = safeParse(localStorage.getItem(PROJECTS_STORAGE_KEY), []);
 
     var pHr = Array.isArray(hr) && hr.length > 0
       ? db.collection(COLL.hr).doc(DOC_ID).set({ items: hr })
@@ -259,9 +308,12 @@
     var pCalendar = Array.isArray(calendar)
       ? db.collection(COLL.calendar).doc(DOC_ID).set({ events: calendar })
       : Promise.resolve();
+    var pProjects = Array.isArray(projects) && projects.length > 0
+      ? db.collection(COLL.projects).doc(DOC_ID).set({ items: projects })
+      : Promise.resolve();
 
-    return Promise.all([pHr, pPayroll, pParticipation, pCalendar]).then(function () {
-      return { hr: true, payroll: true, participation: true, calendar: true };
+    return Promise.all([pHr, pPayroll, pParticipation, pCalendar, pProjects]).then(function () {
+      return { hr: true, payroll: true, participation: true, calendar: true, projects: true };
     });
   }
 
@@ -283,6 +335,9 @@
     getCalendarEvents: getCalendarEvents,
     subscribeCalendar: subscribeCalendar,
     saveCalendarEvents: saveCalendarEvents,
+    getProjectsData: getProjectsData,
+    subscribeProjects: subscribeProjects,
+    saveProjects: saveProjects,
     migrateFromLocalStorage: migrateFromLocalStorage,
     uploadFromProjectJson: uploadFromProjectJson
   };

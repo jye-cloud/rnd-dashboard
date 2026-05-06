@@ -10,7 +10,7 @@
 
   // 상태별 색상 — 기존 projects-badge 색상과 톤 일치
   var STATUS_COLORS = {
-    '수행 중': '#10b981',
+    '수행': '#10b981',
     '예정':    '#3b82f6',
     '종료':    '#94a3b8',
     '미선정':  '#ef4444'
@@ -75,8 +75,20 @@
   function normalizeStatus(it) {
     var raw = (it.status || it['진행 여부'] || '').toString().trim();
     var n = raw.replace(/\s/g, '');
-    if (n === '수행중') return '수행 중';
-    if (raw === '수행 중' || raw === '예정' || raw === '종료' || raw === '미선정') return raw;
+    if (n === '수행중' || n === '수행') return '수행';
+    // "예정" + 제출일 지남 → 자동으로 "대기"로 표시 (저장 데이터는 그대로 "예정")
+    if (raw === '예정') {
+      var submitDate = (it.submitDate || it['제출일'] || '').toString().slice(0, 10);
+      if (submitDate) {
+        var today = new Date();
+        var todayStr = today.getFullYear() + '-' +
+          String(today.getMonth() + 1).padStart(2, '0') + '-' +
+          String(today.getDate()).padStart(2, '0');
+        if (todayStr > submitDate) return '대기';
+      }
+      return '예정';
+    }
+    if (raw === '대기' || raw === '종료' || raw === '미선정' || raw === '미제출') return raw;
     return raw || '미정';
   }
 
@@ -120,7 +132,7 @@
       var status = normalizeStatus(it);
       var start = (it.startDate || it.start || '').toString().slice(0, 10);
 
-      if (status === '수행 중') {
+      if (status === '수행') {
         ongoing++;
         if (start && start < cutoff) ongoingCont++;
         else ongoingNew++;
@@ -214,7 +226,7 @@
 
     var dueSoon = [];
     items.forEach(function (it) {
-      if (normalizeStatus(it) !== '수행 중') return;
+      if (normalizeStatus(it) !== '수행') return;
       var end = (it.endDate || it.end || '').toString().slice(0, 10);
       if (!end) return;
       if (end >= todayStr && end <= soonStr) {
@@ -250,7 +262,7 @@
   // Donut chart
   function renderDonut(kpis, year) {
     var data = [
-      { key: '수행 중', value: kpis.ongoing,   color: STATUS_COLORS['수행 중'] },
+      { key: '수행', value: kpis.ongoing,   color: STATUS_COLORS['수행'] },
       { key: '예정',    value: kpis.planned,    color: STATUS_COLORS['예정'] },
       { key: '종료',    value: kpis.ended,      color: STATUS_COLORS['종료'] },
       { key: '미선정',  value: kpis.unselected, color: STATUS_COLORS['미선정'] }
@@ -317,7 +329,7 @@
     });
   }
 
-  // 수행 중 과제 (table)
+  // 수행 과제 (table)
   function renderRecent(items, year) {
     var table = document.getElementById('recent-table');
     var tbody = document.getElementById('recent-tbody');
@@ -325,7 +337,7 @@
     if (!table || !tbody || !empty) return;
 
     var ongoing = items.filter(function (it) {
-      return normalizeStatus(it) === '수행 중' && projectOverlapsYear(it, year);
+      return normalizeStatus(it) === '수행' && projectOverlapsYear(it, year);
     });
     ongoing.sort(function (a, b) {
       var sa = (a.startDate || a.start || '').toString();
@@ -353,7 +365,7 @@
 
       var tr = document.createElement('tr');
       tr.innerHTML =
-        '<td><span class="projects-badge projects-badge--ongoing">수행 중</span></td>' +
+        '<td><span class="projects-badge projects-badge--ongoing">수행</span></td>' +
         '<td><div class="recent-name" title="' + escapeHtml(name) + '">' + escapeHtml(name) + '</div></td>' +
         '<td>' + escapeHtml(manager) + '</td>' +
         '<td class="recent-amount">' + formatMoneyShort(amount) + '</td>';
