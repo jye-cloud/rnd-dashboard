@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <script>
+    // 인증은 auth-guard.js 가 처리합니다 (페이지 하단 스크립트 참고)
+    // 페이지를 일단 숨김 — auth-guard.js 가 인증 통과 후 표시
+  </script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>[R&DM] 과제 상세</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    html:not(.auth-bypass) .dashboard { visibility: hidden !important; }
+    html.auth-bypass .dashboard { visibility: visible; }
+    .auth-overlay {
+      position: fixed !important; top: 0 !important; left: 0 !important; right: 0 !important; bottom: 0 !important;
+      width: 100% !important; height: 100% !important; z-index: 2147483647 !important;
+      display: flex !important; align-items: center; justify-content: center;
+      background: linear-gradient(135deg, #f8fafc 0%, #eff6ff 50%, #e0f2fe 100%);
+      visibility: visible !important; opacity: 1 !important;
+    }
+    html.auth-bypass .auth-overlay { display: none !important; }
+    .auth-modal { width: 90%; max-width: 400px; background: #fff; border-radius: 1rem; box-shadow: 0 25px 50px -12px rgb(15 23 42 / 0.25); padding: 2rem; text-align: center; }
+    .auth-modal-logo { font-size: 1.5rem; font-weight: 700; color: #2563eb; margin-bottom: 0.5rem; }
+    .auth-modal-title { font-size: 1rem; color: #64748b; margin-bottom: 1.5rem; }
+    .auth-modal input[type="password"] { width: 100%; padding: 0.75rem 1rem; border: 1px solid #e2e8f0; border-radius: 0.5rem; font-size: 1rem; box-sizing: border-box; }
+    .auth-modal .auth-submit-btn { width: 100%; margin-top: 1rem; padding: 0.75rem 1rem; background: #2563eb; color: #fff; border: none; border-radius: 0.5rem; font-size: 1rem; font-weight: 600; cursor: pointer; }
+    .auth-modal .auth-error { margin-top: 0.75rem; font-size: 0.875rem; color: #ef4444; display: none; }
+    .auth-modal .auth-error.visible { display: block; }
+    body { display: none !important; }
+    body.body-ready { display: block !important; }
+
+    /* ===== Project detail page ===== */
+
+    /* 상단 액션 바 */
+    .detail-actionbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+    }
+    .detail-back-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      color: var(--text-secondary);
+      text-decoration: none;
+      font-size: 0.9rem;
+      padding: 0.45rem 0.7rem;
+      border-radius: 0.5rem;
+      transition: background 0.15s, color 0.15s;
+      border: 1px solid transparent;
+    }
+    .detail-back-link:hover {
+      background: #f1f5f9;
+      color: var(--primary-color);
+    }
+    .detail-actionbar-right {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+
+    /* 페이지 헤더 */
+    .detail-header {
+      margin-bottom: 1.5rem;
+    }
+    .detail-title {
+      font-size: 1.65rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin: 0 0 0.4rem;
+      letter-spacing: -0.02em;
+    }
+    .detail-subtitle {
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+      margin: 0;
+    }
+
+    /* 섹션 카드 */
+    .detail-section {
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 1rem;
+      padding: 1.5rem 1.75rem;
+      margin-bottom: 1.25rem;
+      box-shadow: var(--shadow-sm);
+    }
+    .detail-section-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 1rem;
+      margin-bottom: 1.25rem;
+      flex-wrap: wrap;
+    }
+    .detail-section-title {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin: 0 0 0.3rem;
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+    }
+    .detail-section-desc {
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      margin: 0;
+    }
+
+    /* 폼 그리드 */
+    .detail-form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem 1.5rem;
+    }
+    @media (max-width: 768px) {
+      .detail-form-grid { grid-template-columns: 1fr; }
+    }
+    .detail-form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+    .detail-form-group--full {
+      grid-column: 1 / -1;
+    }
+    .detail-form-label {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+    .detail-form-label .required {
+      color: var(--danger-color, #dc2626);
+      margin-left: 0.2rem;
+    }
+    .detail-form-hint {
+      font-size: 0.72rem;
+      color: var(--text-secondary);
+      margin-top: 0.15rem;
+    }
+    .detail-form-input,
+    .detail-form-select {
+      padding: 0.6rem 0.8rem;
+      border: 1px solid var(--border-color);
+      border-radius: 0.5rem;
+      font-size: 0.9rem;
+      background: var(--card-bg);
+      color: var(--text-primary);
+      font-family: inherit;
+      transition: border-color 0.15s, box-shadow 0.15s;
+      box-sizing: border-box;
+      width: 100%;
+    }
+    .detail-form-input:focus,
+    .detail-form-select:focus {
+      outline: none;
+      border-color: var(--primary-color);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+    }
+
+    /* 라디오 + 체크박스 그룹 */
+    .detail-radio-group,
+    .detail-checkbox-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem 1.25rem;
+      padding: 0.5rem 0;
+    }
+    .detail-radio-group label,
+    .detail-checkbox-group label {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      cursor: pointer;
+      font-size: 0.88rem;
+      color: var(--text-primary);
+      user-select: none;
+    }
+    .detail-radio-group input,
+    .detail-checkbox-group input {
+      accent-color: var(--primary-color);
+    }
+
+    /* 연차별 예산 테이블 */
+    .yb-wrap { overflow-x: auto; margin-top: 0.5rem; }
+    .year-budget-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.875rem;
+    }
+    .year-budget-table th,
+    .year-budget-table td {
+      padding: 0.65rem 0.75rem;
+      border: 1px solid var(--border-color);
+      vertical-align: middle;
+    }
+    .year-budget-table th {
+      background: #f5f5f5;
+      font-weight: 600;
+      text-align: center;
+      color: var(--text-primary);
+    }
+    .year-budget-table td.yb-num,
+    .year-budget-table td.yb-del-cell { text-align: center; }
+    .year-budget-table td.yb-amount,
+    .year-budget-table td.yb-subtotal { text-align: right; }
+    .year-budget-table th:nth-child(4),
+    .year-budget-table th:nth-child(5),
+    .year-budget-table th:nth-child(6),
+    .year-budget-table th:nth-child(7) { text-align: right; }
+    .year-budget-table input {
+      width: 100%;
+      padding: 0.45rem 0.6rem;
+      border: 1px solid var(--border-color);
+      border-radius: 0.4rem;
+      box-sizing: border-box;
+      font-size: 0.85rem;
+      font-family: inherit;
+      background: var(--card-bg);
+    }
+    .year-budget-table input:focus {
+      outline: none;
+      border-color: var(--primary-color);
+      box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
+    }
+    .year-budget-table input.yb-date { min-width: 110px; }
+    .year-budget-table td.yb-amount input { text-align: right; min-width: 110px; }
+    .yb-del {
+      background: none;
+      border: none;
+      color: var(--text-secondary);
+      cursor: pointer;
+      font-size: 1.05rem;
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 1;
+      padding: 0;
+      transition: background 0.15s, color 0.15s;
+    }
+    .yb-del:hover {
+      background: #fee2e2;
+      color: var(--danger-color, #dc2626);
+    }
+    .year-budget-total {
+      margin-top: 1rem;
+      padding: 0.85rem 1.25rem;
+      background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
+      border-radius: 0.6rem;
+      font-weight: 700;
+      font-size: 1.05rem;
+      text-align: right;
+      color: var(--text-primary);
+    }
+
+    /* placeholder 섹션 (향후 추가 영역) */
+    .detail-section--placeholder {
+      background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+      border-style: dashed;
+      border-color: rgba(148, 163, 184, 0.4);
+      box-shadow: none;
+    }
+    .detail-section--placeholder .detail-section-title {
+      color: var(--text-secondary);
+    }
+    .detail-placeholder-text {
+      text-align: center;
+      color: var(--text-secondary);
+      font-size: 0.85rem;
+      padding: 1rem 0;
+      margin: 0;
+    }
+    .detail-placeholder-pills {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      justify-content: center;
+      margin-top: 0.75rem;
+    }
+    .detail-placeholder-pill {
+      display: inline-flex;
+      padding: 0.35rem 0.75rem;
+      background: rgba(255, 255, 255, 0.7);
+      border: 1px solid rgba(148, 163, 184, 0.3);
+      border-radius: 999px;
+      font-size: 0.78rem;
+      color: var(--text-secondary);
+    }
+
+    /* 하단 액션 */
+    .detail-bottom-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 0.5rem;
+      margin-top: 1.5rem;
+      padding-top: 1.25rem;
+      border-top: 1px solid var(--border-color);
+    }
+
+    /* loading state */
+    .detail-loading {
+      text-align: center;
+      padding: 3rem 1rem;
+      color: var(--text-secondary);
+      font-size: 0.9rem;
+    }
+  </style>
+</head>
+<body>
+  <script>
+    // 인증은 auth-guard.js 가 처리합니다
+  </script>
+  <div class="dashboard">
+    <aside class="sidebar" id="sidebar" aria-label="메인 메뉴">
+      <div class="sidebar-header">
+        <button type="button" class="sidebar-toggle" id="sidebar-toggle" aria-label="메뉴 접기/펼치기" title="메뉴 접기/펼치기">☰</button>
+        <h1 class="sidebar-title">CI_R&DM</h1>
+      </div>
+      <nav class="sidebar-nav">
+        <a href="dashboard.html" class="sidebar-link" id="nav-dashboard"><span class="sidebar-link-icon" aria-hidden="true">🏠</span><span class="sidebar-link-text">대시보드</span></a>
+        <a href="index.html" class="sidebar-link" id="nav-hr"><span class="sidebar-link-icon" aria-hidden="true">👤</span><span class="sidebar-link-text">인력 정보 관리</span></a>
+        <a href="index.html#/participation" class="sidebar-link" id="nav-participation"><span class="sidebar-link-icon" aria-hidden="true">📊</span><span class="sidebar-link-text">참여율 관리</span></a>
+        <a href="index.html#/payroll" class="sidebar-link" id="nav-payroll"><span class="sidebar-link-icon" aria-hidden="true">💰</span><span class="sidebar-link-text">인건비 관리</span></a>
+        <a href="index.html#/calendar" class="sidebar-link" id="nav-calendar"><span class="sidebar-link-icon" aria-hidden="true">📅</span><span class="sidebar-link-text">제출 일정 관리</span></a>
+        <a href="projects.html" class="sidebar-link active" id="nav-projects"><span class="sidebar-link-icon" aria-hidden="true">📋</span><span class="sidebar-link-text">과제 관리</span></a>
+      </nav>
+    </aside>
+
+    <main class="main-area">
+      <div class="container">
+
+        <div class="detail-actionbar">
+          <a href="projects.html" class="detail-back-link" id="detail-back-link">← 목록으로</a>
+          <div class="detail-actionbar-right">
+            <button type="button" class="ui-btn ui-btn--ghost" id="detail-cancel-top">취소</button>
+            <button type="button" class="ui-btn ui-btn--primary" id="detail-save-top">저장</button>
+          </div>
+        </div>
+
+        <header class="detail-header">
+          <h1 class="detail-title" id="detail-title">[R&DM] 과제 등록</h1>
+          <p class="detail-subtitle" id="detail-subtitle">새 R&D 과제 정보를 입력합니다.</p>
+        </header>
+
+        <div id="detail-loading" class="detail-loading" style="display:none">불러오는 중…</div>
+
+        <form id="project-detail-form" novalidate>
+
+          <!-- 1. 기본 정보 -->
+          <section class="detail-section">
+            <div class="detail-section-header">
+              <div>
+                <h2 class="detail-section-title">기본 정보</h2>
+                <p class="detail-section-desc">과제 식별 정보와 담당자를 입력합니다.</p>
+              </div>
+            </div>
+
+            <div class="detail-form-grid">
+              <div class="detail-form-group">
+                <label class="detail-form-label" for="project-keywords">별칭(키워드) <span class="required">*</span></label>
+                <input type="text" class="detail-form-input" id="project-keywords" required placeholder="예: AI, 머신러닝">
+                <span class="detail-form-hint">목록에서 빠르게 식별할 수 있는 짧은 별칭</span>
+              </div>
+              <div class="detail-form-group">
+                <label class="detail-form-label" for="project-name">과제명 <span class="required">*</span></label>
+                <input type="text" class="detail-form-input" id="project-name" required placeholder="과제명 전체">
+              </div>
+              <div class="detail-form-group">
+                <label class="detail-form-label" for="project-business">사업명</label>
+                <input type="text" class="detail-form-input" id="project-business" placeholder="사업명">
+              </div>
+              <div class="detail-form-group">
+                <label class="detail-form-label" for="project-department">부처</label>
+                <input type="text" class="detail-form-input" id="project-department" placeholder="부처">
+              </div>
+              <div class="detail-form-group">
+                <label class="detail-form-label" for="project-institution">전문기관</label>
+                <input type="text" class="detail-form-input" id="project-institution" placeholder="전문기관">
+              </div>
+              <div class="detail-form-group">
+                <label class="detail-form-label" for="project-manager">책임자 <span class="required">*</span></label>
+                <input type="text" class="detail-form-input" id="project-manager" required placeholder="책임자">
+              </div>
+            </div>
+          </section>
+
+          <!-- 2. 분류 -->
+          <section class="detail-section">
+            <div class="detail-section-header">
+              <div>
+                <h2 class="detail-section-title">분류</h2>
+                <p class="detail-section-desc">과제의 유형과 진행 상태를 선택합니다.</p>
+              </div>
+            </div>
+
+            <div class="detail-form-grid">
+              <div class="detail-form-group detail-form-group--full">
+                <label class="detail-form-label">과제 속성</label>
+                <div class="detail-checkbox-group">
+                  <label><input type="checkbox" id="project-isRd"> R&amp;D 여부 (체크 시 목록에 [R&amp;D] 뱃지 표시)</label>
+                </div>
+              </div>
+              <div class="detail-form-group">
+                <label class="detail-form-label">구분 1</label>
+                <div class="detail-radio-group">
+                  <label><input type="radio" name="project-division1" value="과제"> 과제</label>
+                  <label><input type="radio" name="project-division1" value="지원사업"> 지원사업</label>
+                  <label><input type="radio" name="project-division1" value="용역"> 용역</label>
+                  <label><input type="radio" name="project-division1" value="기타"> 기타</label>
+                </div>
+              </div>
+              <div class="detail-form-group">
+                <label class="detail-form-label">구분 2</label>
+                <div class="detail-radio-group">
+                  <label><input type="radio" name="project-division2" value="계속"> 계속</label>
+                  <label><input type="radio" name="project-division2" value="신규"> 신규</label>
+                </div>
+              </div>
+              <div class="detail-form-group">
+                <label class="detail-form-label" for="project-status">진행 여부</label>
+                <select class="detail-form-select" id="project-status">
+                  <option value="">선택하세요</option>
+                  <option value="종료">종료</option>
+                  <option value="수행 중">수행 중</option>
+                  <option value="예정">예정</option>
+                  <option value="미선정">미선정</option>
+                </select>
+              </div>
+            </div>
+          </section>
+
+          <!-- 3. 연차별 예산 -->
+          <section class="detail-section">
+            <div class="detail-section-header">
+              <div>
+                <h2 class="detail-section-title">연차별 예산 <span aria-hidden="true">💰</span></h2>
+                <p class="detail-section-desc">연도별 정부지원금, 자부담 현금, 자부담 현물을 입력합니다.</p>
+              </div>
+              <button type="button" class="ui-btn ui-btn--ghost" id="add-year-btn">+ 연차 추가</button>
+            </div>
+
+            <div class="yb-wrap">
+              <table class="year-budget-table" id="year-budget-table">
+                <thead>
+                  <tr>
+                    <th style="width:50px">연차</th>
+                    <th style="min-width:120px">시작일</th>
+                    <th style="min-width:120px">종료일</th>
+                    <th style="min-width:130px">지원금</th>
+                    <th style="min-width:130px">현금</th>
+                    <th style="min-width:130px">현물</th>
+                    <th style="min-width:120px">소계</th>
+                    <th style="width:50px"></th>
+                  </tr>
+                </thead>
+                <tbody id="year-budget-tbody"></tbody>
+              </table>
+            </div>
+            <div class="year-budget-total" id="year-budget-total">총 사업비: 0원</div>
+          </section>
+
+          <!-- 4. 향후 추가 영역 (placeholder) -->
+          <section class="detail-section detail-section--placeholder">
+            <h2 class="detail-section-title">향후 추가 예정 영역</h2>
+            <p class="detail-placeholder-text">이 과제와 관련된 추가 정보가 여기에 모일 예정입니다.</p>
+            <div class="detail-placeholder-pills">
+              <span class="detail-placeholder-pill">자금 입금 일정</span>
+              <span class="detail-placeholder-pill">인건비 집행</span>
+              <span class="detail-placeholder-pill">비목별 사용 현황</span>
+              <span class="detail-placeholder-pill">첨부 문서</span>
+              <span class="detail-placeholder-pill">메모</span>
+            </div>
+          </section>
+
+          <div class="detail-bottom-actions">
+            <button type="button" class="ui-btn ui-btn--ghost" id="detail-cancel-bottom">취소</button>
+            <button type="submit" class="ui-btn ui-btn--primary" id="detail-save-bottom">저장</button>
+          </div>
+        </form>
+
+      </div>
+    </main>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-auth-compat.js"></script>
+  <script src="firebase-config.example.js"></script>
+  <script src="firebase-config.js"></script>
+  <script src="firebase.js"></script>
+  <script src="auth-guard.js"></script>
+  <script src="firestore-service.js"></script>
+  <script src="project-detail.js"></script>
+</body>
+</html>

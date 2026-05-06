@@ -1727,32 +1727,45 @@ body:has(#page-calendar:not([hidden])) {
   min-width: 36px;
   width: 36px;
   height: 36px;
+  border-radius: 0.5rem;
 }
 
 .excel-upload-btn {
   padding: 0.4rem 0.9rem;
-  background-color: var(--secondary-color);
-  color: white;
-  border: none;
+  background-color: #fff;
+  color: #217346;
+  border: 1.5px solid #217346;
   border-radius: 0.5rem;
   font-size: 0.8rem;
   font-weight: 500;
   cursor: pointer;
-  transition: background-color 0.2s;
+  transition: background-color 0.2s, border-color 0.2s;
   white-space: nowrap;
 }
 
 .excel-upload-btn:hover {
-  background-color: #475569;
+  background-color: #f0f9f4;
+  border-color: #1a5c38;
 }
 
 .excel-upload-btn.icon-only {
-  padding: 0.75rem;
-  min-width: 44px;
+  padding: 0.5rem;
+  min-width: 36px;
+  width: 36px;
+  height: 36px;
+  background-color: #fff;
+  border: 1.5px solid #217346;
+}
+
+.excel-upload-btn.icon-only:hover {
+  background-color: #f0f9f4;
+  border-color: #1a5c38;
 }
 
 .excel-upload-btn .excel-icon {
   display: block;
+  margin: 0 auto;
+  vertical-align: middle;
 }
 
 .legacy-excel-btn {

@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <script>
+    // 인증은 auth-guard.js 가 처리합니다 (페이지 하단 스크립트 참고)
+    // 페이지를 일단 숨김 — auth-guard.js 가 인증 통과 후 표시
+  </script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>[R&DM] 대시보드</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    html:not(.auth-bypass) .dashboard { visibility: hidden !important; }
+    html.auth-bypass .dashboard { visibility: visible; }
+    .auth-overlay {
+      position: fixed !important; top: 0 !important; left: 0 !important; right: 0 !important; bottom: 0 !important;
+      width: 100% !important; height: 100% !important; z-index: 2147483647 !important;
+      display: flex !important; align-items: center; justify-content: center;
+      background: linear-gradient(135deg, #f8fafc 0%, #eff6ff 50%, #e0f2fe 100%);
+      visibility: visible !important; opacity: 1 !important;
+    }
+    html.auth-bypass .auth-overlay { display: none !important; }
+    .auth-modal { width: 90%; max-width: 400px; background: #fff; border-radius: 1rem; box-shadow: 0 25px 50px -12px rgb(15 23 42 / 0.25); padding: 2rem; text-align: center; }
+    .auth-modal-logo { font-size: 1.5rem; font-weight: 700; color: #2563eb; margin-bottom: 0.5rem; }
+    .auth-modal-title { font-size: 1rem; color: #64748b; margin-bottom: 1.5rem; }
+    .auth-modal input[type="password"] { width: 100%; padding: 0.75rem 1rem; border: 1px solid #e2e8f0; border-radius: 0.5rem; font-size: 1rem; box-sizing: border-box; }
+    .auth-modal .auth-submit-btn { width: 100%; margin-top: 1rem; padding: 0.75rem 1rem; background: #2563eb; color: #fff; border: none; border-radius: 0.5rem; font-size: 1rem; font-weight: 600; cursor: pointer; }
+    .auth-modal .auth-error { margin-top: 0.75rem; font-size: 0.875rem; color: #ef4444; display: none; }
+    .auth-modal .auth-error.visible { display: block; }
+    body { display: none !important; }
+    body.body-ready { display: block !important; }
+
+    /* ===== Dashboard styles (인력 정보 페이지 톤에 맞춤) ===== */
+    .dash-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      margin-bottom: 1.5rem;
+    }
+    .dash-toolbar .ui-select {
+      min-width: 130px;
+      padding: 0.55rem 0.85rem;
+      border-radius: 0.6rem;
+      border: 1px solid var(--border-color);
+      background: var(--card-bg);
+      font-size: 0.9rem;
+    }
+    .dash-toolbar .toolbar-label {
+      font-size: 0.875rem;
+      color: var(--text-secondary);
+      font-weight: 500;
+    }
+    .dash-toolbar .toolbar-meta {
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      margin-left: auto;
+    }
+
+    /* Hero: outer big white card holding 3 pastel panels */
+    .dash-hero {
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 1.25rem;
+      padding: 1.75rem;
+      margin-bottom: 1.5rem;
+      box-shadow: var(--shadow-md);
+    }
+    .dash-hero-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.25rem;
+    }
+    @media (max-width: 1100px) {
+      .dash-hero-grid { grid-template-columns: 1fr; }
+    }
+
+    .hero-panel {
+      border-radius: 1rem;
+      padding: 1.5rem 1.4rem 1.25rem;
+      display: flex;
+      flex-direction: column;
+      min-height: 340px;
+      position: relative;
+    }
+    .hero-panel--blue {
+      background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+    }
+    .hero-panel--green {
+      background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
+    }
+    .hero-panel--orange {
+      background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%);
+    }
+
+    .hero-panel-title {
+      font-size: 1.2rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      text-align: center;
+      margin: 0 0 0.35rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      letter-spacing: -0.01em;
+    }
+    .hero-panel-subtitle {
+      text-align: center;
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      margin: 0 0 1.1rem;
+      font-weight: 500;
+    }
+    .hero-panel-footnote {
+      margin-top: auto;
+      padding-top: 0.85rem;
+      text-align: right;
+      font-size: 0.72rem;
+      color: var(--text-secondary);
+    }
+    .hero-panel-footnote--danger { color: var(--danger-color, #dc2626); }
+
+    /* Pill stats (panel 1) */
+    .pill-stats {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.6rem;
+      justify-content: center;
+      align-content: center;
+      flex: 1;
+      padding: 0.5rem 0;
+    }
+    .pill-stat {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.7rem 1.1rem;
+      background: rgba(255, 255, 255, 0.85);
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      border-radius: 0.7rem;
+      font-size: 0.92rem;
+      color: var(--text-primary);
+      cursor: pointer;
+      transition: all 0.18s ease;
+      font-weight: 700;
+      font-family: inherit;
+      white-space: nowrap;
+    }
+    .pill-stat:hover {
+      background: #fff;
+      border-color: var(--primary-color, #2563eb);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(37, 99, 235, 0.12);
+    }
+    .pill-stat-count {
+      color: var(--text-secondary);
+      font-weight: 500;
+    }
+
+    /* Big stats (panel 2) */
+    .big-stats {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.75rem;
+      text-align: center;
+      margin-bottom: 0.5rem;
+    }
+    .big-stat-num {
+      font-size: 2.1rem;
+      font-weight: 800;
+      color: var(--primary-color, #2563eb);
+      line-height: 1.05;
+      letter-spacing: -0.025em;
+      margin-bottom: 0.35rem;
+    }
+    .big-stat-num small {
+      font-size: 0.95rem;
+      font-weight: 600;
+      margin-left: 0.15rem;
+    }
+    .big-stat-label {
+      font-size: 0.82rem;
+      color: var(--text-secondary);
+      font-weight: 500;
+    }
+    .big-stat-num--neutral { color: #475569; }
+
+    .panel-divider {
+      height: 1px;
+      background: rgba(148, 163, 184, 0.3);
+      margin: 1rem 0 0.85rem;
+    }
+    .panel-section-title {
+      font-size: 0.92rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin: 0 0 0.65rem;
+    }
+
+    /* Mini bars (panel 2) */
+    .mini-bars {
+      display: flex;
+      flex-direction: column;
+      gap: 0.55rem;
+    }
+    .mini-bar-row {
+      display: grid;
+      grid-template-columns: 72px 1fr 60px;
+      align-items: center;
+      gap: 0.55rem;
+      font-size: 0.78rem;
+    }
+    .mini-bar-label {
+      color: var(--text-secondary);
+      font-weight: 500;
+    }
+    .mini-bar-track {
+      height: 8px;
+      background: rgba(148, 163, 184, 0.22);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .mini-bar-fill {
+      height: 100%;
+      border-radius: 4px;
+      transition: width 0.6s ease;
+    }
+    .mini-bar-fill--support { background: #10b981; }
+    .mini-bar-fill--cash    { background: #3b82f6; }
+    .mini-bar-fill--inkind  { background: #94a3b8; }
+    .mini-bar-value {
+      font-weight: 700;
+      color: var(--text-primary);
+      text-align: right;
+      font-size: 0.78rem;
+    }
+
+    /* Alerts (panel 3) */
+    .alert-stats {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.75rem;
+      text-align: center;
+      margin-bottom: 0.5rem;
+    }
+    .alert-stat-num {
+      font-size: 2.1rem;
+      font-weight: 800;
+      line-height: 1.05;
+      letter-spacing: -0.025em;
+      margin-bottom: 0.35rem;
+    }
+    .alert-stat-num--warning { color: #d97706; }
+    .alert-stat-num--danger  { color: var(--danger-color, #dc2626); }
+    .alert-stat-label {
+      font-size: 0.82rem;
+      color: var(--text-secondary);
+      font-weight: 500;
+    }
+    .alert-mini-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+      max-height: 130px;
+      overflow-y: auto;
+    }
+    .alert-mini-item {
+      display: flex;
+      gap: 0.5rem;
+      padding: 0.5rem 0.7rem;
+      background: rgba(255, 255, 255, 0.75);
+      border-radius: 0.5rem;
+      font-size: 0.78rem;
+      align-items: flex-start;
+    }
+    .alert-mini-icon { flex-shrink: 0; line-height: 1.3; }
+    .alert-mini-text {
+      flex: 1;
+      color: var(--text-primary);
+      line-height: 1.35;
+      min-width: 0;
+    }
+    .alert-mini-meta {
+      font-size: 0.7rem;
+      color: var(--text-secondary);
+      margin-top: 0.15rem;
+    }
+    .alert-empty {
+      text-align: center;
+      padding: 1rem;
+      color: var(--text-secondary);
+      font-size: 0.8rem;
+    }
+
+    /* Charts row */
+    .dash-row {
+      display: grid;
+      grid-template-columns: 1fr 1.4fr;
+      gap: 1.25rem;
+      margin-bottom: 1.5rem;
+    }
+    @media (max-width: 1024px) {
+      .dash-row { grid-template-columns: 1fr; }
+    }
+    .dash-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 1rem;
+      padding: 1.5rem;
+      box-shadow: var(--shadow-sm);
+    }
+    .dash-card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 1.25rem;
+    }
+    .dash-card-title {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin: 0;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+    .dash-card-meta {
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+    }
+    .dash-card-link {
+      font-size: 0.8rem;
+      color: var(--primary-color, #2563eb);
+      text-decoration: none;
+      font-weight: 500;
+    }
+    .dash-card-link:hover { text-decoration: underline; }
+
+    /* Donut */
+    .donut-container {
+      display: flex;
+      align-items: center;
+      gap: 1.5rem;
+      flex-wrap: wrap;
+    }
+    .donut-wrap {
+      position: relative;
+      width: 180px;
+      height: 180px;
+      flex-shrink: 0;
+    }
+    .donut-wrap svg { width: 100%; height: 100%; display: block; }
+    .donut-center {
+      position: absolute; inset: 0;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      pointer-events: none;
+    }
+    .donut-center-num {
+      font-size: 1.85rem;
+      font-weight: 800;
+      color: var(--text-primary);
+      line-height: 1;
+      letter-spacing: -0.02em;
+    }
+    .donut-center-label {
+      font-size: 0.72rem;
+      color: var(--text-secondary);
+      margin-top: 0.25rem;
+    }
+    .donut-legend {
+      flex: 1;
+      min-width: 140px;
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+    }
+    .donut-legend-item {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      font-size: 0.85rem;
+      padding: 0.4rem 0.5rem;
+      border-radius: 0.4rem;
+      transition: background 0.15s;
+      cursor: pointer;
+    }
+    .donut-legend-item:hover { background: #f5f5f5; }
+    .donut-legend-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .donut-legend-label { flex: 1; color: var(--text-primary); }
+    .donut-legend-count { font-weight: 700; color: var(--text-primary); }
+    .donut-legend-pct {
+      font-size: 0.72rem;
+      color: var(--text-secondary);
+      margin-left: 0.35rem;
+    }
+
+    /* Recent ongoing list (table-style, matching projects-table) */
+    .recent-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.875rem;
+    }
+    .recent-table thead th {
+      text-align: left;
+      padding: 0.55rem 0.75rem;
+      background: #f5f5f5;
+      color: var(--text-primary);
+      font-weight: 600;
+      font-size: 0.78rem;
+      border-bottom: 1px solid var(--border-color);
+      white-space: nowrap;
+    }
+    .recent-table tbody td {
+      padding: 0.7rem 0.75rem;
+      border-bottom: 1px solid var(--border-color);
+      vertical-align: middle;
+    }
+    .recent-table tbody tr {
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .recent-table tbody tr:hover { background: #f8fafc; }
+    .recent-table tbody tr:last-child td { border-bottom: none; }
+    .recent-name {
+      font-weight: 500;
+      color: var(--text-primary);
+      max-width: 280px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .recent-amount {
+      text-align: right;
+      font-weight: 700;
+      color: var(--text-primary);
+      white-space: nowrap;
+    }
+    .recent-empty {
+      text-align: center;
+      padding: 2rem 1rem;
+      color: var(--text-secondary);
+      font-size: 0.875rem;
+    }
+
+    /* Status badges (matching projects.html) */
+    .projects-badge { display: inline-block; padding: 0.2rem 0.5rem; border-radius: 0.35rem; font-size: 0.72rem; font-weight: 700; white-space: nowrap; }
+    .projects-badge--ongoing    { background: #d1fae5; color: #047857; }
+    .projects-badge--scheduled  { background: #dbeafe; color: #1d4ed8; }
+    .projects-badge--end        { background: #e5e7eb; color: #4b5563; }
+    .projects-badge--unselected { background: #fee2e2; color: #dc2626; }
+  </style>
+</head>
+<body>
+  <script>
+    // 인증은 auth-guard.js 가 처리합니다
+  </script>
+
+  <div class="dashboard">
+    <aside class="sidebar" id="sidebar" aria-label="메인 메뉴">
+      <div class="sidebar-header">
+        <button type="button" class="sidebar-toggle" id="sidebar-toggle" aria-label="메뉴 접기/펼치기" title="메뉴 접기/펼치기">☰</button>
+        <h1 class="sidebar-title">CI_R&DM</h1>
+      </div>
+      <nav class="sidebar-nav">
+        <a href="dashboard.html" class="sidebar-link active" id="nav-dashboard"><span class="sidebar-link-icon" aria-hidden="true">🏠</span><span class="sidebar-link-text">대시보드</span></a>
+        <a href="index.html" class="sidebar-link" id="nav-hr"><span class="sidebar-link-icon" aria-hidden="true">👤</span><span class="sidebar-link-text">인력 정보 관리</span></a>
+        <a href="index.html#/participation" class="sidebar-link" id="nav-participation"><span class="sidebar-link-icon" aria-hidden="true">📊</span><span class="sidebar-link-text">참여율 관리</span></a>
+        <a href="index.html#/payroll" class="sidebar-link" id="nav-payroll"><span class="sidebar-link-icon" aria-hidden="true">💰</span><span class="sidebar-link-text">인건비 관리</span></a>
+        <a href="index.html#/calendar" class="sidebar-link" id="nav-calendar"><span class="sidebar-link-icon" aria-hidden="true">📅</span><span class="sidebar-link-text">제출 일정 관리</span></a>
+        <a href="projects.html" class="sidebar-link" id="nav-projects"><span class="sidebar-link-icon" aria-hidden="true">📋</span><span class="sidebar-link-text">과제 관리</span></a>
+      </nav>
+    </aside>
+
+    <main class="main-area">
+      <div class="container">
+        <header class="header">
+          <h1 class="header-title">[R&DM] 대시보드</h1>
+        </header>
+
+        <div class="dash-toolbar">
+          <span class="toolbar-label">기준 연도</span>
+          <select id="dash-year" class="ui-select">
+            <option value="2026" selected>2026년</option>
+            <option value="2025">2025년</option>
+            <option value="2024">2024년</option>
+            <option value="2023">2023년</option>
+            <option value="2022">2022년</option>
+            <option value="2021">2021년</option>
+          </select>
+          <span class="toolbar-meta" id="dash-meta">전체 R&D 과제 통합 현황</span>
+        </div>
+
+        <!-- Hero: 3 pastel panels -->
+        <section class="dash-hero" aria-label="핵심 지표">
+          <div class="dash-hero-grid">
+
+            <!-- Panel 1: 지원 현황 (blue) -->
+            <div class="hero-panel hero-panel--blue">
+              <h2 class="hero-panel-title">지원 현황 <span aria-hidden="true">📋</span></h2>
+              <p class="hero-panel-subtitle" id="status-subtitle">2026년 기준</p>
+              <div class="pill-stats" id="status-pills">
+                <button type="button" class="pill-stat" data-status="">
+                  <span>전체</span>
+                  <span class="pill-stat-count">(<span id="pill-total">0</span>)</span>
+                </button>
+                <button type="button" class="pill-stat" data-status="수행 중">
+                  <span>수행 중</span>
+                  <span class="pill-stat-count">(<span id="pill-ongoing">0</span>)</span>
+                </button>
+                <button type="button" class="pill-stat" data-status="예정">
+                  <span>예정</span>
+                  <span class="pill-stat-count">(<span id="pill-planned">0</span>)</span>
+                </button>
+                <button type="button" class="pill-stat" data-status="종료">
+                  <span>종료</span>
+                  <span class="pill-stat-count">(<span id="pill-ended">0</span>)</span>
+                </button>
+                <button type="button" class="pill-stat" data-status="미선정">
+                  <span>미선정</span>
+                  <span class="pill-stat-count">(<span id="pill-unselected">0</span>)</span>
+                </button>
+              </div>
+              <p class="hero-panel-footnote">* 클릭 시 해당 상태로 필터링</p>
+            </div>
+
+            <!-- Panel 2: 자금 현황 (green) -->
+            <div class="hero-panel hero-panel--green">
+              <h2 class="hero-panel-title">자금 현황 <span aria-hidden="true">💰</span></h2>
+              <p class="hero-panel-subtitle" id="funding-subtitle">2026 누적 / 전체</p>
+              <div class="big-stats">
+                <div>
+                  <div class="big-stat-num"><span id="hero-year-sum">0</span><small id="hero-year-unit">원</small></div>
+                  <div class="big-stat-label">당해 지원금</div>
+                </div>
+                <div>
+                  <div class="big-stat-num big-stat-num--neutral"><span id="hero-total-sum">0</span><small id="hero-total-unit">원</small></div>
+                  <div class="big-stat-label">누적 총 지원금</div>
+                </div>
+              </div>
+              <div class="panel-divider"></div>
+              <h3 class="panel-section-title">자금 구성 (당해)</h3>
+              <div class="mini-bars">
+                <div class="mini-bar-row">
+                  <span class="mini-bar-label">정부지원금</span>
+                  <div class="mini-bar-track"><div class="mini-bar-fill mini-bar-fill--support" id="mini-bar-support" style="width:0%"></div></div>
+                  <span class="mini-bar-value" id="mini-val-support">0</span>
+                </div>
+                <div class="mini-bar-row">
+                  <span class="mini-bar-label">자부담 현금</span>
+                  <div class="mini-bar-track"><div class="mini-bar-fill mini-bar-fill--cash" id="mini-bar-cash" style="width:0%"></div></div>
+                  <span class="mini-bar-value" id="mini-val-cash">0</span>
+                </div>
+                <div class="mini-bar-row">
+                  <span class="mini-bar-label">자부담 현물</span>
+                  <div class="mini-bar-track"><div class="mini-bar-fill mini-bar-fill--inkind" id="mini-bar-inkind" style="width:0%"></div></div>
+                  <span class="mini-bar-value" id="mini-val-inkind">0</span>
+                </div>
+              </div>
+              <p class="hero-panel-footnote">* yearBudgets 기준 합산</p>
+            </div>
+
+            <!-- Panel 3: 알림 (orange) -->
+            <div class="hero-panel hero-panel--orange">
+              <h2 class="hero-panel-title">알림 / 임박 <span aria-hidden="true">⏰</span></h2>
+              <p class="hero-panel-subtitle">D-30 임박 · 미선정 등</p>
+              <div class="alert-stats">
+                <div>
+                  <div class="alert-stat-num alert-stat-num--warning" id="alert-due-count">0</div>
+                  <div class="alert-stat-label">D-30 종료 임박</div>
+                </div>
+                <div>
+                  <div class="alert-stat-num alert-stat-num--danger" id="alert-unselected-count">0</div>
+                  <div class="alert-stat-label">당해 미선정</div>
+                </div>
+              </div>
+              <div class="panel-divider"></div>
+              <h3 class="panel-section-title">최근 알림</h3>
+              <div class="alert-mini-list" id="alert-list"></div>
+              <p class="hero-panel-footnote hero-panel-footnote--danger">* 종료일 기준 30일 이내 자동 표시</p>
+            </div>
+
+          </div>
+        </section>
+
+        <!-- Charts row -->
+        <div class="dash-row">
+          <div class="dash-card">
+            <div class="dash-card-header">
+              <h2 class="dash-card-title">지원 현황 분포</h2>
+              <span class="dash-card-meta" id="donut-meta">기준 연도: 2026</span>
+            </div>
+            <div class="donut-container">
+              <div class="donut-wrap">
+                <svg id="donut-svg" viewBox="0 0 200 200" aria-label="지원 현황 도넛 차트"></svg>
+                <div class="donut-center">
+                  <div class="donut-center-num" id="donut-total">0</div>
+                  <div class="donut-center-label">전체 과제</div>
+                </div>
+              </div>
+              <div class="donut-legend" id="donut-legend"></div>
+            </div>
+          </div>
+
+          <div class="dash-card">
+            <div class="dash-card-header">
+              <h2 class="dash-card-title">수행 중 과제</h2>
+              <a href="projects.html" class="dash-card-link">전체 보기 →</a>
+            </div>
+            <div id="recent-wrap">
+              <table class="recent-table" id="recent-table" style="display:none">
+                <thead>
+                  <tr>
+                    <th style="width:80px">상태</th>
+                    <th>과제명</th>
+                    <th style="width:90px">담당자</th>
+                    <th style="width:110px;text-align:right">당해 지원금</th>
+                  </tr>
+                </thead>
+                <tbody id="recent-tbody"></tbody>
+              </table>
+              <div id="recent-empty" class="recent-empty">표시할 수행 중 과제가 없습니다.</div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </main>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-auth-compat.js"></script>
+  <script src="firebase-config.example.js"></script>
+  <script src="firebase-config.js"></script>
+  <script src="firebase.js"></script>
+  <script src="auth-guard.js"></script>
+  <script src="firestore-service.js"></script>
+  <script src="dashboard.js"></script>
+</body>
+</html>

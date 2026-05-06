@@ -1,0 +1,434 @@
+/**
+ * R&D 통합 대시보드 (Overview)
+ * - 기존 firestore-service.js 의 subscribeProjects 를 그대로 사용
+ * - projects.js 와 동일한 데이터 모델 (yearBudgets, supportTotal 등) 가정
+ */
+(function () {
+  'use strict';
+
+  var DEFAULT_YEAR = 2026;
+
+  // 상태별 색상 — 기존 projects-badge 색상과 톤 일치
+  var STATUS_COLORS = {
+    '수행 중': '#10b981',
+    '예정':    '#3b82f6',
+    '종료':    '#94a3b8',
+    '미선정':  '#ef4444'
+  };
+
+  // ===== Utilities =====
+
+  function escapeHtml(s) {
+    if (s == null) return '';
+    var div = document.createElement('div');
+    div.textContent = s;
+    return div.innerHTML;
+  }
+
+  function setText(id, val) {
+    var el = document.getElementById(id);
+    if (el) el.textContent = val;
+  }
+
+  function formatNum(n) {
+    if (n == null || n === '' || isNaN(Number(n))) return '0';
+    return Number(n).toLocaleString();
+  }
+
+  /**
+   * 큰 금액을 단위가 붙은 형태로 표현
+   * 1,234,567,890 -> { value: '12.3', unit: '억' }
+   * 12,345,000   -> { value: '1,235', unit: '만' }
+   */
+  function formatMoneyParts(n) {
+    var num = Number(n) || 0;
+    if (num >= 100000000) {
+      var eok = num / 100000000;
+      return { value: eok.toFixed(eok >= 100 ? 0 : 1).replace(/\.0$/, ''), unit: '억' };
+    }
+    if (num >= 10000) {
+      var man = Math.round(num / 10000);
+      return { value: formatNum(man), unit: '만' };
+    }
+    return { value: formatNum(num), unit: '원' };
+  }
+
+  function formatMoneyShort(n) {
+    var p = formatMoneyParts(n);
+    return p.value + p.unit;
+  }
+
+  // ===== Data helpers (projects.js 와 동일 로직) =====
+
+  function projectOverlapsYear(it, year) {
+    var y = String(year);
+    var start = (it.startDate || it.start || '').toString().slice(0, 10);
+    var end = (it.endDate || it.end || '').toString().slice(0, 10);
+    if (!start && !end) return true;
+    var yearStart = y + '-01-01';
+    var yearEnd = y + '-12-31';
+    if (start && start > yearEnd) return false;
+    if (end && end < yearStart) return false;
+    return true;
+  }
+
+  function normalizeStatus(it) {
+    var raw = (it.status || it['진행 여부'] || '').toString().trim();
+    var n = raw.replace(/\s/g, '');
+    if (n === '수행중') return '수행 중';
+    if (raw === '수행 중' || raw === '예정' || raw === '종료' || raw === '미선정') return raw;
+    return raw || '미정';
+  }
+
+  /**
+   * 해당 연도와 겹치는 yearBudgets 항목들의 (support, cash, inKind) 합계
+   */
+  function getYearAmounts(it, year) {
+    var sup = 0, cash = 0, ink = 0;
+    var ys = String(year);
+    var arr = (it.yearBudgets && Array.isArray(it.yearBudgets)) ? it.yearBudgets : [];
+
+    arr.forEach(function (y) {
+      var s = (y.startDate || y.start || '').toString().slice(0, 4);
+      var e = (y.endDate   || y.end   || '').toString().slice(0, 4);
+      if (s && e && s <= ys && ys <= e) {
+        sup  += Number(y.support || 0);
+        cash += Number(y.cash    || 0);
+        ink  += Number(y.inKind  || 0);
+      }
+    });
+
+    // yearBudgets 가 비어있는 옛 데이터 호환 (기준 연도가 2026일 때)
+    if (Number(year) === 2026 && it.supportYear != null && !isNaN(Number(it.supportYear))) {
+      if (sup === 0) sup = Number(it.supportYear);
+    }
+
+    return { support: sup, cash: cash, inKind: ink };
+  }
+
+  // ===== KPI 계산 =====
+
+  function computeKPIs(items, year) {
+    var filtered = items.filter(function (it) { return projectOverlapsYear(it, year); });
+    var ongoing = 0, ongoingCont = 0, ongoingNew = 0;
+    var planned = 0, ended = 0, unselected = 0;
+    var yearSupport = 0, yearCash = 0, yearInKind = 0;
+    var totalSum = 0;
+    var cutoff = year + '-01-01';
+
+    filtered.forEach(function (it) {
+      var status = normalizeStatus(it);
+      var start = (it.startDate || it.start || '').toString().slice(0, 10);
+
+      if (status === '수행 중') {
+        ongoing++;
+        if (start && start < cutoff) ongoingCont++;
+        else ongoingNew++;
+      } else if (status === '예정') {
+        planned++;
+      } else if (status === '종료') {
+        ended++;
+      } else if (status === '미선정') {
+        unselected++;
+      }
+
+      var amt = getYearAmounts(it, year);
+      yearSupport += amt.support;
+      yearCash    += amt.cash;
+      yearInKind  += amt.inKind;
+
+      var st = it.supportTotal != null ? Number(it.supportTotal)
+             : (it.budget != null ? Number(it.budget) : 0);
+      if (!isNaN(st)) totalSum += st;
+    });
+
+    return {
+      total: filtered.length,
+      ongoing: ongoing,
+      ongoingCont: ongoingCont,
+      ongoingNew: ongoingNew,
+      planned: planned,
+      ended: ended,
+      unselected: unselected,
+      yearSupport: yearSupport,
+      yearCash: yearCash,
+      yearInKind: yearInKind,
+      yearTotal: yearSupport + yearCash + yearInKind,
+      totalSum: totalSum,
+      filteredItems: filtered
+    };
+  }
+
+  // ===== Renderers =====
+
+  // Panel 1: 지원 현황 — pill stats
+  function renderPills(kpis, year) {
+    setText('pill-total', kpis.total);
+    setText('pill-ongoing', kpis.ongoing);
+    setText('pill-planned', kpis.planned);
+    setText('pill-ended', kpis.ended);
+    setText('pill-unselected', kpis.unselected);
+    setText('status-subtitle', year + '년 기준');
+  }
+
+  // Panel 2: 자금 현황 — big stats + mini bars
+  function renderFunding(kpis, year) {
+    var yp = formatMoneyParts(kpis.yearSupport);
+    setText('hero-year-sum', yp.value);
+    setText('hero-year-unit', ' ' + yp.unit);
+
+    var tp = formatMoneyParts(kpis.totalSum);
+    setText('hero-total-sum', tp.value);
+    setText('hero-total-unit', ' ' + tp.unit);
+
+    setText('funding-subtitle', year + '년 누적 / 전체');
+
+    var support = kpis.yearSupport;
+    var cash    = kpis.yearCash;
+    var inKind  = kpis.yearInKind;
+    var max = Math.max(support, cash, inKind, 1);
+
+    var bs = document.getElementById('mini-bar-support');
+    var bc = document.getElementById('mini-bar-cash');
+    var bi = document.getElementById('mini-bar-inkind');
+    if (bs) bs.style.width = ((support / max) * 100).toFixed(1) + '%';
+    if (bc) bc.style.width = ((cash    / max) * 100).toFixed(1) + '%';
+    if (bi) bi.style.width = ((inKind  / max) * 100).toFixed(1) + '%';
+
+    setText('mini-val-support', formatMoneyShort(support));
+    setText('mini-val-cash',    formatMoneyShort(cash));
+    setText('mini-val-inkind',  formatMoneyShort(inKind));
+  }
+
+  // Panel 3: 알림 / 임박
+  function renderAlerts(items, year, kpis) {
+    var listEl = document.getElementById('alert-list');
+    if (!listEl) return;
+    listEl.innerHTML = '';
+
+    var today = new Date();
+    var todayStr = today.toISOString().slice(0, 10);
+    var soon = new Date();
+    soon.setDate(soon.getDate() + 30);
+    var soonStr = soon.toISOString().slice(0, 10);
+
+    var dueSoon = [];
+    items.forEach(function (it) {
+      if (normalizeStatus(it) !== '수행 중') return;
+      var end = (it.endDate || it.end || '').toString().slice(0, 10);
+      if (!end) return;
+      if (end >= todayStr && end <= soonStr) {
+        var name = it.projectName || it.keywords || '(제목 없음)';
+        var diff = Math.ceil((new Date(end) - today) / (1000 * 60 * 60 * 24));
+        dueSoon.push({ name: name, end: end, dDay: Math.max(0, diff) });
+      }
+    });
+
+    setText('alert-due-count', dueSoon.length);
+    setText('alert-unselected-count', kpis.unselected);
+
+    if (dueSoon.length === 0) {
+      listEl.innerHTML = '<div class="alert-empty">임박한 종료 과제가 없습니다.</div>';
+      return;
+    }
+
+    // 가까운 순으로 정렬, 최대 4개 노출
+    dueSoon.sort(function (a, b) { return a.dDay - b.dDay; });
+    dueSoon.slice(0, 4).forEach(function (a) {
+      var div = document.createElement('div');
+      div.className = 'alert-mini-item';
+      div.innerHTML =
+        '<span class="alert-mini-icon">⏰</span>' +
+        '<div class="alert-mini-text">' +
+          '<strong>' + escapeHtml(a.name) + '</strong>' +
+          '<div class="alert-mini-meta">D-' + a.dDay + ' · 종료 ' + escapeHtml(a.end) + '</div>' +
+        '</div>';
+      listEl.appendChild(div);
+    });
+  }
+
+  // Donut chart
+  function renderDonut(kpis, year) {
+    var data = [
+      { key: '수행 중', value: kpis.ongoing,   color: STATUS_COLORS['수행 중'] },
+      { key: '예정',    value: kpis.planned,    color: STATUS_COLORS['예정'] },
+      { key: '종료',    value: kpis.ended,      color: STATUS_COLORS['종료'] },
+      { key: '미선정',  value: kpis.unselected, color: STATUS_COLORS['미선정'] }
+    ];
+    var total = data.reduce(function (s, d) { return s + d.value; }, 0);
+    setText('donut-total', total);
+    setText('donut-meta', '기준 연도: ' + year);
+
+    var svg = document.getElementById('donut-svg');
+    if (!svg) return;
+
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+
+    var cx = 100, cy = 100, r = 70, sw = 22;
+    var C = 2 * Math.PI * r;
+
+    var bg = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    bg.setAttribute('cx', cx);
+    bg.setAttribute('cy', cy);
+    bg.setAttribute('r', r);
+    bg.setAttribute('fill', 'none');
+    bg.setAttribute('stroke', '#f1f5f9');
+    bg.setAttribute('stroke-width', sw);
+    svg.appendChild(bg);
+
+    if (total > 0) {
+      var offset = 0;
+      data.forEach(function (d) {
+        if (d.value <= 0) return;
+        var frac = d.value / total;
+        var len = frac * C;
+        var arc = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        arc.setAttribute('cx', cx);
+        arc.setAttribute('cy', cy);
+        arc.setAttribute('r', r);
+        arc.setAttribute('fill', 'none');
+        arc.setAttribute('stroke', d.color);
+        arc.setAttribute('stroke-width', sw);
+        arc.setAttribute('stroke-linecap', 'butt');
+        arc.setAttribute('stroke-dasharray', len + ' ' + (C - len));
+        arc.setAttribute('stroke-dashoffset', String(-offset));
+        arc.setAttribute('transform', 'rotate(-90 ' + cx + ' ' + cy + ')');
+        svg.appendChild(arc);
+        offset += len;
+      });
+    }
+
+    var legend = document.getElementById('donut-legend');
+    if (!legend) return;
+    legend.innerHTML = '';
+    data.forEach(function (d) {
+      var pct = total > 0 ? Math.round((d.value / total) * 100) : 0;
+      var item = document.createElement('div');
+      item.className = 'donut-legend-item';
+      item.innerHTML =
+        '<span class="donut-legend-dot" style="background:' + d.color + '"></span>' +
+        '<span class="donut-legend-label">' + escapeHtml(d.key) + '</span>' +
+        '<span class="donut-legend-count">' + d.value + '</span>' +
+        '<span class="donut-legend-pct">(' + pct + '%)</span>';
+      item.addEventListener('click', function () {
+        window.location.href = 'projects.html?status=' + encodeURIComponent(d.key);
+      });
+      legend.appendChild(item);
+    });
+  }
+
+  // 수행 중 과제 (table)
+  function renderRecent(items, year) {
+    var table = document.getElementById('recent-table');
+    var tbody = document.getElementById('recent-tbody');
+    var empty = document.getElementById('recent-empty');
+    if (!table || !tbody || !empty) return;
+
+    var ongoing = items.filter(function (it) {
+      return normalizeStatus(it) === '수행 중' && projectOverlapsYear(it, year);
+    });
+    ongoing.sort(function (a, b) {
+      var sa = (a.startDate || a.start || '').toString();
+      var sb = (b.startDate || b.start || '').toString();
+      return sb.localeCompare(sa);
+    });
+    var top5 = ongoing.slice(0, 5);
+
+    tbody.innerHTML = '';
+
+    if (top5.length === 0) {
+      table.style.display = 'none';
+      empty.style.display = 'block';
+      return;
+    }
+
+    table.style.display = 'table';
+    empty.style.display = 'none';
+
+    top5.forEach(function (it) {
+      var name = it.projectName || it['과제명'] || it.keywords || it.keyword || '(제목 없음)';
+      var manager = it.manager || it['책임자'] || '-';
+      var amt = getYearAmounts(it, year);
+      var amount = amt.support || it.supportYear || 0;
+
+      var tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td><span class="projects-badge projects-badge--ongoing">수행 중</span></td>' +
+        '<td><div class="recent-name" title="' + escapeHtml(name) + '">' + escapeHtml(name) + '</div></td>' +
+        '<td>' + escapeHtml(manager) + '</td>' +
+        '<td class="recent-amount">' + formatMoneyShort(amount) + '</td>';
+      tr.addEventListener('click', function () {
+        window.location.href = 'projects.html';
+      });
+      tbody.appendChild(tr);
+    });
+  }
+
+  // ===== Init =====
+
+  function init() {
+    // Sidebar toggle (기존 패턴과 동일)
+    var sidebar = document.getElementById('sidebar');
+    var sidebarToggle = document.getElementById('sidebar-toggle');
+    if (sidebar && sidebarToggle) {
+      sidebarToggle.addEventListener('click', function () {
+        sidebar.classList.toggle('sidebar--collapsed');
+        try {
+          localStorage.setItem('hr-sidebar-collapsed', sidebar.classList.contains('sidebar--collapsed') ? '1' : '');
+        } catch (e) {}
+      });
+      try {
+        if (localStorage.getItem('hr-sidebar-collapsed') === '1') sidebar.classList.add('sidebar--collapsed');
+      } catch (e) {}
+    }
+
+    // 지원 현황 pill 클릭 → projects.html 로 필터 이동
+    document.querySelectorAll('.pill-stat').forEach(function (pill) {
+      pill.addEventListener('click', function () {
+        var status = pill.getAttribute('data-status') || '';
+        var url = status ? 'projects.html?status=' + encodeURIComponent(status) : 'projects.html';
+        window.location.href = url;
+      });
+    });
+
+    var yearSelect = document.getElementById('dash-year');
+    var latestItems = [];
+    var currentYear = DEFAULT_YEAR;
+
+    function rerender() {
+      var kpis = computeKPIs(latestItems, currentYear);
+      renderPills(kpis, currentYear);
+      renderFunding(kpis, currentYear);
+      renderAlerts(latestItems, currentYear, kpis);
+      renderDonut(kpis, currentYear);
+      renderRecent(latestItems, currentYear);
+
+      var meta = document.getElementById('dash-meta');
+      if (meta) meta.textContent = currentYear + '년 R&D 과제 통합 현황';
+    }
+
+    if (yearSelect) {
+      yearSelect.addEventListener('change', function () {
+        currentYear = parseInt(yearSelect.value, 10) || DEFAULT_YEAR;
+        rerender();
+      });
+    }
+
+    // Firestore 구독 — projects.js 와 동일 패턴
+    var svc = window.firestoreService;
+    if (svc && typeof svc.subscribeProjects === 'function') {
+      svc.subscribeProjects(function (items) {
+        latestItems = Array.isArray(items) ? items : [];
+        rerender();
+      });
+    } else {
+      rerender();
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();

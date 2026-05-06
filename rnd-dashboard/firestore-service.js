@@ -14,14 +14,12 @@
   var PAYROLL_STORAGE_KEY = 'hr-payroll-data';
   var PARTICIPATION_STORAGE_KEY = 'hr-participation-data-v2';
   var CALENDAR_STORAGE_KEY = 'hr-calendar-events';
-  var PROJECTS_STORAGE_KEY = 'projects-data';
 
   var COLL = {
     hr: 'hrPersonnel',
     payroll: 'payroll',
     participation: 'participation',
-    calendar: 'calendarEvents',
-    projects: 'projects'
+    calendar: 'calendarEvents'
   };
   var DOC_ID = 'data';
 
@@ -34,8 +32,6 @@
   var _payrollCallbacks = [];
   var _participationCallbacks = [];
   var _calendarCallbacks = [];
-  var _projectsData = [];
-  var _projectsCallbacks = [];
 
   function safeParse(str, fallback) {
     try {
@@ -202,46 +198,6 @@
     }
   }
 
-  function getProjectsData() {
-    if (configured) return _projectsData;
-    return safeParse(localStorage.getItem(PROJECTS_STORAGE_KEY), []);
-  }
-
-  function subscribeProjects(callback) {
-    if (typeof callback !== 'function') return;
-    _projectsCallbacks.push(callback);
-    if (configured) {
-      var ref = db.collection(COLL.projects).doc(DOC_ID);
-      ref.onSnapshot(
-        function (snap) {
-          var data = snap.exists && snap.data() && snap.data().items ? snap.data().items : [];
-          _projectsData = Array.isArray(data) ? data : [];
-          _projectsCallbacks.forEach(function (cb) {
-            try { cb(_projectsData); } catch (e) { console.error(e); }
-          });
-        },
-        function (err) { console.error('Firestore Projects snapshot:', err); }
-      );
-    } else {
-      try { callback(getProjectsData()); } catch (e) { console.error(e); }
-    }
-  }
-
-  function saveProjects(items) {
-    var list = Array.isArray(items) ? items : [];
-    if (configured) {
-      db.collection(COLL.projects).doc(DOC_ID).set({ items: list }).catch(function (e) {
-        console.error('Firestore Projects 저장 실패:', e);
-      });
-    } else {
-      try {
-        localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(list));
-        _projectsData = list;
-        _projectsCallbacks.forEach(function (cb) { try { cb(list); } catch (e) { console.error(e); } });
-      } catch (e) { console.error(e); }
-    }
-  }
-
   /**
    * total_project_data.json 형식의 객체를 Firestore 각 컬렉션으로 업로드합니다.
    * payload: { personnelData?, salaryData?, participationData?, calendarEvents? } (키 이름 변형 지원)
@@ -327,9 +283,6 @@
     getCalendarEvents: getCalendarEvents,
     subscribeCalendar: subscribeCalendar,
     saveCalendarEvents: saveCalendarEvents,
-    getProjectsData: getProjectsData,
-    subscribeProjects: subscribeProjects,
-    saveProjects: saveProjects,
     migrateFromLocalStorage: migrateFromLocalStorage,
     uploadFromProjectJson: uploadFromProjectJson
   };

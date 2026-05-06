@@ -30,7 +30,6 @@
   const excelUploadBtn = document.getElementById('excel-upload-btn');
   const legacyExcelInput = document.getElementById('legacy-excel-input');
   const legacyExcelBtn = document.getElementById('legacy-excel-btn');
-  const deleteAllBtn = document.getElementById('delete-all-btn');
   const statusAll = document.getElementById('status-all');
   const statusEmployed = document.getElementById('status-employed');
   const statusRetired = document.getElementById('status-retired');
@@ -1704,16 +1703,6 @@
       saveUIState();
       applyFilters();
       updateStatusCardsUI();
-    });
-  }
-
-  // 임시: 전체 삭제 버튼
-  if (deleteAllBtn) {
-    deleteAllBtn.addEventListener('click', function () {
-      var ok = confirm('정말 전체 삭제할까요?\n\n• 표 데이터가 전부 삭제됩니다.\n• 브라우저 로컬 저장소 데이터도 함께 초기화됩니다.');
-      if (!ok) return;
-      deleteAllData();
-      alert('전체 삭제가 완료되었습니다.');
     });
   }
 

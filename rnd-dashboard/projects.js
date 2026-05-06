@@ -261,6 +261,42 @@
     var latestItems = [];
     var yearFilter = document.getElementById('project-year-filter');
     var filterHint = document.getElementById('project-filter-hint');
+    var activeFiltersWrap = document.getElementById('project-active-filters');
+
+    // ----- 활성 필터 상태 -----
+    // activeCardFilter: 'continue' | 'new' | 'unselected' (카드 클릭으로 활성화)
+    // activeStatusFilter: '수행 중' | '예정' | '종료' (URL ?status= 진입 시, 카드와 매칭 안 되는 status용)
+    // activeSearchQuery: 검색 입력 키워드
+    var activeCardFilter = null;
+    var activeStatusFilter = null;
+    var activeSearchQuery = '';
+    var lastFilteredItems = []; // 엑셀 내보내기용 — 현재 화면에 보이는 아이템들
+
+    // 페이지 로드 시 URL 파라미터에서 초기 필터 읽기
+    (function readInitialFilter() {
+      var params = new URLSearchParams(location.search);
+      var filter = params.get('filter');
+      var status = params.get('status');
+
+      if (filter === 'continue' || filter === 'new' || filter === 'unselected') {
+        activeCardFilter = filter;
+      }
+
+      if (status) {
+        var trimmed = decodeURIComponent(status).trim();
+        var trimmedNorm = trimmed.replace(/\s/g, '');
+        // 카드와 매칭 가능한 것은 카드 활성화로 매핑
+        if (trimmedNorm === '미선정') {
+          activeCardFilter = 'unselected';
+        } else if (trimmedNorm === '수행중') {
+          // '수행 중'은 카드가 계속/신규로 분리되어 있으므로 별도 status 필터 사용
+          activeStatusFilter = '수행 중';
+        } else if (trimmedNorm === '예정' || trimmedNorm === '종료') {
+          activeStatusFilter = trimmed;
+        }
+      }
+    })();
+
     function getFilterYear() {
       var v = yearFilter ? yearFilter.value : '';
       return v || null;
@@ -269,25 +305,245 @@
       var y = getFilterYear();
       return y ? parseInt(y, 10) : STAT_YEAR;
     }
+
+    // 카드 필터(continue/new/unselected) 매칭
+    function projectMatchesCardFilter(it, filter, cutoff) {
+      if (!filter) return true;
+      var status = (it.status || it['진행 여부'] || it.division2 || '').toString();
+      var statusNorm = status.replace(/\s/g, '');
+      var start = (it.startDate || it.start || '').toString().slice(0, 10);
+      var isOngoing = statusNorm === '수행중' || status === '수행 중';
+
+      if (filter === 'continue') return isOngoing && !!start && start < cutoff;
+      if (filter === 'new')      return isOngoing && (!start || start >= cutoff);
+      if (filter === 'unselected') return statusNorm === '미선정';
+      return true;
+    }
+
+    // status 필터(수행 중/예정/종료) 매칭
+    function projectMatchesStatusFilter(it, status) {
+      if (!status) return true;
+      var s = (it.status || it['진행 여부'] || it.division2 || '').toString().trim();
+      var sNorm = s.replace(/\s/g, '');
+      var targetNorm = status.replace(/\s/g, '');
+      return s === status || sNorm === targetNorm;
+    }
+
+    // 검색 매칭 — 여러 필드를 합쳐서 substring 검색 (대소문자 무시)
+    function projectMatchesSearch(it, query) {
+      if (!query) return true;
+      var q = String(query).toLowerCase().trim();
+      if (!q) return true;
+      var fields = [
+        it.projectName, it['과제명'],
+        it.manager, it['책임자'],
+        it.department, it['부처'],
+        it.business, it['사업명'],
+        it.institution, it['기관명'],
+        it.keywords, it.keyword, it['키워드'],
+        it.no
+      ];
+      for (var i = 0; i < fields.length; i++) {
+        var f = fields[i];
+        if (f != null && String(f).toLowerCase().indexOf(q) >= 0) return true;
+      }
+      return false;
+    }
+
+    // 카드 활성 상태 UI 동기화
+    function updateActiveCardUI() {
+      document.querySelectorAll('.projects-stat-card.clickable').forEach(function (card) {
+        var f = card.getAttribute('data-filter');
+        var isActive = (f === activeCardFilter);
+        card.classList.toggle('is-active', isActive);
+        card.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+      });
+    }
+
+    // 활성 필터 chip 렌더
+    function renderActiveFilterChip() {
+      if (!activeFiltersWrap) return;
+      activeFiltersWrap.innerHTML = '';
+
+      var label = null;
+      if (activeCardFilter === 'continue')        label = '수행 중 (계속)';
+      else if (activeCardFilter === 'new')        label = '수행 중 (신규)';
+      else if (activeCardFilter === 'unselected') label = '미선정';
+      else if (activeStatusFilter)                 label = activeStatusFilter;
+
+      if (!label) return;
+
+      var chip = document.createElement('span');
+      chip.className = 'projects-filter-chip';
+      chip.innerHTML = '필터: ' + escapeHtml(label) +
+        ' <button type="button" class="projects-filter-chip-clear" aria-label="필터 해제">×</button>';
+      activeFiltersWrap.appendChild(chip);
+
+      chip.querySelector('.projects-filter-chip-clear').addEventListener('click', function () {
+        activeCardFilter = null;
+        activeStatusFilter = null;
+        syncURL();
+        applyFilterAndRender(latestItems);
+      });
+    }
+
+    // URL 파라미터 동기화 (페이지 새로고침해도 필터 유지)
+    function syncURL() {
+      var params = new URLSearchParams(location.search);
+      params.delete('filter');
+      params.delete('status');
+      if (activeCardFilter)   params.set('filter', activeCardFilter);
+      if (activeStatusFilter) params.set('status', activeStatusFilter);
+      var query = params.toString();
+      var newUrl = location.pathname + (query ? '?' + query : '') + location.hash;
+      try { history.replaceState(null, '', newUrl); } catch (e) {}
+    }
+
     function applyFilterAndRender(items) {
       items = Array.isArray(items) ? items : [];
       latestItems = items;
       var filterYear = getFilterYear();
-      var listItems = filterYear ? items.filter(function (it) { return projectOverlapsYear(it, filterYear); }) : items;
       var statsYear = getStatsYear();
+      var cutoff = statsYear + '-01-01';
+
+      // 1단계: 연도 필터
+      var listItems = filterYear ? items.filter(function (it) { return projectOverlapsYear(it, filterYear); }) : items;
+
+      // 2단계: 카드 필터
+      if (activeCardFilter) {
+        listItems = listItems.filter(function (it) {
+          return projectMatchesCardFilter(it, activeCardFilter, cutoff);
+        });
+      }
+
+      // 3단계: status 필터 (URL 진입용)
+      if (activeStatusFilter) {
+        listItems = listItems.filter(function (it) {
+          return projectMatchesStatusFilter(it, activeStatusFilter);
+        });
+      }
+
+      // 4단계: 검색 키워드 필터
+      if (activeSearchQuery) {
+        listItems = listItems.filter(function (it) {
+          return projectMatchesSearch(it, activeSearchQuery);
+        });
+      }
+
+      // 엑셀 내보내기를 위해 현재 보이는 아이템 보관
+      lastFilteredItems = listItems;
+
+      // 통계는 항상 연도 기준 전체 (카드/status/검색 필터 무시 — 그래야 카드 숫자가 의미를 가짐)
       updateStats(items, statsYear);
       renderTable(listItems, colVis, filterYear || STAT_YEAR, projectEditHandler);
+
       if (filterHint) {
-        filterHint.textContent = filterYear ? '리스트: ' + filterYear + '년 / 통계: ' + filterYear + '년 기준' : '리스트: 전체 / 통계: ' + STAT_YEAR + '년 기준';
+        var listLabel = filterYear ? filterYear + '년' : '전체';
+        var statsLabel = filterYear ? filterYear + '년' : STAT_YEAR + '년';
+        var hintText = '리스트: ' + listLabel + ' / 통계: ' + statsLabel + ' 기준';
+        // 검색 또는 카드 필터로 좁혀졌을 때 결과 개수 표시
+        if (activeSearchQuery || activeCardFilter || activeStatusFilter) {
+          hintText += ' · 결과 ' + listItems.length + '건';
+        }
+        filterHint.textContent = hintText;
       }
+
+      updateActiveCardUI();
+      renderActiveFilterChip();
     }
+
     if (yearFilter) {
       yearFilter.addEventListener('change', function () {
         applyFilterAndRender(latestItems);
       });
     }
-    var projectEditHandler = null;
-    initProjectModal(svc, colVis, function (handler) { projectEditHandler = handler; });
+
+    // 카드 클릭 → 필터 토글
+    document.querySelectorAll('.projects-stat-card.clickable').forEach(function (card) {
+      var f = card.getAttribute('data-filter');
+      function handle() {
+        if (f === 'all') {
+          // '전체' 카드: 모든 필터 해제
+          activeCardFilter = null;
+          activeStatusFilter = null;
+        } else if (activeCardFilter === f) {
+          // 같은 카드 재클릭: 토글 해제
+          activeCardFilter = null;
+        } else {
+          // 다른 카드 클릭: 카드 필터 전환 (status 필터도 같이 해제)
+          activeCardFilter = f;
+          activeStatusFilter = null;
+        }
+        syncURL();
+        applyFilterAndRender(latestItems);
+      }
+      card.addEventListener('click', handle);
+      card.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          handle();
+        }
+      });
+    });
+
+    // 과제 등록 버튼: 상세 페이지로 이동
+    var addBtn = document.getElementById('project-add-btn');
+    if (addBtn) {
+      addBtn.addEventListener('click', function () {
+        window.location.href = 'project-detail.html';
+      });
+    }
+
+    // 테이블 행 "수정" 버튼: 상세 페이지로 이동 (편집 모드)
+    var projectEditHandler = function (item) {
+      var id = item.id || item.docId;
+      if (!id) return;
+      window.location.href = 'project-detail.html?id=' + encodeURIComponent(id);
+    };
+
+    // 검색 입력 — 입력하는 즉시 필터 적용 (debounce 약간)
+    var searchInput = document.getElementById('project-search');
+    var searchClear = document.getElementById('search-clear');
+    var searchWrap  = document.getElementById('search-wrap');
+    var searchTimer = null;
+    if (searchInput) {
+      searchInput.addEventListener('input', function () {
+        var v = searchInput.value || '';
+        // 입력 중에는 빠른 입력 보호를 위해 100ms debounce
+        if (searchTimer) clearTimeout(searchTimer);
+        searchTimer = setTimeout(function () {
+          activeSearchQuery = v.trim();
+          if (searchWrap) searchWrap.classList.toggle('has-value', !!v);
+          applyFilterAndRender(latestItems);
+        }, 100);
+      });
+      // ESC 키로 검색 초기화
+      searchInput.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') {
+          searchInput.value = '';
+          activeSearchQuery = '';
+          if (searchWrap) searchWrap.classList.remove('has-value');
+          applyFilterAndRender(latestItems);
+        }
+      });
+    }
+    if (searchClear) {
+      searchClear.addEventListener('click', function () {
+        if (searchInput) searchInput.value = '';
+        activeSearchQuery = '';
+        if (searchWrap) searchWrap.classList.remove('has-value');
+        applyFilterAndRender(latestItems);
+        if (searchInput) searchInput.focus();
+      });
+    }
+
+    // 엑셀 다운로드 버튼
+    var exportBtn = document.getElementById('export-excel-btn');
+    if (exportBtn) {
+      exportBtn.addEventListener('click', function () {
+        exportToExcel(lastFilteredItems);
+      });
+    }
 
     if (svc && typeof svc.subscribeProjects === 'function') {
       svc.subscribeProjects(function (items) {
@@ -298,284 +554,95 @@
     }
   }
 
-  function initProjectModal(svc, colVis, onReady) {
-    var modal = document.getElementById('project-modal');
-    var modalTitle = document.getElementById('project-modal-title');
-    var addBtn = document.getElementById('project-add-btn');
-    var closeBtn = document.getElementById('project-modal-close');
-    var cancelBtn = document.getElementById('project-modal-cancel');
-    var form = document.getElementById('project-form');
-    var addYearBtn = document.getElementById('project-add-year-btn');
-    var tbody = document.getElementById('year-budget-tbody');
-    var totalEl = document.getElementById('year-budget-total');
-    var editingId = null;
+  // ===== 엑셀 내보내기 =====
 
-    function openModal() {
-      if (modal) {
-        editingId = null;
-        if (modalTitle) modalTitle.textContent = '과제 등록';
-        modal.classList.add('active');
-        modal.removeAttribute('aria-hidden');
-        resetForm();
-      }
+  function exportToExcel(items) {
+    if (typeof XLSX === 'undefined') {
+      alert('엑셀 라이브러리(SheetJS)가 로드되지 않았습니다. 페이지를 새로고침해 주세요.');
+      return;
     }
-    function openEditModal(item) {
-      if (!modal || !item) return;
-      editingId = item.id || item.docId;
-      if (modalTitle) modalTitle.textContent = '과제 수정';
-      resetForm();
-      setFormValue('project-keywords', item.keywords || item.keyword);
-      setFormValue('project-name', item.projectName || item.과제명);
-      setFormValue('project-business', item.business || item.사업명);
-      setFormValue('project-department', item.department || item.부처);
-      setFormValue('project-institution', item.institution || item.기관명);
-      setFormValue('project-manager', item.manager || item.책임자);
-      setFormValue('project-status', item.status || item['진행 여부']);
-      var isRd = document.getElementById('project-isRd');
-      if (isRd) isRd.checked = !!(item.isRd || item.rd || item['R&D 여부']);
-      setRadio('project-division1', item.division1 || item.구분1);
-      setRadio('project-division2', item.division2 || item.구분2);
-      var years = item.yearBudgets || item.annualData || [];
-      if (!Array.isArray(years)) years = [];
-      tbody.innerHTML = '';
-      years.forEach(function (y) {
-        addYearRow();
-        var lastRow = tbody.querySelector('tr:last-child');
-        if (lastRow) {
-          var s = (y.start || y.startDate || '').toString().slice(0, 10);
-          var e = (y.end || y.endDate || '').toString().slice(0, 10);
-          var sup = (y.support != null ? y.support : 0);
-          var cash = (y.cash != null ? y.cash : 0);
-          var ink = (y.inKind != null ? y.inKind : 0);
-          var inpStart = lastRow.querySelector('.yb-start');
-          var inpEnd = lastRow.querySelector('.yb-end');
-          var inpSup = lastRow.querySelector('.yb-support');
-          var inpCash = lastRow.querySelector('.yb-cash');
-          var inpInk = lastRow.querySelector('.yb-inkind');
-          if (inpStart) inpStart.value = s;
-          if (inpEnd) inpEnd.value = e;
-          if (inpSup) inpSup.value = sup ? formatNum(sup) : '';
-          if (inpCash) inpCash.value = cash ? formatNum(cash) : '';
-          if (inpInk) inpInk.value = ink ? formatNum(ink) : '';
-          updateRowSubtotal(lastRow);
+    if (!items || items.length === 0) {
+      alert('내보낼 데이터가 없습니다. 검색어나 필터를 확인해 주세요.');
+      return;
+    }
+
+    // 한글 헤더로 행 구성
+    var rows = items.map(function (it, idx) {
+      var no = (it.no != null && it.no !== '') ? String(it.no) : (idx + 1);
+      var start = (it.startDate || it.start || '').toString().slice(0, 10);
+      var end = (it.endDate || it.end || '').toString().slice(0, 10);
+      var status = (it.status || it['진행 여부'] || '').toString();
+      var isRd = !!(it.isRd || it.rd || it['R&D 여부']);
+      return {
+        'No': no,
+        '구분 1': it.division1 || it['구분1'] || '',
+        '구분 2': it.division2 || it['구분2'] || '',
+        '진행 여부': status,
+        'R&D 여부': isRd ? 'Y' : 'N',
+        '키워드': it.keywords || it.keyword || it['키워드'] || '',
+        '과제명': it.projectName || it['과제명'] || '',
+        '책임자': it.manager || it['책임자'] || '',
+        '시작일': start,
+        '종료일': end,
+        '부처': it.department || it['부처'] || '',
+        '사업명': it.business || it['사업명'] || '',
+        '전문기관': it.institution || it['기관명'] || '',
+        '지원금 (당해)': Number(it.supportYear || 0),
+        '지원금 (총)': Number(it.supportTotal != null ? it.supportTotal : (it.budget || 0))
+      };
+    });
+
+    var ws = XLSX.utils.json_to_sheet(rows);
+
+    // 열 너비 지정
+    ws['!cols'] = [
+      { wch: 5 },   // No
+      { wch: 9 },   // 구분 1
+      { wch: 7 },   // 구분 2
+      { wch: 10 },  // 진행 여부
+      { wch: 9 },   // R&D 여부
+      { wch: 22 },  // 키워드
+      { wch: 42 },  // 과제명
+      { wch: 10 },  // 책임자
+      { wch: 12 },  // 시작일
+      { wch: 12 },  // 종료일
+      { wch: 16 },  // 부처
+      { wch: 26 },  // 사업명
+      { wch: 18 },  // 전문기관
+      { wch: 16 },  // 지원금 (당해)
+      { wch: 16 }   // 지원금 (총)
+    ];
+
+    // 지원금 열은 숫자 포맷 적용
+    var range = XLSX.utils.decode_range(ws['!ref']);
+    for (var R = range.s.r + 1; R <= range.e.r; R++) {
+      // N열(13)과 O열(14)이 지원금
+      ['N', 'O'].forEach(function (col) {
+        var cellRef = col + (R + 1);
+        if (ws[cellRef]) {
+          ws[cellRef].t = 'n';
+          ws[cellRef].z = '#,##0';
         }
       });
-      if (years.length === 0) addYearRow();
-      modal.classList.add('active');
-      modal.removeAttribute('aria-hidden');
-    }
-    function setFormValue(id, val) {
-      var el = document.getElementById(id);
-      if (el) el.value = val != null ? String(val) : '';
-    }
-    function setRadio(name, val) {
-      if (!val) return;
-      var v = String(val);
-      document.querySelectorAll('input[name="' + name + '"]').forEach(function (r) {
-        r.checked = r.value === v;
-      });
-    }
-    function closeModal() {
-      if (modal) {
-        modal.classList.remove('active');
-        modal.setAttribute('aria-hidden', 'true');
-      }
-    }
-    function resetForm() {
-      if (form) form.reset();
-      if (tbody) tbody.innerHTML = '';
-      updateTotalDisplay();
     }
 
-    function parseNum(val) {
-      var n = Number(String(val).replace(/[^0-9.-]/g, ''));
-      return isNaN(n) ? 0 : n;
-    }
-    function updateRowSubtotal(row) {
-      var support = parseNum((row.querySelector('.yb-support') || {}).value);
-      var cash = parseNum((row.querySelector('.yb-cash') || {}).value);
-      var inKind = parseNum((row.querySelector('.yb-inkind') || {}).value);
-      var sub = support + cash + inKind;
-      var subEl = row.querySelector('.yb-subtotal');
-      if (subEl) subEl.textContent = formatNum(sub);
-      updateTotalDisplay();
-    }
-    function updateTotalDisplay() {
-      if (!totalEl || !tbody) return;
-      var rows = tbody.querySelectorAll('tr');
-      var total = 0;
-      rows.forEach(function (r) {
-        var subEl = r.querySelector('.yb-subtotal');
-        if (subEl) total += parseNum(subEl.textContent);
-      });
-      totalEl.textContent = '총 사업비: ' + formatNum(total) + '원';
-    }
-    function formatDateInput(val) {
-      var s = String(val || '').replace(/\D/g, '');
-      if (s.length >= 8) return s.slice(0, 4) + '-' + s.slice(4, 6) + '-' + s.slice(6, 8);
-      if (s.length >= 6) return s.slice(0, 4) + '-' + s.slice(4, 6) + '-' + s.slice(6);
-      if (s.length >= 4) return s.slice(0, 4) + '-' + s.slice(4);
-      return s;
-    }
-    function onDateInput(e) {
-      var inp = e.target;
-      var formatted = formatDateInput(inp.value);
-      inp.value = formatted;
-      inp.setSelectionRange(formatted.length, formatted.length);
-    }
-    function onAmountInput(e) {
-      var inp = e.target;
-      var raw = String(inp.value || '').replace(/\D/g, '');
-      var formatted = raw === '' ? '' : formatNum(parseInt(raw, 10) || 0);
-      inp.value = formatted;
-      inp.setSelectionRange(formatted.length, formatted.length);
-      var row = inp.closest('tr');
-      if (row) updateRowSubtotal(row);
-    }
-    function addYearRow() {
-      if (!tbody) return;
-      var cnt = tbody.querySelectorAll('tr').length + 1;
-      var tr = document.createElement('tr');
-      tr.innerHTML =
-        '<td class="yb-num">' + cnt + '</td>' +
-        '<td><input type="text" class="yb-start yb-date" placeholder="YYYY-MM-DD" maxlength="10" inputmode="numeric"></td>' +
-        '<td><input type="text" class="yb-end yb-date" placeholder="YYYY-MM-DD" maxlength="10" inputmode="numeric"></td>' +
-        '<td class="yb-amount"><input type="text" class="yb-support" placeholder="0" inputmode="numeric"></td>' +
-        '<td class="yb-amount"><input type="text" class="yb-cash" placeholder="0" inputmode="numeric"></td>' +
-        '<td class="yb-amount"><input type="text" class="yb-inkind" placeholder="0" inputmode="numeric"></td>' +
-        '<td class="yb-subtotal">0</td>' +
-        '<td class="yb-del-cell"><button type="button" class="close-btn yb-del" aria-label="삭제" style="font-size:1rem;padding:0.2rem">&times;</button></td>';
-      tr.querySelectorAll('.yb-start, .yb-end').forEach(function (inp) {
-        inp.addEventListener('input', onDateInput);
-        inp.addEventListener('blur', function () {
-          var v = inp.value.replace(/\D/g, '');
-          if (v.length === 8) inp.value = v.slice(0, 4) + '-' + v.slice(4, 6) + '-' + v.slice(6, 8);
-        });
-      });
-      tr.querySelectorAll('.yb-support, .yb-cash, .yb-inkind').forEach(function (inp) {
-        inp.addEventListener('input', onAmountInput);
-      });
-      tr.querySelector('.yb-del').addEventListener('click', function () {
-        tr.remove();
-        renumberRows();
-        updateTotalDisplay();
-      });
-      tbody.appendChild(tr);
-      updateRowSubtotal(tr);
-    }
-    function renumberRows() {
-      var rows = tbody.querySelectorAll('tr');
-      rows.forEach(function (r, i) {
-        var numEl = r.querySelector('.yb-num');
-        if (numEl) numEl.textContent = i + 1;
-      });
-    }
+    var wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, '과제 목록');
 
-    if (addBtn) addBtn.addEventListener('click', openModal);
-    if (closeBtn) closeBtn.addEventListener('click', closeModal);
-    if (cancelBtn) cancelBtn.addEventListener('click', closeModal);
-    if (modal) modal.addEventListener('click', function (e) { if (e.target === modal) closeModal(); });
+    // 파일명: 과제목록_YYYY-MM-DD.xlsx
+    var today = new Date();
+    var pad = function (n) { return n < 10 ? '0' + n : String(n); };
+    var dateStr = today.getFullYear() + '-' + pad(today.getMonth() + 1) + '-' + pad(today.getDate());
+    var filename = '과제목록_' + dateStr + '.xlsx';
 
-    if (addYearBtn) addYearBtn.addEventListener('click', addYearRow);
-
-    if (form) {
-      form.addEventListener('submit', function (e) {
-        e.preventDefault();
-        var keywords = document.getElementById('project-keywords');
-        var projectName = document.getElementById('project-name');
-        var manager = document.getElementById('project-manager');
-        if (!keywords || !keywords.value.trim()) { alert('별칭(키워드)을 입력해 주세요.'); return; }
-        if (!projectName || !projectName.value.trim()) { alert('과제명을 입력해 주세요.'); return; }
-        if (!manager || !manager.value.trim()) { alert('책임자를 입력해 주세요.'); return; }
-
-        var div1 = document.querySelector('input[name="project-division1"]:checked');
-        var div2 = document.querySelector('input[name="project-division2"]:checked');
-        var status = document.getElementById('project-status');
-        var years = [];
-        var startDate = '';
-        var endDate = '';
-        var supportTotal = 0;
-        tbody.querySelectorAll('tr').forEach(function (row) {
-          var s = (row.querySelector('.yb-start') || {}).value || '';
-          var e = (row.querySelector('.yb-end') || {}).value || '';
-          var sup = parseNum((row.querySelector('.yb-support') || {}).value);
-          var cash = parseNum((row.querySelector('.yb-cash') || {}).value);
-          var ink = parseNum((row.querySelector('.yb-inkind') || {}).value);
-          var sub = sup + cash + ink;
-          years.push({ startDate: s, endDate: e, support: sup, cash: cash, inKind: ink, subtotal: sub });
-          if (s && (!startDate || s < startDate)) startDate = s;
-          if (e && (!endDate || e > endDate)) endDate = e;
-          supportTotal += sub;
-        });
-
-        var supportYear = 0;
-        var statYear = 2026;
-        years.forEach(function (y) {
-          var s = (y.startDate || '').slice(0, 4);
-          var e = (y.endDate || '').slice(0, 4);
-          if ((s && s <= String(statYear)) && (e && e >= String(statYear))) supportYear += (y.support || 0);
-        });
-        var items = (svc && svc.getProjectsData ? svc.getProjectsData() : []) || [];
-        items = Array.isArray(items) ? items.slice() : [];
-        var item;
-        if (editingId) {
-          var idx = items.findIndex(function (x) { return (x.id || x.docId) === editingId; });
-          var existing = idx >= 0 ? items[idx] : null;
-          item = {
-            id: editingId,
-            no: existing && existing.no != null ? String(existing.no) : String(idx + 1),
-          keywords: (keywords || {}).value.trim(),
-          projectName: (projectName || {}).value.trim(),
-          business: (document.getElementById('project-business') || {}).value || '',
-          department: (document.getElementById('project-department') || {}).value || '',
-          institution: (document.getElementById('project-institution') || {}).value || '',
-          manager: (manager || {}).value.trim(),
-          isRd: (document.getElementById('project-isRd') || {}).checked || false,
-          division1: div1 ? div1.value : '',
-          division2: div2 ? div2.value : '',
-          status: (status && status.value) ? status.value : '',
-          startDate: startDate,
-          endDate: endDate,
-          supportTotal: supportTotal,
-          supportYear: supportYear,
-          budget: supportTotal,
-          yearBudgets: years
-        };
-          if (idx >= 0) items[idx] = item;
-          else items.push(item);
-        } else {
-          var nextNo = items.length + 1;
-          item = {
-            id: 'proj-' + Date.now(),
-            no: String(nextNo),
-            keywords: (keywords || {}).value.trim(),
-            projectName: (projectName || {}).value.trim(),
-            business: (document.getElementById('project-business') || {}).value || '',
-            department: (document.getElementById('project-department') || {}).value || '',
-            institution: (document.getElementById('project-institution') || {}).value || '',
-            manager: (manager || {}).value.trim(),
-            isRd: (document.getElementById('project-isRd') || {}).checked || false,
-            division1: div1 ? div1.value : '',
-            division2: div2 ? div2.value : '',
-            status: (status && status.value) ? status.value : '',
-            startDate: startDate,
-            endDate: endDate,
-            supportTotal: supportTotal,
-            supportYear: supportYear,
-            budget: supportTotal,
-            yearBudgets: years
-          };
-          items.push(item);
-        }
-
-        if (svc && typeof svc.saveProjects === 'function') {
-          svc.saveProjects(items);
-        }
-        closeModal();
-      });
+    try {
+      XLSX.writeFile(wb, filename);
+    } catch (err) {
+      console.error('엑셀 내보내기 실패:', err);
+      alert('엑셀 내보내기에 실패했습니다. 다시 시도해 주세요.');
     }
-    if (typeof onReady === 'function') onReady(openEditModal);
   }
+
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
