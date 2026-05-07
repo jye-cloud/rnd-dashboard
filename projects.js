@@ -208,12 +208,19 @@
       var id = it.id || it.docId || 'item-' + idx;
       var start = (it.startDate || it.start || '').toString().slice(0, 10);
       var end = (it.endDate || it.end || '').toString().slice(0, 10);
-      var div1 = (it.division1 || '').toString() || (start && start < CUTOFF ? '계속' : (start ? '신규' : '-'));
-      var div2 = (it.division2 || '').toString() || (start && start < CUTOFF ? '계속' : (start ? '신규' : '-'));
-      // 진행 여부: 저장된 raw 값 대신 자동 전환된 표시값 사용 (예정 + 제출일 지남 → 대기)
+
+      // 유형: division1 (과제/지원사업/용역/기타) — 입력값 그대로
+      var typeText = (it.division1 || it['구분1'] || '').toString() || '-';
+
+      // 진행 여부: normalizeStatus + 특정 연도 선택 시 "수행"에 (계속/신규) 부착
       var status = normalizeStatus(it);
+      var statusDisplay = status;
+      if (status === '수행' && filterYear) {
+        var cutoff = filterYear + '-01-01';
+        if (start && start < cutoff) statusDisplay = '수행 (계속)';
+        else                         statusDisplay = '수행 (신규)';
+      }
       var badgeClass = getDivision2Class(status);
-      var div1Display = div1 === '신규' ? '<strong>[신규]</strong>' : escapeHtml(div1 || '-');
 
       var tr = document.createElement('tr');
       tr.setAttribute('data-id', id);
@@ -222,9 +229,8 @@
       var submitDate = (it.submitDate || it['제출일'] || '').toString().slice(0, 10);
       var cells = [
         '<td>' + escapeHtml(no) + '</td>',
-        '<td>' + div1Display + '</td>',
-        '<td>' + escapeHtml(div2 || '-') + '</td>',
-        '<td><span class="projects-badge ' + badgeClass + '">' + escapeHtml(status || '-') + '</span></td>',
+        '<td>' + escapeHtml(typeText) + '</td>',
+        '<td><span class="projects-badge ' + badgeClass + '">' + escapeHtml(statusDisplay) + '</span></td>',
         '<td>' + escapeHtml(submitDate || '-') + '</td>',
         '<td>' + getKeywordHtml(it) + '</td>',
         '<td>' + escapeHtml(it.manager || it.책임자 || '-') + '</td>',
@@ -233,7 +239,17 @@
       ];
 
       COL_KEYS.forEach(function (k) {
-        var val = k === '연구기간' ? getResearchPeriodDisplay(it, filterYear) : (getVal(it, k) || '-');
+        var val;
+        if (k === '연구기간') {
+          val = getResearchPeriodDisplay(it, filterYear);
+        } else if (k === '지원금당해' || k === '지원금총' || k === '예산') {
+          // 숫자 컬럼은 천단위 콤마 표시
+          var raw = getVal(it, k);
+          var num = Number(raw);
+          val = (raw && !isNaN(num)) ? formatNum(num) : (raw || '-');
+        } else {
+          val = getVal(it, k) || '-';
+        }
         cells.push('<td class="col-opt" data-col="' + k + '">' + escapeHtml(val) + '</td>');
       });
 
@@ -399,13 +415,15 @@
       return (it.division1 || it['구분1'] || '') === division;
     }
 
-    // 카드 활성 상태 UI 동기화
+    // 카드/큰숫자/sub-section 활성 상태 UI 동기화
     function updateActiveCardUI() {
-      document.querySelectorAll('.projects-stat-card.clickable').forEach(function (card) {
-        var f = card.getAttribute('data-filter');
+      document.querySelectorAll('[data-filter].clickable').forEach(function (el) {
+        var f = el.getAttribute('data-filter');
         var isActive = (f === activeCardFilter);
-        card.classList.toggle('is-active', isActive);
-        card.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+        el.classList.toggle('is-active', isActive);
+        if (el.tagName === 'DIV' || el.classList.contains('projects-stat-card')) {
+          el.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+        }
       });
     }
 
@@ -516,33 +534,26 @@
         if (el) el.textContent = divisionCounts[d];
       });
 
-      // 연도 필터 모드에 따라 카드 가시성 결정:
-      //   - 특정 연도 → 계속/신규 카드 표시, 통합 "수행" 카드 숨김
-      //   - "전체"   → 통합 "수행" 카드 표시, 계속/신규 카드 숨김
-      var cardOngoingAll = document.getElementById('card-ongoing-all');
-      var cardContinue   = document.getElementById('card-continue');
-      var cardNew        = document.getElementById('card-new');
-      if (filterYear) {
-        if (cardOngoingAll) cardOngoingAll.style.display = 'none';
-        if (cardContinue)   cardContinue.style.display   = '';
-        if (cardNew)        cardNew.style.display        = '';
-        // ongoing 필터가 활성 상태에서 특정 연도로 전환 → 필터 해제
-        if (activeCardFilter === 'ongoing') {
-          activeCardFilter = null;
-          syncURL();
-        }
-      } else {
-        if (cardOngoingAll) cardOngoingAll.style.display = '';
-        if (cardContinue)   cardContinue.style.display   = 'none';
-        if (cardNew)        cardNew.style.display        = 'none';
-        // continue/new 필터가 활성 상태에서 전체로 전환 → ongoing 으로 통합
-        if (activeCardFilter === 'continue' || activeCardFilter === 'new') {
-          activeCardFilter = 'ongoing';
-          syncURL();
-        }
+      // 카드 가시성:
+      //   - "수행" 통합 카드: 항상 표시
+      //   - 그 안의 (계속/신규) sub-section: 특정 연도일 때만 표시
+      var ongoingSub = document.getElementById('ongoing-sub');
+      if (ongoingSub) {
+        ongoingSub.style.display = filterYear ? '' : 'none';
+      }
+      // 전체 모드로 전환 → continue/new 필터 활성화돼있으면 ongoing으로 통합
+      if (!filterYear && (activeCardFilter === 'continue' || activeCardFilter === 'new')) {
+        activeCardFilter = 'ongoing';
+        syncURL();
       }
 
-      renderTable(listItems, colVis, filterYear || STAT_YEAR, projectEditHandler);
+      // sub-section의 active 상태 표시
+      var subContinue = document.querySelector('.ongoing-sub-item[data-filter="continue"]');
+      var subNew      = document.querySelector('.ongoing-sub-item[data-filter="new"]');
+      if (subContinue) subContinue.classList.toggle('active', activeCardFilter === 'continue');
+      if (subNew)      subNew.classList.toggle('active', activeCardFilter === 'new');
+
+      renderTable(listItems, colVis, filterYear, projectEditHandler);
 
       if (filterHint) {
         var listLabel = filterYear ? filterYear + '년' : '전체';
@@ -565,23 +576,21 @@
       });
     }
 
-    // 카드 클릭 → 필터 토글 (수행 중-계속/신규, 미선정만)
-    document.querySelectorAll('.projects-stat-card.clickable').forEach(function (card) {
-      var f = card.getAttribute('data-filter');
+    // 카드 클릭 → 필터 토글 (data-filter 가진 모든 clickable: 카드/큰숫자/sub-section)
+    document.querySelectorAll('[data-filter].clickable').forEach(function (el) {
+      var f = el.getAttribute('data-filter');
       function handle() {
         if (activeCardFilter === f) {
-          // 같은 카드 재클릭: 토글 해제
           activeCardFilter = null;
         } else {
-          // 다른 카드 클릭: 카드 필터 전환 (status 필터도 같이 해제)
           activeCardFilter = f;
           activeStatusFilter = null;
         }
         syncURL();
         applyFilterAndRender(latestItems);
       }
-      card.addEventListener('click', handle);
-      card.addEventListener('keydown', function (e) {
+      el.addEventListener('click', handle);
+      el.addEventListener('keydown', function (e) {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
           handle();

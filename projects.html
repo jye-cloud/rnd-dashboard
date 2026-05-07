@@ -100,6 +100,39 @@
     .projects-badge--waiting { background: #fef3c7; color: #b45309; }
     .projects-badge--unselected { background: #fee2e2; color: #dc2626; }
     .projects-badge--unsubmitted { background: #ddd6fe; color: #5b21b6; }
+
+    /* "수행" 카드 안의 계속/신규 sub-section */
+    .ongoing-sub {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-top: 0.75rem;
+      padding-top: 0.75rem;
+      border-top: 1px solid #e5e7eb;
+      font-size: 0.85rem;
+      color: var(--text-secondary, #6b7280);
+    }
+    .ongoing-sub-item {
+      flex: 1;
+      padding: 0.25rem 0.5rem;
+      border-radius: 0.35rem;
+      transition: background 0.15s;
+    }
+    .ongoing-sub-item:hover {
+      background: #f3f4f6;
+    }
+    .ongoing-sub-item.active {
+      background: #d1fae5;
+      color: #047857;
+    }
+    .ongoing-sub-item strong {
+      color: #047857;
+      font-size: 1rem;
+      margin-left: 0.25rem;
+    }
+    .ongoing-sub-divider {
+      color: #d1d5db;
+    }
     .projects-col-toggle {
       display: flex;
       justify-content: flex-end;
@@ -347,6 +380,13 @@
     .division-pill.is-active .division-pill-count {
       color: rgba(255, 255, 255, 0.85);
     }
+      /* 사이드바 그룹 구분선 */
+    .sidebar-divider {
+      height: 1px;
+      background: #e5e7eb;
+      margin: 0.75rem 1rem;
+      opacity: 0.7;
+    }
   </style>
 </head>
 <body>
@@ -360,13 +400,15 @@
         <h1 class="sidebar-title">CI_R&DM</h1>
       </div>
       <nav class="sidebar-nav">
-        <a href="dashboard.html" class="sidebar-link" id="nav-dashboard"><span class="sidebar-link-icon" aria-hidden="true">🏠</span><span class="sidebar-link-text">대시보드</span></a>
-        <a href="index.html" class="sidebar-link" id="nav-hr"><span class="sidebar-link-icon" aria-hidden="true">👤</span><span class="sidebar-link-text">인력 정보 관리</span></a>
-        <a href="index.html#/participation" class="sidebar-link" id="nav-participation"><span class="sidebar-link-icon" aria-hidden="true">📊</span><span class="sidebar-link-text">참여율 관리</span></a>
-        <a href="index.html#/payroll" class="sidebar-link" id="nav-payroll"><span class="sidebar-link-icon" aria-hidden="true">💰</span><span class="sidebar-link-text">인건비 관리</span></a>
-        <a href="index.html#/calendar" class="sidebar-link" id="nav-calendar"><span class="sidebar-link-icon" aria-hidden="true">📅</span><span class="sidebar-link-text">제출 일정 관리</span></a>
         <a href="projects-history.html" class="sidebar-link" id="nav-history"><span class="sidebar-link-icon" aria-hidden="true">📜</span><span class="sidebar-link-text">과제 수행 현황</span></a>
+        <a href="index.html#/calendar" class="sidebar-link" id="nav-calendar"><span class="sidebar-link-icon" aria-hidden="true">📅</span><span class="sidebar-link-text">제출 일정 관리</span></a>
+        <div class="sidebar-divider" aria-hidden="true"></div>
+        <a href="dashboard.html" class="sidebar-link" id="nav-dashboard"><span class="sidebar-link-icon" aria-hidden="true">🏠</span><span class="sidebar-link-text">대시보드</span></a>
         <a href="projects.html" class="sidebar-link active" id="nav-projects"><span class="sidebar-link-icon" aria-hidden="true">📋</span><span class="sidebar-link-text">과제 관리</span></a>
+        <a href="index.html" class="sidebar-link" id="nav-hr"><span class="sidebar-link-icon" aria-hidden="true">👤</span><span class="sidebar-link-text">인력 정보 관리</span></a>
+        <a href="index.html#/payroll" class="sidebar-link" id="nav-payroll"><span class="sidebar-link-icon" aria-hidden="true">💰</span><span class="sidebar-link-text">인건비 관리</span></a>
+        <a href="index.html#/participation" class="sidebar-link" id="nav-participation"><span class="sidebar-link-icon" aria-hidden="true">📊</span><span class="sidebar-link-text">참여율 관리</span></a>
+      
       </nav>
     </aside>
 
@@ -380,15 +422,15 @@
         <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1rem;flex-wrap:wrap">
           <span class="section-footnote">연도 필터:</span>
           <select id="project-year-filter" class="ui-select" style="min-width:120px;padding:0.5rem 0.75rem;border-radius:0.5rem;border:1px solid var(--border-color)">
-            <option value="">전체</option>
-            <option value="2026" selected>2026년</option>
+            <option value="" selected>전체</option>
+            <option value="2026">2026년</option>
             <option value="2025">2025년</option>
             <option value="2024">2024년</option>
             <option value="2023">2023년</option>
             <option value="2022">2022년</option>
             <option value="2021">2021년</option>
           </select>
-          <span class="section-footnote" id="project-filter-hint">리스트: 2026년 / 통계: 2026년 기준</span>
+          <span class="section-footnote" id="project-filter-hint">리스트: 전체 / 통계: 2026년 기준</span>
           <div id="project-active-filters" class="projects-active-filters" aria-live="polite"></div>
         </div>
         <!-- 총 제안 + 분류 카드 -->
@@ -420,19 +462,19 @@
         </section>
 
         <section class="projects-stats-grid" aria-label="성과 대시보드">
-          <!-- "수행" 통합 카드 — 연도 필터가 "전체"일 때만 보임 -->
-          <div class="projects-stat-card clickable" data-filter="ongoing" role="button" tabindex="0" id="card-ongoing-all">
+          <!-- "수행" 통합 카드 (계속/신규 sub-stats 포함) -->
+          <div class="projects-stat-card" id="card-ongoing-all">
             <div class="projects-stat-label">수행</div>
-            <div class="projects-stat-value projects-stat--success" id="stat-ongoing-all">0</div>
-          </div>
-          <!-- 계속/신규 카드 — 특정 연도 선택 시에만 보임 -->
-          <div class="projects-stat-card clickable" data-filter="continue" role="button" tabindex="0" id="card-continue">
-            <div class="projects-stat-label">수행 (계속)</div>
-            <div class="projects-stat-value projects-stat--success" id="stat-continue">0</div>
-          </div>
-          <div class="projects-stat-card clickable" data-filter="new" role="button" tabindex="0" id="card-new">
-            <div class="projects-stat-label">수행 (신규)</div>
-            <div class="projects-stat-value projects-stat--success" id="stat-new">0</div>
+            <div class="projects-stat-value projects-stat--success clickable" data-filter="ongoing" role="button" tabindex="0" id="stat-ongoing-all">0</div>
+            <div class="ongoing-sub" id="ongoing-sub" style="display:none;">
+              <span class="ongoing-sub-item clickable" data-filter="continue" role="button" tabindex="0">
+                계속 <strong id="stat-continue">0</strong>
+              </span>
+              <span class="ongoing-sub-divider">|</span>
+              <span class="ongoing-sub-item clickable" data-filter="new" role="button" tabindex="0">
+                신규 <strong id="stat-new">0</strong>
+              </span>
+            </div>
           </div>
           <div class="projects-stat-card clickable" data-filter="unselected" role="button" tabindex="0">
             <div class="projects-stat-label">미선정</div>
@@ -480,8 +522,7 @@
             <thead>
               <tr>
                 <th>No</th>
-                <th>구분 1</th>
-                <th>구분 2</th>
+                <th>유형</th>
                 <th>진행 여부</th>
                 <th>제출일</th>
                 <th>키워드</th>

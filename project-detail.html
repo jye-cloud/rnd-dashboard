@@ -322,6 +322,57 @@
       background: #b91c1c;
       border-color: #b91c1c;
     }
+      /* 사이드바 그룹 구분선 */
+    .sidebar-divider {
+      height: 1px;
+      background: #e5e7eb;
+      margin: 0.75rem 1rem;
+      opacity: 0.7;
+    }
+    /* 책임자 히스토리 행 */
+    .manager-history-row {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+      margin-top: 0.5rem;
+      padding: 0.5rem;
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 0.4rem;
+    }
+    .manager-history-row .mh-name {
+      flex: 1;
+      min-width: 0;
+      padding: 0.4rem 0.5rem;
+      border: 1px solid #d1d5db;
+      border-radius: 0.3rem;
+      font-size: 0.9rem;
+    }
+    .manager-history-row .mh-date {
+      width: 110px;
+      padding: 0.4rem 0.5rem;
+      border: 1px solid #d1d5db;
+      border-radius: 0.3rem;
+      font-size: 0.85rem;
+    }
+    .manager-history-row .mh-tilde {
+      color: #9ca3af;
+      font-size: 0.85rem;
+    }
+    .manager-history-row .mh-del {
+      width: 28px;
+      height: 28px;
+      border: none;
+      background: #fee2e2;
+      color: #dc2626;
+      border-radius: 0.3rem;
+      cursor: pointer;
+      font-size: 1rem;
+      line-height: 1;
+    }
+    .manager-history-row .mh-del:hover {
+      background: #fecaca;
+    }
   </style>
 </head>
 <body>
@@ -335,13 +386,15 @@
         <h1 class="sidebar-title">CI_R&DM</h1>
       </div>
       <nav class="sidebar-nav">
-        <a href="dashboard.html" class="sidebar-link" id="nav-dashboard"><span class="sidebar-link-icon" aria-hidden="true">🏠</span><span class="sidebar-link-text">대시보드</span></a>
-        <a href="index.html" class="sidebar-link" id="nav-hr"><span class="sidebar-link-icon" aria-hidden="true">👤</span><span class="sidebar-link-text">인력 정보 관리</span></a>
-        <a href="index.html#/participation" class="sidebar-link" id="nav-participation"><span class="sidebar-link-icon" aria-hidden="true">📊</span><span class="sidebar-link-text">참여율 관리</span></a>
-        <a href="index.html#/payroll" class="sidebar-link" id="nav-payroll"><span class="sidebar-link-icon" aria-hidden="true">💰</span><span class="sidebar-link-text">인건비 관리</span></a>
-        <a href="index.html#/calendar" class="sidebar-link" id="nav-calendar"><span class="sidebar-link-icon" aria-hidden="true">📅</span><span class="sidebar-link-text">제출 일정 관리</span></a>
         <a href="projects-history.html" class="sidebar-link" id="nav-history"><span class="sidebar-link-icon" aria-hidden="true">📜</span><span class="sidebar-link-text">과제 수행 현황</span></a>
+        <a href="index.html#/calendar" class="sidebar-link" id="nav-calendar"><span class="sidebar-link-icon" aria-hidden="true">📅</span><span class="sidebar-link-text">제출 일정 관리</span></a>
+        <div class="sidebar-divider" aria-hidden="true"></div>
+        <a href="dashboard.html" class="sidebar-link" id="nav-dashboard"><span class="sidebar-link-icon" aria-hidden="true">🏠</span><span class="sidebar-link-text">대시보드</span></a>
         <a href="projects.html" class="sidebar-link active" id="nav-projects"><span class="sidebar-link-icon" aria-hidden="true">📋</span><span class="sidebar-link-text">과제 관리</span></a>
+        <a href="index.html" class="sidebar-link" id="nav-hr"><span class="sidebar-link-icon" aria-hidden="true">👤</span><span class="sidebar-link-text">인력 정보 관리</span></a>
+        <a href="index.html#/payroll" class="sidebar-link" id="nav-payroll"><span class="sidebar-link-icon" aria-hidden="true">💰</span><span class="sidebar-link-text">인건비 관리</span></a>
+        <a href="index.html#/participation" class="sidebar-link" id="nav-participation"><span class="sidebar-link-icon" aria-hidden="true">📊</span><span class="sidebar-link-text">참여율 관리</span></a>
+      
       </nav>
     </aside>
 
@@ -383,7 +436,10 @@
               </div>
               <div class="detail-form-group">
                 <label class="detail-form-label" for="project-manager">책임자 <span class="required">*</span></label>
-                <input type="text" class="detail-form-input" id="project-manager" required placeholder="책임자">
+                <input type="text" class="detail-form-input" id="project-manager" required placeholder="현재 책임자">
+                <span class="detail-form-hint">목록에는 현재 책임자만 표시됩니다.</span>
+                <div id="manager-history-container" style="margin-top:0.5rem;"></div>
+                <button type="button" id="add-manager-history-btn" class="ui-btn ui-btn--ghost" style="margin-top:0.5rem; font-size:0.85rem; padding:0.25rem 0.75rem;">+ 이전 책임자 추가</button>
               </div>
               <div class="detail-form-group">
                 <label class="detail-form-label" for="project-business">사업명</label>
@@ -422,7 +478,8 @@
               </div>
             </div>
 
-            <div class="detail-form-grid" style="grid-template-columns: repeat(3, minmax(200px, 1fr));">
+            <!-- 1줄: 과제 속성 / 유형 -->
+            <div class="detail-form-grid" style="grid-template-columns: 1fr 1fr;">
               <div class="detail-form-group">
                 <label class="detail-form-label">과제 속성</label>
                 <div class="detail-checkbox-group">
@@ -438,6 +495,19 @@
                   <label><input type="radio" name="project-division1" value="기타"> 기타</label>
                 </div>
               </div>
+            </div>
+
+            <!-- 2줄: 담당자 / 제출일 / 진행 여부 -->
+            <div class="detail-form-grid" style="grid-template-columns: repeat(3, minmax(200px, 1fr)); margin-top: 1rem;">
+              <div class="detail-form-group">
+                <label class="detail-form-label" for="project-charge">담당자</label>
+                <input type="text" class="detail-form-input" id="project-charge" placeholder="담당자 이름">
+              </div>
+              <div class="detail-form-group">
+                <label class="detail-form-label" for="project-submit-date">제출일</label>
+                <input type="text" class="detail-form-input" id="project-submit-date" placeholder="YYYY-MM-DD" maxlength="10" inputmode="numeric">
+                <span class="detail-form-hint">"예정" 상태이고 제출일이 지나면 자동으로 "대기"로 표시됩니다</span>
+              </div>
               <div class="detail-form-group">
                 <label class="detail-form-label" for="project-status">진행 여부</label>
                 <select class="detail-form-select" id="project-status">
@@ -448,12 +518,6 @@
                   <option value="미선정">미선정</option>
                   <option value="미제출">미제출</option>
                 </select>
-                <!-- 예정 선택 시: 제출일 입력 (필수) -->
-                <div id="project-submit-date-wrap" style="display:none; margin-top:0.5rem;">
-                  <label class="detail-form-label" for="project-submit-date" style="font-size:0.85rem; color:var(--text-secondary);">제출일 <span class="required">*</span></label>
-                  <input type="date" class="detail-form-input" id="project-submit-date">
-                  <span class="detail-form-hint">제출일이 지나면 자동으로 "대기" 상태로 표시됩니다</span>
-                </div>
                 <!-- 미제출 선택 시: 사유 (선택) -->
                 <div id="project-unsubmitted-wrap" style="display:none; margin-top:0.5rem;">
                   <label class="detail-form-label" for="project-unsubmitted-reason" style="font-size:0.85rem; color:var(--text-secondary);">미제출 사유</label>

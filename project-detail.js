@@ -127,6 +127,73 @@
     });
   }
 
+  // ===== 책임자 히스토리 (이전 책임자 관리) =====
+
+  function addManagerHistoryRow(values) {
+    var container = document.getElementById('manager-history-container');
+    if (!container) return null;
+
+    var row = document.createElement('div');
+    row.className = 'manager-history-row';
+    row.innerHTML =
+      '<input type="text" class="mh-name" placeholder="이전 책임자 이름">' +
+      '<input type="text" class="mh-date mh-start" placeholder="YYYY-MM-DD" maxlength="10" inputmode="numeric">' +
+      '<span class="mh-tilde">~</span>' +
+      '<input type="text" class="mh-date mh-end" placeholder="YYYY-MM-DD" maxlength="10" inputmode="numeric">' +
+      '<button type="button" class="mh-del" aria-label="이전 책임자 삭제" title="삭제">×</button>';
+
+    // 날짜 자동 포맷팅 (blur 시점 — 입력 중에는 자유롭게)
+    row.querySelectorAll('.mh-date').forEach(function (inp) {
+      inp.addEventListener('blur', function () {
+        var v = inp.value.replace(/\D/g, '');
+        if (v.length === 8) inp.value = v.slice(0, 4) + '-' + v.slice(4, 6) + '-' + v.slice(6, 8);
+        else if (v.length === 6) inp.value = v.slice(0, 4) + '-' + v.slice(4, 6);
+        else if (v.length === 4) inp.value = v.slice(0, 4);
+        else if (v.length === 0) inp.value = '';
+        else if (inp.value.indexOf('-') < 0) inp.value = v;
+      });
+    });
+
+    // 삭제 버튼
+    row.querySelector('.mh-del').addEventListener('click', function () {
+      row.remove();
+    });
+
+    container.appendChild(row);
+
+    // 초기값 채우기 (수정 모드)
+    if (values) {
+      var nameEl = row.querySelector('.mh-name');
+      var startEl = row.querySelector('.mh-start');
+      var endEl = row.querySelector('.mh-end');
+      if (nameEl) nameEl.value = values.name || '';
+      if (startEl) startEl.value = (values.startDate || '').toString().slice(0, 10);
+      if (endEl) endEl.value = (values.endDate || '').toString().slice(0, 10);
+    }
+
+    return row;
+  }
+
+  function clearManagerHistory() {
+    var container = document.getElementById('manager-history-container');
+    if (container) container.innerHTML = '';
+  }
+
+  function getManagerHistoryFromForm() {
+    var rows = document.querySelectorAll('#manager-history-container .manager-history-row');
+    var list = [];
+    rows.forEach(function (row) {
+      var name = (row.querySelector('.mh-name') || {}).value || '';
+      var startDate = (row.querySelector('.mh-start') || {}).value || '';
+      var endDate = (row.querySelector('.mh-end') || {}).value || '';
+      name = name.trim();
+      if (name) {
+        list.push({ name: name, startDate: startDate.trim(), endDate: endDate.trim() });
+      }
+    });
+    return list;
+  }
+
   function addYearRow(values) {
     if (!tbodyEl) return null;
     var cnt = tbodyEl.querySelectorAll('tr').length + 1;
@@ -142,10 +209,15 @@
       '<td class="yb-del-cell"><button type="button" class="yb-del" aria-label="연차 삭제">×</button></td>';
 
     tr.querySelectorAll('.yb-start, .yb-end').forEach(function (inp) {
-      inp.addEventListener('input', onDateInput);
+      // 자동 포맷팅은 blur(포커스 잃을 때)에만 — 사용자가 자유롭게 입력/수정 가능
       inp.addEventListener('blur', function () {
         var v = inp.value.replace(/\D/g, '');
         if (v.length === 8) inp.value = v.slice(0, 4) + '-' + v.slice(4, 6) + '-' + v.slice(6, 8);
+        else if (v.length === 6) inp.value = v.slice(0, 4) + '-' + v.slice(4, 6);
+        else if (v.length === 4) inp.value = v.slice(0, 4);
+        else if (v.length === 0) inp.value = '';
+        // 이미 - 가 들어간 형태면 그대로 두기
+        else if (inp.value.indexOf('-') < 0) inp.value = v;
       });
     });
     tr.querySelectorAll('.yb-support, .yb-cash, .yb-inkind').forEach(function (inp) {
@@ -187,12 +259,10 @@
   // status 값에 따라 제출일 / 미제출 사유 입력란 표시/숨김
   function updateStatusConditionalInputs() {
     var statusEl = document.getElementById('project-status');
-    var submitWrap = document.getElementById('project-submit-date-wrap');
-    var unsubWrap  = document.getElementById('project-unsubmitted-wrap');
+    var unsubWrap = document.getElementById('project-unsubmitted-wrap');
     if (!statusEl) return;
     var v = statusEl.value;
-    if (submitWrap) submitWrap.style.display = (v === '예정') ? '' : 'none';
-    if (unsubWrap)  unsubWrap.style.display  = (v === '미제출') ? '' : 'none';
+    if (unsubWrap) unsubWrap.style.display = (v === '미제출') ? '' : 'none';
   }
 
   function fillFormWithItem(item) {
@@ -203,6 +273,14 @@
     setDeptValue(item.department || item['부처'] || '');
     setInstitutionValue(item.institution || item['기관명'] || '');
     setFormValue('project-manager',    item.manager || item['책임자']);
+    setFormValue('project-charge',     item.charge || item['담당자'] || '');
+
+    // 책임자 히스토리 (이전 책임자) 로드
+    clearManagerHistory();
+    var history = item.managerHistory || [];
+    if (Array.isArray(history)) {
+      history.forEach(function (h) { addManagerHistoryRow(h); });
+    }
 
     // 진행 여부 — 저장된 값이 "수행 중" 이면 "수행" 옵션이 매칭됨 (정규화)
     var savedStatus = item.status || item['진행 여부'] || '';
@@ -297,12 +375,13 @@
     var isRd        = (document.getElementById('project-isRd')        || {}).checked || false;
     var submitDate  = (document.getElementById('project-submit-date') || {}).value || '';
     var unsubReason = (document.getElementById('project-unsubmitted-reason') || {}).value || '';
+    var charge      = (document.getElementById('project-charge')      || {}).value || '';
     var div1El = document.querySelector('input[name="project-division1"]:checked');
     var division1 = div1El ? div1El.value : '';
     // division2(계속/신규)는 startDate 기준으로 자동 계산되므로 저장하지 않음
 
-    // status가 "예정" 아닐 때는 submitDate 저장 안 함 (불필요한 데이터 방지)
-    if (status !== '예정') submitDate = '';
+    // 제출일은 모든 status에서 자유 입력 가능 (저장 시 형식 정규화)
+    submitDate = formatDateInput(submitDate);
     // status가 "미제출" 아닐 때는 사유 저장 안 함
     if (status !== '미제출') unsubReason = '';
 
@@ -346,11 +425,13 @@
       department: department,
       institution: institution,
       manager: manager.trim(),
+      managerHistory: getManagerHistoryFromForm(),
+      charge: charge.trim(),
       isRd: isRd,
       division1: division1,
       // division2 (계속/신규) 는 startDate 기준 자동 판정 — 저장 안 함
       status: status,
-      submitDate: submitDate,            // 예정일 때만 값 있음
+      submitDate: submitDate,            // 항상 저장 (모든 status에서 입력 가능)
       unsubmittedReason: unsubReason,    // 미제출일 때만 값 있음
       startDate: startDate,
       endDate: endDate,
@@ -403,17 +484,25 @@
       items.push(item);
     }
 
+    // 저장 시작 — saveProjects가 Promise를 반환하면 그 완료를 기다림
+    var savePromise;
     try {
-      svc.saveProjects(items);
+      savePromise = svc.saveProjects(items);
     } catch (err) {
       console.error('저장 실패:', err);
       alert('저장 중 오류가 발생했습니다. 다시 시도해 주세요.');
       return;
     }
 
-    // 저장 후 목록 페이지로 복귀
-    if (unsubscribe) { try { unsubscribe(); } catch (e) {} }
-    window.location.href = 'projects.html';
+    // 저장 완료 후 redirect (Firestore 비동기 저장이 끝나기 전 페이지 이동 방지)
+    Promise.resolve(savePromise).then(function () {
+      if (unsubscribe) { try { unsubscribe(); } catch (e) {} }
+      window.location.href = 'projects.html';
+    }).catch(function (err) {
+      console.error('저장 실패:', err);
+      var msg = (err && err.message) ? err.message : '알 수 없는 오류';
+      alert('저장 중 오류가 발생했습니다.\n\n' + msg + '\n\n다시 시도해 주세요.');
+    });
   }
 
   function deleteProject() {
@@ -445,17 +534,24 @@
 
     items.splice(idx, 1);
 
+    // 삭제 시작 — Promise 완료 후 redirect
+    var savePromise;
     try {
-      svc.saveProjects(items);
+      savePromise = svc.saveProjects(items);
     } catch (err) {
       console.error('삭제 실패:', err);
       alert('삭제 중 오류가 발생했습니다. 다시 시도해 주세요.');
       return;
     }
 
-    // 삭제 후 목록 페이지로 복귀
-    if (unsubscribe) { try { unsubscribe(); } catch (e) {} }
-    window.location.href = 'projects.html';
+    Promise.resolve(savePromise).then(function () {
+      if (unsubscribe) { try { unsubscribe(); } catch (e) {} }
+      window.location.href = 'projects.html';
+    }).catch(function (err) {
+      console.error('삭제 실패:', err);
+      var msg = (err && err.message) ? err.message : '알 수 없는 오류';
+      alert('삭제 중 오류가 발생했습니다.\n\n' + msg + '\n\n다시 시도해 주세요.');
+    });
   }
 
   function cancelAndGoBack() {
@@ -724,13 +820,21 @@
     // 정부부처 / 전문기관 드롭다운 셋업 (Firestore 데이터 로드 전에 옵션 채움)
     setupDeptInstitutionDropdowns();
 
-    // 진행 여부 변경 → 제출일/미제출 사유 입력란 가시성 토글
+    // 진행 여부 변경 → 미제출 사유 입력란 가시성 토글
     var statusSelectEl = document.getElementById('project-status');
     if (statusSelectEl) {
       statusSelectEl.addEventListener('change', updateStatusConditionalInputs);
     }
     // 신규 등록 모드에서도 초기 상태 적용 (초기엔 모두 숨김)
     updateStatusConditionalInputs();
+
+    // 제출일 자유 입력 + blur 시 자동 YYYY-MM-DD 포맷
+    var submitDateEl = document.getElementById('project-submit-date');
+    if (submitDateEl) {
+      submitDateEl.addEventListener('blur', function () {
+        submitDateEl.value = formatDateInput(submitDateEl.value);
+      });
+    }
 
     // URL 파싱
     readURL();
@@ -748,6 +852,12 @@
     var backLink        = document.getElementById('detail-back-link');
 
     if (addYearBtn) addYearBtn.addEventListener('click', function () { addYearRow(); });
+
+    // 이전 책임자 추가 버튼
+    var addManagerHistoryBtn = document.getElementById('add-manager-history-btn');
+    if (addManagerHistoryBtn) {
+      addManagerHistoryBtn.addEventListener('click', function () { addManagerHistoryRow(); });
+    }
     if (saveTopBtn) saveTopBtn.addEventListener('click', saveProject);
     if (saveBottomBtn) saveBottomBtn.addEventListener('click', function (e) { e.preventDefault(); saveProject(); });
     if (cancelTopBtn) cancelTopBtn.addEventListener('click', cancelAndGoBack);

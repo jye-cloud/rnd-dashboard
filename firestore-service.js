@@ -238,11 +238,18 @@
   function saveProjects(data) {
     var items = Array.isArray(data) ? data : [];
     if (configured) {
-      db.collection(COLL.projects).doc(DOC_ID).set({ items: items }).catch(function (e) {
+      return db.collection(COLL.projects).doc(DOC_ID).set({ items: items }).catch(function (e) {
         console.error('Firestore Projects 저장 실패:', e);
+        throw e;
       });
     } else {
-      try { localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(items)); } catch (e) { console.error(e); }
+      try {
+        localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(items));
+        return Promise.resolve();
+      } catch (e) {
+        console.error(e);
+        return Promise.reject(e);
+      }
     }
   }
 

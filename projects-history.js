@@ -162,7 +162,7 @@
     setText('stat-total-sum-unit', ' ' + sumParts.unit);
   }
 
-  function renderTable(items) {
+  function renderTable(items, filterYear) {
     var tbody = document.getElementById('history-tbody');
     var empty = document.getElementById('history-empty');
     if (!tbody) return;
@@ -190,10 +190,18 @@
       var supportTotal = it.supportTotal != null ? Number(it.supportTotal)
                       : (it.budget != null ? Number(it.budget) : 0);
 
+      // 진행 여부 표시: "수행" + 특정 연도 선택 시 (계속/신규) 부착
+      var statusDisplay = status;
+      if (status === '수행' && filterYear) {
+        var cutoff = filterYear + '-01-01';
+        if (start && start < cutoff) statusDisplay = '수행 (계속)';
+        else                         statusDisplay = '수행 (신규)';
+      }
+
       var tr = document.createElement('tr');
       tr.innerHTML =
         '<td>' + escapeHtml(no) + '</td>' +
-        '<td class="col-status"><span class="projects-badge ' + badgeClass + '">' + escapeHtml(status) + '</span></td>' +
+        '<td class="col-status"><span class="projects-badge ' + badgeClass + '">' + escapeHtml(statusDisplay) + '</span></td>' +
         '<td>' + escapeHtml(submitDate || '-') + '</td>' +
         '<td>' + escapeHtml(name) + '</td>' +
         '<td>' + escapeHtml(manager) + '</td>' +
@@ -332,7 +340,7 @@
         });
       }
 
-      renderTable(listItems);
+      renderTable(listItems, filterYear);
 
       // 메타 텍스트 업데이트
       if (metaEl) {
