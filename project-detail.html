@@ -373,6 +373,97 @@
     .manager-history-row .mh-del:hover {
       background: #fecaca;
     }
+
+    /* 부처/기관 항목 관리 토글 + 패널 */
+    .dropdown-manage-btn {
+      background: transparent;
+      border: 1px solid #d1d5db;
+      color: #4b5563;
+      padding: 0.2rem 0.6rem;
+      border-radius: 0.35rem;
+      font-size: 0.78rem;
+      cursor: pointer;
+    }
+    .dropdown-manage-btn:hover { background: #f3f4f6; }
+    .dropdown-manage-btn.active {
+      background: #dbeafe;
+      color: #1d4ed8;
+      border-color: #93c5fd;
+    }
+    .dropdown-manage-panel {
+      margin-top: 0.5rem;
+      padding: 0.6rem;
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 0.4rem;
+      max-height: 280px;
+      overflow-y: auto;
+    }
+    .dmp-item {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.35rem 0.5rem;
+      border-radius: 0.3rem;
+    }
+    .dmp-item:hover { background: #fff; }
+    .dmp-item--default {
+      color: #9ca3af;
+      font-style: italic;
+    }
+    .dmp-item-name { flex: 1; font-size: 0.88rem; }
+    .dmp-item-tag {
+      font-size: 0.7rem;
+      padding: 0.1rem 0.4rem;
+      border-radius: 0.2rem;
+      background: #e5e7eb;
+      color: #6b7280;
+    }
+    .dmp-del {
+      width: 24px;
+      height: 24px;
+      border: none;
+      background: #fee2e2;
+      color: #dc2626;
+      border-radius: 0.25rem;
+      cursor: pointer;
+      font-size: 0.85rem;
+      line-height: 1;
+    }
+    .dmp-del:hover { background: #fecaca; }
+    .dmp-divider {
+      height: 1px;
+      background: #e5e7eb;
+      margin: 0.5rem 0;
+    }
+    .dmp-add-row {
+      display: flex;
+      gap: 0.4rem;
+      align-items: center;
+    }
+    .dmp-add-input {
+      flex: 1;
+      padding: 0.4rem 0.6rem;
+      border: 1px solid #d1d5db;
+      border-radius: 0.3rem;
+      font-size: 0.88rem;
+    }
+    .dmp-add-btn {
+      padding: 0.4rem 0.8rem;
+      border: 1px solid #2563eb;
+      background: #2563eb;
+      color: #fff;
+      border-radius: 0.3rem;
+      cursor: pointer;
+      font-size: 0.85rem;
+    }
+    .dmp-add-btn:hover { background: #1d4ed8; }
+    .dmp-empty {
+      color: #9ca3af;
+      font-size: 0.85rem;
+      text-align: center;
+      padding: 0.5rem;
+    }
   </style>
 </head>
 <body>
@@ -430,13 +521,13 @@
 
             <div class="detail-form-grid">
               <div class="detail-form-group">
-                <label class="detail-form-label" for="project-keywords">별칭(키워드) <span class="required">*</span></label>
-                <input type="text" class="detail-form-input" id="project-keywords" required placeholder="예: AI, 머신러닝">
+                <label class="detail-form-label" for="project-keywords">별칭(키워드)</label>
+                <input type="text" class="detail-form-input" id="project-keywords" placeholder="예: AI, 머신러닝">
                 <span class="detail-form-hint">목록에서 빠르게 식별할 수 있는 짧은 별칭</span>
               </div>
               <div class="detail-form-group">
-                <label class="detail-form-label" for="project-manager">책임자 <span class="required">*</span></label>
-                <input type="text" class="detail-form-input" id="project-manager" required placeholder="현재 책임자">
+                <label class="detail-form-label" for="project-manager">책임자</label>
+                <input type="text" class="detail-form-input" id="project-manager" placeholder="현재 책임자">
                 <span class="detail-form-hint">목록에는 현재 책임자만 표시됩니다.</span>
                 <div id="manager-history-container" style="margin-top:0.5rem;"></div>
                 <button type="button" id="add-manager-history-btn" class="ui-btn ui-btn--ghost" style="margin-top:0.5rem; font-size:0.85rem; padding:0.25rem 0.75rem;">+ 이전 책임자 추가</button>
@@ -446,25 +537,33 @@
                 <input type="text" class="detail-form-input" id="project-business" placeholder="사업명">
               </div>
               <div class="detail-form-group">
-                <label class="detail-form-label" for="project-name">과제명 <span class="required">*</span></label>
-                <input type="text" class="detail-form-input" id="project-name" required placeholder="과제명 전체">
+                <label class="detail-form-label" for="project-name">과제명</label>
+                <input type="text" class="detail-form-input" id="project-name" placeholder="과제명 전체">
               </div>
               <div class="detail-form-group">
-                <label class="detail-form-label" for="project-department">정부부처</label>
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.4rem;">
+                  <label class="detail-form-label" for="project-department" style="margin-bottom:0;">정부부처</label>
+                  <button type="button" id="project-department-manage-btn" class="dropdown-manage-btn" title="항목 추가/삭제">📝 항목 관리</button>
+                </div>
                 <select class="detail-form-select" id="project-department">
                   <option value="">선택하세요</option>
                   <!-- 옵션은 project-detail.js 가 동적으로 채움 -->
                 </select>
                 <input type="text" class="detail-form-input" id="project-department-custom"
                   placeholder="새 부처명 입력 후 Enter" style="display:none; margin-top:0.5rem;">
+                <div id="project-department-manage-panel" class="dropdown-manage-panel" style="display:none;"></div>
               </div>
               <div class="detail-form-group">
-                <label class="detail-form-label" for="project-institution">전문기관</label>
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.4rem;">
+                  <label class="detail-form-label" for="project-institution" style="margin-bottom:0;">전문기관</label>
+                  <button type="button" id="project-institution-manage-btn" class="dropdown-manage-btn" title="항목 추가/삭제">📝 항목 관리</button>
+                </div>
                 <select class="detail-form-select" id="project-institution" disabled>
                   <option value="">먼저 정부부처를 선택하세요</option>
                 </select>
                 <input type="text" class="detail-form-input" id="project-institution-custom"
                   placeholder="새 전문기관명 입력 후 Enter" style="display:none; margin-top:0.5rem;">
+                <div id="project-institution-manage-panel" class="dropdown-manage-panel" style="display:none;"></div>
               </div>
             </div>
           </section>
@@ -487,7 +586,7 @@
                 </div>
               </div>
               <div class="detail-form-group">
-                <label class="detail-form-label">유형</label>
+                <label class="detail-form-label">유형 <span class="required">*</span></label>
                 <div class="detail-radio-group">
                   <label><input type="radio" name="project-division1" value="과제"> 과제</label>
                   <label><input type="radio" name="project-division1" value="지원사업"> 지원사업</label>
@@ -504,7 +603,7 @@
                 <input type="text" class="detail-form-input" id="project-charge" placeholder="담당자 이름">
               </div>
               <div class="detail-form-group">
-                <label class="detail-form-label" for="project-submit-date">제출일</label>
+                <label class="detail-form-label" for="project-submit-date">제출일 <span class="required">*</span></label>
                 <input type="text" class="detail-form-input" id="project-submit-date" placeholder="YYYY-MM-DD" maxlength="10" inputmode="numeric">
                 <span class="detail-form-hint">"예정" 상태이고 제출일이 지나면 자동으로 "대기"로 표시됩니다</span>
               </div>
@@ -514,6 +613,7 @@
                   <option value="">선택하세요</option>
                   <option value="예정">예정</option>
                   <option value="수행">수행</option>
+                  <option value="선정(기타)">선정(기타)</option>
                   <option value="종료">종료</option>
                   <option value="미선정">미선정</option>
                   <option value="미제출">미제출</option>
@@ -528,7 +628,49 @@
             </div>
           </section>
 
-          <!-- 3. 연차별 예산 -->
+          <!-- 3. 참여 형태 -->
+          <section class="detail-section">
+            <div class="detail-section-header">
+              <div>
+                <h2 class="detail-section-title">참여 형태</h2>
+                <p class="detail-section-desc">단독/컨소시엄 여부와 우리 분담을 입력합니다.</p>
+              </div>
+            </div>
+
+            <div class="detail-form-grid" style="grid-template-columns: 1fr 1fr;">
+              <div class="detail-form-group">
+                <label class="detail-form-label">참여 형태</label>
+                <div class="detail-radio-group">
+                  <label><input type="radio" name="participation-type" value="단독" checked> 단독</label>
+                  <label><input type="radio" name="participation-type" value="컨소"> 컨소시엄</label>
+                </div>
+              </div>
+              <div class="detail-form-group" id="consortium-role-wrap" style="display:none;">
+                <label class="detail-form-label">컨소시엄 역할</label>
+                <div class="detail-radio-group">
+                  <label><input type="radio" name="consortium-role" value="주관"> 주관</label>
+                  <label><input type="radio" name="consortium-role" value="참여"> 참여</label>
+                </div>
+              </div>
+            </div>
+
+            <div id="consortium-extra-wrap" style="display:none; margin-top:1rem;">
+              <div class="detail-form-grid" style="grid-template-columns: 2fr 1fr;">
+                <div class="detail-form-group">
+                  <label class="detail-form-label" for="consortium-partners">함께하는 기관</label>
+                  <input type="text" class="detail-form-input" id="consortium-partners" placeholder="예: 한국전기연구원, KAIST">
+                  <span class="detail-form-hint">콤마(,)로 구분하여 여러 기관 입력 가능</span>
+                </div>
+                <div class="detail-form-group">
+                  <label class="detail-form-label" for="consortium-total-budget">총 지원금 (컨소시엄 전체)</label>
+                  <input type="text" class="detail-form-input" id="consortium-total-budget" inputmode="numeric" placeholder="예: 200000000">
+                  <span class="detail-form-hint" id="our-budget-percent">우리 분담 / 총 지원금 비중을 자동 계산해 표시합니다</span>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- 4. 연차별 예산 -->
           <section class="detail-section">
             <div class="detail-section-header">
               <div>
@@ -591,5 +733,6 @@
   <script src="auth-guard.js"></script>
   <script src="firestore-service.js"></script>
   <script src="project-detail.js"></script>
+  <script src="floating-buttons.js"></script>
 </body>
 </html>

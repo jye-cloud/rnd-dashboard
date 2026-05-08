@@ -111,12 +111,65 @@
   function updateTotalDisplay() {
     if (!totalEl || !tbodyEl) return;
     var rows = tbodyEl.querySelectorAll('tr');
-    var total = 0;
+    var supportSum = 0, cashSum = 0, inKindSum = 0;
     rows.forEach(function (r) {
-      var subEl = r.querySelector('.yb-subtotal');
-      if (subEl) total += parseNum(subEl.textContent);
+      supportSum += parseNum((r.querySelector('.yb-support') || {}).value || '0');
+      cashSum    += parseNum((r.querySelector('.yb-cash')    || {}).value || '0');
+      inKindSum  += parseNum((r.querySelector('.yb-inkind')  || {}).value || '0');
     });
-    totalEl.textContent = '총 사업비: ' + formatNum(total) + '원';
+    var total = supportSum + cashSum + inKindSum;
+    totalEl.innerHTML =
+      '<span style="color:#6b7280; font-weight:400; margin-right:0.5rem;">' +
+        '정부지원금 <strong style="color:#111;">' + formatNum(supportSum) + '</strong>' +
+        ' &nbsp;|&nbsp; ' +
+        '자부담 현금 <strong style="color:#111;">' + formatNum(cashSum) + '</strong>' +
+        ' &nbsp;|&nbsp; ' +
+        '자부담 현물 <strong style="color:#111;">' + formatNum(inKindSum) + '</strong>' +
+      '</span> &nbsp;&nbsp; ' +
+      '총 사업비: <strong>' + formatNum(total) + '</strong>원';
+    updateBudgetPercent();
+  }
+
+  // 비중 계산: 우리 분담(연차별 정부지원금 합) / 총 지원금(입력값)
+  function updateBudgetPercent() {
+    var hintEl  = document.getElementById('our-budget-percent');
+    var totalEl_ = document.getElementById('consortium-total-budget');
+    if (!hintEl || !totalEl_) return;
+    var grandTotal = parseNum(totalEl_.value);
+
+    // 우리 분담 = 연차별 예산의 정부지원금 합
+    var ourSupport = 0;
+    if (tbodyEl) {
+      tbodyEl.querySelectorAll('tr').forEach(function (r) {
+        ourSupport += parseNum((r.querySelector('.yb-support') || {}).value || '0');
+      });
+    }
+
+    if (!ourSupport && !grandTotal) {
+      hintEl.textContent = '연차별 예산의 정부지원금 합과 비교한 비중을 표시합니다';
+      return;
+    }
+    if (!grandTotal) {
+      hintEl.textContent = '우리 분담: ' + formatNum(ourSupport) + '원 (총 지원금 입력 시 비중 표시)';
+      return;
+    }
+    if (!ourSupport) {
+      hintEl.textContent = '총 지원금 ' + formatNum(grandTotal) + '원';
+      return;
+    }
+    var pct = (ourSupport / grandTotal * 100);
+    var pctText = (pct > 100 ? pct.toFixed(0) : pct.toFixed(1)) + '%';
+    hintEl.textContent = '총 ' + formatNum(grandTotal) + '원 중 우리 분담 ' + formatNum(ourSupport) + '원 (' + pctText + ')';
+  }
+
+  // 참여 형태 라디오 변경 → 컨소시엄 추가 입력란 토글
+  function updateParticipationVisibility() {
+    var checked = document.querySelector('input[name="participation-type"]:checked');
+    var isCons = checked && checked.value === '컨소';
+    var roleWrap = document.getElementById('consortium-role-wrap');
+    var extraWrap = document.getElementById('consortium-extra-wrap');
+    if (roleWrap) roleWrap.style.display = isCons ? '' : 'none';
+    if (extraWrap) extraWrap.style.display = isCons ? '' : 'none';
   }
 
   function renumberRows() {
@@ -275,6 +328,23 @@
     setFormValue('project-manager',    item.manager || item['책임자']);
     setFormValue('project-charge',     item.charge || item['담당자'] || '');
 
+    // 참여 형태 로드
+    var pType = item.participationType || '단독';
+    var pTypeEl = document.querySelector('input[name="participation-type"][value="' + pType + '"]');
+    if (pTypeEl) pTypeEl.checked = true;
+
+    var cRole = item.consortiumRole || '';
+    if (cRole) {
+      var cRoleEl = document.querySelector('input[name="consortium-role"][value="' + cRole + '"]');
+      if (cRoleEl) cRoleEl.checked = true;
+    }
+    setFormValue('consortium-partners', item.consortiumPartners || '');
+    // 총 지원금 (컨소시엄 전체) — legacy: ourBudget 도 폴백
+    var totalBudget = item.consortiumTotalBudget != null ? item.consortiumTotalBudget : (item.ourBudget != null ? item.ourBudget : '');
+    setFormValue('consortium-total-budget', totalBudget !== '' ? String(totalBudget) : '');
+
+    // 토글 + 비중 갱신은 끝에서 처리
+
     // 책임자 히스토리 (이전 책임자) 로드
     clearManagerHistory();
     var history = item.managerHistory || [];
@@ -295,6 +365,7 @@
 
     // 입력란 가시성 갱신
     updateStatusConditionalInputs();
+    updateParticipationVisibility();
 
     var isRd = document.getElementById('project-isRd');
     if (isRd) isRd.checked = !!(item.isRd || item.rd || item['R&D 여부']);
@@ -380,6 +451,19 @@
     var division1 = div1El ? div1El.value : '';
     // division2(계속/신규)는 startDate 기준으로 자동 계산되므로 저장하지 않음
 
+    // 참여 형태
+    var pTypeEl = document.querySelector('input[name="participation-type"]:checked');
+    var participationType = pTypeEl ? pTypeEl.value : '단독';
+    var consortiumRole = '';
+    var consortiumPartners = '';
+    var consortiumTotalBudget = 0;
+    if (participationType === '컨소') {
+      var cRoleEl = document.querySelector('input[name="consortium-role"]:checked');
+      consortiumRole = cRoleEl ? cRoleEl.value : '';
+      consortiumPartners = ((document.getElementById('consortium-partners') || {}).value || '').trim();
+      consortiumTotalBudget = parseNum((document.getElementById('consortium-total-budget') || {}).value || '0');
+    }
+
     // 제출일은 모든 status에서 자유 입력 가능 (저장 시 형식 정규화)
     submitDate = formatDateInput(submitDate);
     // status가 "미제출" 아닐 때는 사유 저장 안 함
@@ -427,6 +511,10 @@
       manager: manager.trim(),
       managerHistory: getManagerHistoryFromForm(),
       charge: charge.trim(),
+      participationType: participationType,
+      consortiumRole: consortiumRole,
+      consortiumPartners: consortiumPartners,
+      consortiumTotalBudget: consortiumTotalBudget,
       isRd: isRd,
       division1: division1,
       // division2 (계속/신규) 는 startDate 기준 자동 판정 — 저장 안 함
@@ -443,18 +531,20 @@
   }
 
   function validateForm() {
-    var keywords    = (document.getElementById('project-keywords')    || {}).value || '';
-    var projectName = (document.getElementById('project-name')        || {}).value || '';
-    var manager     = (document.getElementById('project-manager')     || {}).value || '';
-    var status      = (document.getElementById('project-status')      || {}).value || '';
     var submitDate  = (document.getElementById('project-submit-date') || {}).value || '';
+    var div1El = document.querySelector('input[name="project-division1"]:checked');
 
-    if (!keywords.trim())    { alert('별칭(키워드)을 입력해 주세요.'); var el1 = document.getElementById('project-keywords'); if (el1) el1.focus(); return false; }
-    if (!projectName.trim()) { alert('과제명을 입력해 주세요.');       var el2 = document.getElementById('project-name');     if (el2) el2.focus(); return false; }
-    if (!manager.trim())     { alert('책임자를 입력해 주세요.');       var el3 = document.getElementById('project-manager');  if (el3) el3.focus(); return false; }
-    // 진행 여부가 "예정"이면 제출일 필수
-    if (status === '예정' && !submitDate) {
-      alert('진행 여부가 "예정"인 경우 제출일을 입력해 주세요.');
+    // 유형(과제/지원사업/용역/기타) 필수
+    if (!div1El) {
+      alert('유형을 선택해 주세요.');
+      var radioFirst = document.querySelector('input[name="project-division1"]');
+      if (radioFirst) radioFirst.focus();
+      return false;
+    }
+
+    // 제출일 필수
+    if (!submitDate.trim()) {
+      alert('제출일을 입력해 주세요.');
       var el4 = document.getElementById('project-submit-date');
       if (el4) el4.focus();
       return false;
@@ -667,6 +757,10 @@
     var instSel    = document.getElementById('project-institution');
     var deptCustom = document.getElementById('project-department-custom');
     var instCustom = document.getElementById('project-institution-custom');
+    var deptManageBtn   = document.getElementById('project-department-manage-btn');
+    var instManageBtn   = document.getElementById('project-institution-manage-btn');
+    var deptManagePanel = document.getElementById('project-department-manage-panel');
+    var instManagePanel = document.getElementById('project-institution-manage-panel');
 
     // 부처 select 변경
     if (deptSel) {
@@ -684,6 +778,10 @@
           if (deptCustom) deptCustom.style.display = 'none';
           rebuildInstSelect(v);
         }
+        // 전문기관 패널이 열려있으면 갱신
+        if (instManagePanel && instManagePanel.style.display !== 'none') {
+          renderInstManagePanel();
+        }
       });
     }
 
@@ -700,6 +798,7 @@
             deptCustom.style.display = 'none';
             rebuildInstSelect(newDept);
             saveCustomAgency(newDept);
+            if (deptManagePanel && deptManagePanel.style.display !== 'none') renderDeptManagePanel();
           }
         } else if (e.key === 'Escape') {
           deptCustom.style.display = 'none';
@@ -740,11 +839,168 @@
             if (instSel) instSel.value = newInst;
             instCustom.style.display = 'none';
             saveCustomAgency(dept);
+            if (instManagePanel && instManagePanel.style.display !== 'none') renderInstManagePanel();
           } else if (!dept) {
             alert('정부부처를 먼저 선택해 주세요.');
           }
         } else if (e.key === 'Escape') {
           instCustom.style.display = 'none';
+        }
+      });
+    }
+
+    // ===== 부처 관리 패널 =====
+    function renderDeptManagePanel() {
+      if (!deptManagePanel) return;
+      var html = '';
+      // 모든 부처 항목 (default + custom)
+      Object.keys(agencyMap).forEach(function (name) {
+        var isDefault = DEFAULT_AGENCIES.hasOwnProperty(name);
+        html += '<div class="dmp-item' + (isDefault ? ' dmp-item--default' : '') + '">';
+        html +=   '<span class="dmp-item-name">' + escapeHtml(name) + '</span>';
+        if (isDefault) {
+          html += '<span class="dmp-item-tag">기본</span>';
+        } else {
+          html += '<button type="button" class="dmp-del" data-name="' + escapeHtml(name) + '" title="삭제">✕</button>';
+        }
+        html += '</div>';
+      });
+      html += '<div class="dmp-divider"></div>';
+      html += '<div class="dmp-add-row">';
+      html += '<input type="text" class="dmp-add-input" id="dmp-dept-add-input" placeholder="새 부처명">';
+      html += '<button type="button" class="dmp-add-btn" id="dmp-dept-add-btn">+ 추가</button>';
+      html += '</div>';
+      deptManagePanel.innerHTML = html;
+
+      // 삭제 핸들러
+      deptManagePanel.querySelectorAll('.dmp-del').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var name = btn.getAttribute('data-name');
+          if (!name || DEFAULT_AGENCIES.hasOwnProperty(name)) return;
+          if (!confirm('"' + name + '" 부처를 삭제할까요?\n(이 부처의 전문기관 목록도 같이 삭제됩니다)')) return;
+          delete agencyMap[name];
+          rebuildDeptSelect();
+          if (deptSel && deptSel.value === name) {
+            deptSel.value = '';
+            rebuildInstSelect(null);
+          }
+          deleteCustomAgency(name);
+          renderDeptManagePanel();
+        });
+      });
+
+      // 추가 핸들러
+      var addInput = document.getElementById('dmp-dept-add-input');
+      var addBtn = document.getElementById('dmp-dept-add-btn');
+      function addDept() {
+        var newName = (addInput.value || '').trim();
+        if (!newName) return;
+        if (agencyMap[newName]) { alert('이미 존재하는 부처입니다.'); return; }
+        agencyMap[newName] = [];
+        rebuildDeptSelect();
+        saveCustomAgency(newName);
+        addInput.value = '';
+        renderDeptManagePanel();
+      }
+      if (addBtn) addBtn.addEventListener('click', addDept);
+      if (addInput) addInput.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); addDept(); }
+      });
+    }
+
+    // ===== 전문기관 관리 패널 =====
+    function renderInstManagePanel() {
+      if (!instManagePanel) return;
+      var dept = deptSel ? deptSel.value : '';
+      if (!dept || dept === '__add__') {
+        instManagePanel.innerHTML = '<div class="dmp-empty">정부부처를 먼저 선택하세요</div>';
+        return;
+      }
+      var insts = agencyMap[dept] || [];
+      var defaults = DEFAULT_AGENCIES[dept] || [];
+      var html = '<div style="font-size:0.78rem; color:#6b7280; margin-bottom:0.4rem;">현재: ' + escapeHtml(dept) + '</div>';
+      if (insts.length === 0) {
+        html += '<div class="dmp-empty">등록된 전문기관 없음</div>';
+      } else {
+        insts.forEach(function (instName) {
+          var isDefault = defaults.indexOf(instName) >= 0;
+          html += '<div class="dmp-item' + (isDefault ? ' dmp-item--default' : '') + '">';
+          html +=   '<span class="dmp-item-name">' + escapeHtml(instName) + '</span>';
+          if (isDefault) {
+            html += '<span class="dmp-item-tag">기본</span>';
+          } else {
+            html += '<button type="button" class="dmp-del" data-name="' + escapeHtml(instName) + '" title="삭제">✕</button>';
+          }
+          html += '</div>';
+        });
+      }
+      html += '<div class="dmp-divider"></div>';
+      html += '<div class="dmp-add-row">';
+      html += '<input type="text" class="dmp-add-input" id="dmp-inst-add-input" placeholder="새 전문기관명">';
+      html += '<button type="button" class="dmp-add-btn" id="dmp-inst-add-btn">+ 추가</button>';
+      html += '</div>';
+      instManagePanel.innerHTML = html;
+
+      // 삭제 핸들러
+      instManagePanel.querySelectorAll('.dmp-del').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var name = btn.getAttribute('data-name');
+          if (!name) return;
+          if ((DEFAULT_AGENCIES[dept] || []).indexOf(name) >= 0) return;
+          if (!confirm('"' + name + '" 전문기관을 "' + dept + '"에서 삭제할까요?')) return;
+          var arr = agencyMap[dept] || [];
+          var idx = arr.indexOf(name);
+          if (idx >= 0) arr.splice(idx, 1);
+          rebuildInstSelect(dept);
+          saveCustomAgency(dept);
+          renderInstManagePanel();
+        });
+      });
+
+      // 추가 핸들러
+      var addInput = document.getElementById('dmp-inst-add-input');
+      var addBtn = document.getElementById('dmp-inst-add-btn');
+      function addInst() {
+        var newName = (addInput.value || '').trim();
+        if (!newName) return;
+        if (!agencyMap[dept]) agencyMap[dept] = [];
+        if (agencyMap[dept].indexOf(newName) >= 0) { alert('이미 존재하는 전문기관입니다.'); return; }
+        agencyMap[dept].push(newName);
+        rebuildInstSelect(dept);
+        saveCustomAgency(dept);
+        addInput.value = '';
+        renderInstManagePanel();
+      }
+      if (addBtn) addBtn.addEventListener('click', addInst);
+      if (addInput) addInput.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); addInst(); }
+      });
+    }
+
+    // 토글 버튼
+    if (deptManageBtn) {
+      deptManageBtn.addEventListener('click', function () {
+        var open = deptManagePanel.style.display === 'none';
+        if (open) {
+          renderDeptManagePanel();
+          deptManagePanel.style.display = '';
+          deptManageBtn.classList.add('active');
+        } else {
+          deptManagePanel.style.display = 'none';
+          deptManageBtn.classList.remove('active');
+        }
+      });
+    }
+    if (instManageBtn) {
+      instManageBtn.addEventListener('click', function () {
+        var open = instManagePanel.style.display === 'none';
+        if (open) {
+          renderInstManagePanel();
+          instManagePanel.style.display = '';
+          instManageBtn.classList.add('active');
+        } else {
+          instManagePanel.style.display = 'none';
+          instManageBtn.classList.remove('active');
         }
       });
     }
@@ -798,6 +1054,22 @@
       });
     } catch (e) {
       console.warn('[project-detail] firestore set 실패:', e);
+    }
+  }
+
+  function deleteCustomAgency(dept) {
+    if (typeof firebase === 'undefined' || !firebase.firestore) return;
+    if (!dept) return;
+    try {
+      // FieldValue.delete() 로 해당 키 제거
+      var update = {};
+      update['customAgencies.' + dept] = firebase.firestore.FieldValue.delete();
+      firebase.firestore().collection('config').doc('agencies').update(update)
+        .catch(function (e) {
+          console.warn('[project-detail] custom agency 삭제 실패:', e);
+        });
+    } catch (e) {
+      console.warn('[project-detail] firestore delete 실패:', e);
     }
   }
 
@@ -858,6 +1130,21 @@
     if (addManagerHistoryBtn) {
       addManagerHistoryBtn.addEventListener('click', function () { addManagerHistoryRow(); });
     }
+
+    // 참여 형태 라디오 → 컨소시엄 입력란 토글
+    document.querySelectorAll('input[name="participation-type"]').forEach(function (r) {
+      r.addEventListener('change', function () {
+        updateParticipationVisibility();
+        updateBudgetPercent();
+      });
+    });
+    // 총 지원금 입력 → 비중 갱신
+    var consortiumTotalEl = document.getElementById('consortium-total-budget');
+    if (consortiumTotalEl) {
+      consortiumTotalEl.addEventListener('input', updateBudgetPercent);
+    }
+    // 초기 상태
+    updateParticipationVisibility();
     if (saveTopBtn) saveTopBtn.addEventListener('click', saveProject);
     if (saveBottomBtn) saveBottomBtn.addEventListener('click', function (e) { e.preventDefault(); saveProject(); });
     if (cancelTopBtn) cancelTopBtn.addEventListener('click', cancelAndGoBack);
