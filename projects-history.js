@@ -55,25 +55,34 @@
   }
 
   /**
-   * 진행 여부 정규화 — 예정/대기/수행/종료/미선정 5종으로 통일.
-   * 기존 데이터의 "수행"/"수행중"은 "수행"으로 자동 변환.
+   * 진행 여부 정규화 — 자동 전환 포함:
+   *   - "예정" + 제출일 지남 → "대기"
+   *   - "수행" + 종료일 지남 → "종료"
+   * 저장된 데이터의 status는 그대로 두고 표시만 변환.
    */
   function normalizeStatus(it) {
     var raw = (it.status || it['진행 여부'] || '').toString().trim();
     var n = raw.replace(/\s/g, '');
-    if (n === '수행중' || n === '수행') return '수행';
-    // "예정" + 제출일 지남 → 자동으로 "대기"로 표시 (저장 데이터는 그대로 "예정")
+
+    var today = new Date();
+    var todayStr = today.getFullYear() + '-' +
+      String(today.getMonth() + 1).padStart(2, '0') + '-' +
+      String(today.getDate()).padStart(2, '0');
+
+    // "수행" + 종료일 지남 → "종료"
+    if (n === '수행중' || n === '수행') {
+      var endDate = (it.endDate || it.end || it['종료일'] || '').toString().slice(0, 10);
+      if (endDate && todayStr > endDate) return '종료';
+      return '수행';
+    }
+
+    // "예정" + 제출일 지남 → "대기"
     if (raw === '예정') {
       var submitDate = (it.submitDate || it['제출일'] || '').toString().slice(0, 10);
-      if (submitDate) {
-        var today = new Date();
-        var todayStr = today.getFullYear() + '-' +
-          String(today.getMonth() + 1).padStart(2, '0') + '-' +
-          String(today.getDate()).padStart(2, '0');
-        if (todayStr > submitDate) return '대기';
-      }
+      if (submitDate && todayStr > submitDate) return '대기';
       return '예정';
     }
+
     if (raw === '대기' || raw === '종료' || raw === '미선정' || raw === '미제출') return raw;
     return raw || '미정';
   }
@@ -83,8 +92,9 @@
     if (status === '예정')   return 'projects-badge--scheduled';
     if (status === '대기')   return 'projects-badge--waiting';
     if (status === '종료')   return 'projects-badge--end';
-    if (status === '미선정') return 'projects-badge--end';
+    if (status === '미선정') return 'projects-badge--unselected';
     if (status === '미제출') return 'projects-badge--unsubmitted';
+    if (status === '선정(기타)' || status === '선정 (기타)') return 'projects-badge--other';
     return 'projects-badge--end';
   }
 
@@ -194,8 +204,12 @@
       var statusDisplay = status;
       if (status === '수행' && filterYear) {
         var cutoff = filterYear + '-01-01';
-        if (start && start < cutoff) statusDisplay = '수행 (계속)';
-        else                         statusDisplay = '수행 (신규)';
+        if (start && start < cutoff) {
+          statusDisplay = '수행 (계속)';
+        } else {
+          statusDisplay = '수행 (신규)';
+          badgeClass = 'projects-badge--ongoing-new';  // 신규는 청록
+        }
       }
 
       var tr = document.createElement('tr');

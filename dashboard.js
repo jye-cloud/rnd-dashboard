@@ -75,19 +75,26 @@
   function normalizeStatus(it) {
     var raw = (it.status || it['진행 여부'] || '').toString().trim();
     var n = raw.replace(/\s/g, '');
-    if (n === '수행중' || n === '수행') return '수행';
-    // "예정" + 제출일 지남 → 자동으로 "대기"로 표시 (저장 데이터는 그대로 "예정")
+
+    var today = new Date();
+    var todayStr = today.getFullYear() + '-' +
+      String(today.getMonth() + 1).padStart(2, '0') + '-' +
+      String(today.getDate()).padStart(2, '0');
+
+    // "수행" + 종료일 지남 → "종료"
+    if (n === '수행중' || n === '수행') {
+      var endDate = (it.endDate || it.end || it['종료일'] || '').toString().slice(0, 10);
+      if (endDate && todayStr > endDate) return '종료';
+      return '수행';
+    }
+
+    // "예정" + 제출일 지남 → "대기"
     if (raw === '예정') {
       var submitDate = (it.submitDate || it['제출일'] || '').toString().slice(0, 10);
-      if (submitDate) {
-        var today = new Date();
-        var todayStr = today.getFullYear() + '-' +
-          String(today.getMonth() + 1).padStart(2, '0') + '-' +
-          String(today.getDate()).padStart(2, '0');
-        if (todayStr > submitDate) return '대기';
-      }
+      if (submitDate && todayStr > submitDate) return '대기';
       return '예정';
     }
+
     if (raw === '대기' || raw === '종료' || raw === '미선정' || raw === '미제출') return raw;
     return raw || '미정';
   }
@@ -95,22 +102,72 @@
   /**
    * 해당 연도와 겹치는 yearBudgets 항목들의 (support, cash, inKind) 합계
    */
+  /**
+   * yearBudget 행의 그 연도 지원금 (calendarBreakdown 우선, 없으면 일별 비례)
+   */
+  function _supportInYear(yb, year) {
+    if (!yb) return 0;
+
+    // 사용자 직접 입력값 우선
+    var cb = yb.calendarBreakdown;
+    if (cb && typeof cb === 'object' && cb[year] != null && cb[year] !== '') {
+      return Number(cb[year]) || 0;
+    }
+
+    var s = (yb.startDate || yb.start || '').toString().slice(0, 10);
+    var e = (yb.endDate   || yb.end   || '').toString().slice(0, 10);
+    if (!s || !e) return 0;
+    var support = Number(yb.support || 0);
+    if (!support) return 0;
+    var sd = new Date(s + 'T00:00:00');
+    var ed = new Date(e + 'T00:00:00');
+    if (isNaN(sd.getTime()) || isNaN(ed.getTime())) return 0;
+    if (ed < sd) return 0;
+    var yearStart = new Date(year + '-01-01T00:00:00');
+    var yearEnd   = new Date(year + '-12-31T00:00:00');
+    var overlapStart = sd > yearStart ? sd : yearStart;
+    var overlapEnd   = ed < yearEnd   ? ed : yearEnd;
+    if (overlapStart > overlapEnd) return 0;
+    var totalDays   = ((ed - sd) / 86400000) + 1;
+    var overlapDays = ((overlapEnd - overlapStart) / 86400000) + 1;
+    if (sd.getFullYear() === ed.getFullYear()) {
+      return Number(year) === sd.getFullYear() ? support : 0;
+    }
+    return Math.round(support * overlapDays / totalDays);
+  }
+
   function getYearAmounts(it, year) {
     var sup = 0, cash = 0, ink = 0;
-    var ys = String(year);
     var arr = (it.yearBudgets && Array.isArray(it.yearBudgets)) ? it.yearBudgets : [];
 
+    // support: 각 yearBudget의 calendarBreakdown 우선
     arr.forEach(function (y) {
-      var s = (y.startDate || y.start || '').toString().slice(0, 4);
-      var e = (y.endDate   || y.end   || '').toString().slice(0, 4);
-      if (s && e && s <= ys && ys <= e) {
-        sup  += Number(y.support || 0);
-        cash += Number(y.cash    || 0);
-        ink  += Number(y.inKind  || 0);
-      }
+      sup += _supportInYear(y, year);
     });
 
-    // yearBudgets 가 비어있는 옛 데이터 호환 (기준 연도가 2026일 때)
+    // cash/inKind: 일별 비례 분배 (calendarBreakdown은 support만 다룸)
+    arr.forEach(function (y) {
+      var s = (y.startDate || y.start || '').toString().slice(0, 10);
+      var e = (y.endDate   || y.end   || '').toString().slice(0, 10);
+      if (!s || !e) return;
+      var sd = new Date(s + 'T00:00:00');
+      var ed = new Date(e + 'T00:00:00');
+      if (isNaN(sd.getTime()) || isNaN(ed.getTime()) || ed < sd) return;
+      var yearStart = new Date(year + '-01-01T00:00:00');
+      var yearEnd   = new Date(year + '-12-31T00:00:00');
+      var oStart = sd > yearStart ? sd : yearStart;
+      var oEnd   = ed < yearEnd   ? ed : yearEnd;
+      if (oStart > oEnd) return;
+      var totalDays = ((ed - sd) / 86400000) + 1;
+      var ovDays    = ((oEnd - oStart) / 86400000) + 1;
+      var ratio = (sd.getFullYear() === ed.getFullYear())
+        ? (Number(year) === sd.getFullYear() ? 1 : 0)
+        : (ovDays / totalDays);
+      cash += Math.round(Number(y.cash   || 0) * ratio);
+      ink  += Math.round(Number(y.inKind || 0) * ratio);
+    });
+
+    // yearBudgets 가 비어있는 옛 데이터 호환
     if (Number(year) === 2026 && it.supportYear != null && !isNaN(Number(it.supportYear))) {
       if (sup === 0) sup = Number(it.supportYear);
     }

@@ -265,10 +265,13 @@
 
     /* 상태 배지 — projects.html 과 동일 */
     .projects-badge { display: inline-block; padding: 0.2rem 0.5rem; border-radius: 0.35rem; font-size: 0.72rem; font-weight: 700; white-space: nowrap; }
-    .projects-badge--ongoing { background: #d1fae5; color: #047857; }
+    .projects-badge--ongoing { background: #d1fae5; color: #047857; }              /* 수행 (계속) — 진한 초록 */
+    .projects-badge--ongoing-new { background: #ccfbf1; color: #0d9488; }          /* 수행 (신규) — 청록 */
     .projects-badge--scheduled { background: #dbeafe; color: #1d4ed8; }
     .projects-badge--waiting { background: #fef3c7; color: #b45309; }
-    .projects-badge--unsubmitted { background: #ddd6fe; color: #5b21b6; }
+    .projects-badge--unselected { background: #fef2f2; color: #b91c1c; }           /* 미선정 — 톤다운 분홍 */
+    .projects-badge--unsubmitted { background: #f3f4f6; color: #6b7280; }          /* 미제출 — 라이트 회색 */
+    .projects-badge--other { background: #ecfccb; color: #65a30d; }                /* 선정(기타) — 라임 */
     .projects-badge--end { background: #e5e7eb; color: #4b5563; }
 
     /* 총 N건 + 분류 카드 (상단 통합) */
@@ -371,16 +374,16 @@
         <button type="button" class="sidebar-toggle" id="sidebar-toggle" aria-label="메뉴 접기/펼치기" title="메뉴 접기/펼치기">☰</button>
         <h1 class="sidebar-title">CI_R&DM</h1>
       </div>
-      <nav class="sidebar-nav">
+            <nav class="sidebar-nav">
         <a href="projects-history.html" class="sidebar-link active" id="nav-history"><span class="sidebar-link-icon" aria-hidden="true">📜</span><span class="sidebar-link-text">과제 수행 현황</span></a>
         <a href="index.html#/calendar" class="sidebar-link" id="nav-calendar"><span class="sidebar-link-icon" aria-hidden="true">📅</span><span class="sidebar-link-text">제출 일정 관리</span></a>
         <div class="sidebar-divider" aria-hidden="true"></div>
         <a href="dashboard.html" class="sidebar-link" id="nav-dashboard"><span class="sidebar-link-icon" aria-hidden="true">🏠</span><span class="sidebar-link-text">대시보드</span></a>
+        <a href="funding.html" class="sidebar-link" id="nav-funding"><span class="sidebar-link-icon" aria-hidden="true">💵</span><span class="sidebar-link-text">자금 관리</span></a>
         <a href="projects.html" class="sidebar-link" id="nav-projects"><span class="sidebar-link-icon" aria-hidden="true">📋</span><span class="sidebar-link-text">과제 관리</span></a>
         <a href="index.html" class="sidebar-link" id="nav-hr"><span class="sidebar-link-icon" aria-hidden="true">👤</span><span class="sidebar-link-text">인력 정보 관리</span></a>
         <a href="index.html#/payroll" class="sidebar-link" id="nav-payroll"><span class="sidebar-link-icon" aria-hidden="true">💰</span><span class="sidebar-link-text">인건비 관리</span></a>
         <a href="index.html#/participation" class="sidebar-link" id="nav-participation"><span class="sidebar-link-icon" aria-hidden="true">📊</span><span class="sidebar-link-text">참여율 관리</span></a>
-      
       </nav>
     </aside>
 

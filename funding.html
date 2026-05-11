@@ -7,7 +7,7 @@
   </script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>[R&DM] 과제 관리</title>
+  <title>[R&DM] 자금 관리</title>
   <link rel="stylesheet" href="style.css">
   <style>
     html:not(.auth-bypass) .dashboard { visibility: hidden !important; }
@@ -208,8 +208,6 @@
     }
     /* 입금 카드는 파란 톤 */
     .ongoing-sub--blue .ongoing-sub-item strong { color: #1d4ed8; }
-    /* 입금 완료 카드는 초록 톤 */
-    .ongoing-sub--green .ongoing-sub-item strong { color: #047857; }
     /* 종료 sub-item: 회색 톤 (수행과 구분) */
     .ongoing-sub-item--ended strong { color: #4b5563; }
     .ongoing-sub-item--ended.active {
@@ -474,6 +472,235 @@
       margin: 0.75rem 1rem;
       opacity: 0.7;
     }
+
+    /* 자금 관리 페이지 */
+    .funding-view-toggle {
+      display: inline-flex;
+      gap: 0.25rem;
+      background: #f3f4f6;
+      padding: 0.25rem;
+      border-radius: 0.5rem;
+    }
+    .view-toggle-btn {
+      padding: 0.4rem 0.85rem !important;
+      font-size: 0.85rem !important;
+      background: transparent !important;
+      border: none !important;
+      color: #6b7280 !important;
+    }
+    .view-toggle-btn.active {
+      background: #fff !important;
+      color: #111827 !important;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+    }
+    /* 시기별 카드 */
+    .period-bar {
+      display: grid;
+      gap: 0.75rem;
+    }
+    .period-bar--quarter { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+    .period-bar--month { grid-template-columns: repeat(6, 1fr); }
+    .period-card {
+      padding: 0.85rem 1rem;
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 0.55rem;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+    }
+    .period-card-label {
+      font-size: 0.78rem;
+      color: #6b7280;
+      font-weight: 600;
+    }
+    .period-card-planned {
+      margin-top: 0.45rem;
+      font-size: 1rem;
+      font-weight: 700;
+      color: #111827;
+    }
+    .period-card-actual {
+      margin-top: 0.25rem;
+      font-size: 1rem;
+      font-weight: 700;
+      color: #15803d;
+    }
+    .period-card-actual--zero { color: #9ca3af; }
+    .period-card-diff {
+      margin-top: 0.25rem;
+      font-size: 0.75rem;
+      color: #6b7280;
+    }
+    .period-card-diff--ok { color: #15803d; }
+    .period-card-diff--warn { color: #b91c1c; }       /* 미수 — 빨강 */
+    .period-card-diff--over { color: #9333ea; }       /* 초과 — 보라 */
+    /* 미수가 후속 분기로 해결된 경우 — 회색 + 취소선 */
+    .period-card-diff--resolved { color: #9ca3af; }
+    .period-card-diff--resolved s { text-decoration: line-through; text-decoration-thickness: 1.5px; }
+    .period-card-diff--resolved .period-remain { color: #b91c1c; font-weight: 500; }
+
+    /* 과제별 표 */
+    .funding-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.88rem;
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 0.5rem;
+      overflow: hidden;
+    }
+    .funding-table th, .funding-table td {
+      padding: 0.55rem 0.75rem;
+      border-bottom: 1px solid #f3f4f6;
+      text-align: left;
+    }
+    .funding-table th {
+      background: #f9fafb;
+      font-weight: 600;
+      color: #4b5563;
+      font-size: 0.78rem;
+    }
+    .funding-table td.f-amount { text-align: right; }
+    .funding-table tr:last-child td { border-bottom: none; }
+    .funding-table .f-row--unpaid { background: #fffbeb; }
+    .funding-table .f-row--paid { background: #f0fdf4; }
+    .funding-table .f-status-pill {
+      display: inline-block;
+      padding: 0.15rem 0.55rem;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+    .funding-table .f-status-paid { background: #d1fae5; color: #047857; }
+    .funding-table .f-status-unpaid { background: #fef3c7; color: #92400e; }
+    .funding-table .f-status-overdue { background: #fee2e2; color: #b91c1c; }
+    /* 안내문구 */
+    .funding-table-info {
+      font-size: 0.83rem;
+      color: #6b7280;
+      margin-bottom: 1rem;
+      padding: 0.55rem 0.85rem;
+      background: #f9fafb;
+      border-left: 3px solid #93c5fd;
+      border-radius: 0.25rem;
+    }
+
+    /* 표 wrap (가로 스크롤) */
+    .funding-table-wrap {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    /* 매트릭스 표 */
+    .funding-matrix th, .funding-matrix td {
+      text-align: center;
+      vertical-align: middle;
+    }
+    .funding-matrix th:first-child, .funding-matrix td.f-name {
+      text-align: left;
+    }
+    /* 월별 모드 — 컬럼 많아서 콤팩트 */
+    .funding-matrix--month {
+      min-width: 1400px;
+    }
+    .funding-matrix--month .f-cell {
+      padding: 0.4rem 0.4rem !important;
+      font-size: 0.78rem !important;
+    }
+    .funding-matrix--month .f-cell small { font-size: 0.7rem; }
+    .funding-matrix--month th { font-size: 0.72rem; padding: 0.4rem 0.3rem; }
+    .funding-matrix--month .f-cell-remaining { font-size: 0.65rem; }
+    .funding-matrix th {
+      background: #f9fafb;
+      color: #4b5563;
+      font-weight: 600;
+      font-size: 0.78rem;
+      border-bottom: 1px solid #e5e7eb;
+    }
+    .funding-matrix .f-th-kind { width: 60px; }
+    .funding-matrix .f-name { font-weight: 500; padding-left: 0.85rem; color: #111827; }
+    .funding-matrix .f-cha { font-size: 0.78rem; color: #9ca3af; margin-left: 0.25rem; }
+
+    /* 구분 컬럼 (예정 / 입금) — 부드러운 톤 */
+    .funding-matrix .f-kind {
+      font-size: 0.78rem;
+      font-weight: 600;
+      padding: 0.3rem 0.5rem;
+      text-align: center;
+    }
+    .funding-matrix .f-kind-planned {
+      background: #f5f8ff;
+      color: #4b5fa3;
+    }
+    .funding-matrix .f-kind-actual {
+      background: #f5fcf7;
+      color: #4d8a6a;
+    }
+
+    /* 행 묶음 — 부드럽게 */
+    .funding-matrix .f-row-pair-top td { border-bottom: none; }
+    .funding-matrix .f-row-pair-bot td { border-bottom: 1px solid #f3f4f6; }
+    /* 마지막 데이터 행은 합계 위 선 우선 — 자체 border-bottom 제거 */
+    .funding-matrix tbody tr.f-row-pair-bot:nth-last-of-type(3) td { border-bottom: none; }
+
+    /* 셀 */
+    .funding-matrix .f-cell { padding: 0.5rem 0.6rem; font-size: 0.88rem; color: #111827; }
+    .funding-matrix .f-cell small { color: #9ca3af; font-weight: 400; font-size: 0.78rem; }
+    .funding-matrix .f-cell-empty { color: #d1d5db; }
+    .funding-matrix .f-cell-unpaid { color: #cbd5e1; }
+    /* 정상 수령 — 초록 */
+    .funding-matrix .f-cell-paid { color: #15803d; font-weight: 600; }
+    /* 미해결 미수 — 빨강 */
+    .funding-matrix .f-cell-overdue { color: #b91c1c; font-weight: 600; background: #fef2f2; }
+    /* 해결된 미수 — 회색 + 취소선 */
+    .funding-matrix .f-cell-resolved { color: #9ca3af; }
+    .funding-matrix .f-cell-resolved s { text-decoration: line-through; text-decoration-thickness: 1.5px; }
+    /* 초과 (실제 > 예정) — 보라 */
+    .funding-matrix .f-cell-over { color: #9333ea; font-weight: 600; }
+    /* 부분 해결 시 잔여 표시 — 마지막 보충 분기 입금 셀에 */
+    .funding-matrix .f-cell-remaining {
+      display: block;
+      font-size: 0.72rem;
+      color: #b91c1c;
+      font-weight: 500;
+      margin-top: 0.2rem;
+    }
+    .funding-matrix .f-cell-total {
+      background: #fafbfc;
+      border-left: 1px solid #e5e7eb !important;
+      font-weight: 500;
+      color: #374151;
+    }
+    .funding-matrix .f-balance {
+      text-align: right;
+      font-weight: 700;
+      padding-right: 1rem;
+      border-left: 1px solid #e5e7eb !important;
+      font-size: 0.92rem;
+    }
+    .funding-matrix .f-balance-warn { color: #b91c1c; }
+    .funding-matrix .f-balance-ok { color: #9ca3af; }
+
+    /* 합계 행 — 부드러운 회색 */
+    .funding-matrix .f-row-total td {
+      padding-top: 0.7rem;
+      padding-bottom: 0.7rem;
+      font-weight: 700;
+      background: #fafbfc;
+    }
+    .funding-matrix .f-row-total-top td {
+      background: #f9fafb;
+      border-top: 1px solid #e5e7eb;
+    }
+    .funding-matrix .f-row-total-bot td { background: #f3f4f6; }
+    .funding-matrix .f-row-total .f-kind-planned { background: #eff3fa; color: #4b5fa3; }
+    .funding-matrix .f-row-total .f-kind-actual { background: #eef7f1; color: #4d8a6a; }
+
+    .funding-empty {
+      padding: 2rem;
+      text-align: center;
+      color: #9ca3af;
+      font-size: 0.9rem;
+    }
   </style>
 </head>
 <body>
@@ -491,8 +718,8 @@
         <a href="index.html#/calendar" class="sidebar-link" id="nav-calendar"><span class="sidebar-link-icon" aria-hidden="true">📅</span><span class="sidebar-link-text">제출 일정 관리</span></a>
         <div class="sidebar-divider" aria-hidden="true"></div>
         <a href="dashboard.html" class="sidebar-link" id="nav-dashboard"><span class="sidebar-link-icon" aria-hidden="true">🏠</span><span class="sidebar-link-text">대시보드</span></a>
-        <a href="funding.html" class="sidebar-link" id="nav-funding"><span class="sidebar-link-icon" aria-hidden="true">💵</span><span class="sidebar-link-text">자금 관리</span></a>
-        <a href="projects.html" class="sidebar-link active" id="nav-projects"><span class="sidebar-link-icon" aria-hidden="true">📋</span><span class="sidebar-link-text">과제 관리</span></a>
+        <a href="funding.html" class="sidebar-link active" id="nav-funding"><span class="sidebar-link-icon" aria-hidden="true">💵</span><span class="sidebar-link-text">자금 관리</span></a>
+        <a href="projects.html" class="sidebar-link" id="nav-projects"><span class="sidebar-link-icon" aria-hidden="true">📋</span><span class="sidebar-link-text">과제 관리</span></a>
         <a href="index.html" class="sidebar-link" id="nav-hr"><span class="sidebar-link-icon" aria-hidden="true">👤</span><span class="sidebar-link-text">인력 정보 관리</span></a>
         <a href="index.html#/payroll" class="sidebar-link" id="nav-payroll"><span class="sidebar-link-icon" aria-hidden="true">💰</span><span class="sidebar-link-text">인건비 관리</span></a>
         <a href="index.html#/participation" class="sidebar-link" id="nav-participation"><span class="sidebar-link-icon" aria-hidden="true">📊</span><span class="sidebar-link-text">참여율 관리</span></a>
@@ -502,194 +729,60 @@
     <main class="main-area">
       <div class="container">
         <header class="header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.75rem">
-          <h1 class="header-title">[R&DM] 과제 관리</h1>
-          <button type="button" class="ui-btn ui-btn--primary" id="project-add-btn">과제 등록</button>
+          <h1 class="header-title">[R&DM] 자금 관리</h1>
         </header>
 
-        <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1rem;flex-wrap:wrap">
-          <span class="section-footnote">연도 필터:</span>
-          <select id="project-year-filter" class="ui-select" style="min-width:120px;padding:0.5rem 0.75rem;border-radius:0.5rem;border:1px solid var(--border-color)">
-            <option value="">전체</option>
+        <div class="projects-filter-bar" style="display:flex; align-items:center; gap:1rem; margin-bottom:1rem;">
+          <label for="funding-year-filter" style="font-size:0.9rem; color:#4b5563;">연도 필터:</label>
+          <select id="funding-year-filter" class="ui-select" style="min-width:120px;padding:0.5rem 0.75rem;border-radius:0.5rem;border:1px solid var(--border-color)">
             <option value="2026" selected>2026년</option>
             <option value="2025">2025년</option>
             <option value="2024">2024년</option>
             <option value="2023">2023년</option>
             <option value="2022">2022년</option>
-            <option value="2021">2021년</option>
           </select>
-          <span class="section-footnote" id="project-filter-hint">리스트: 전체 / 통계: 2026년 기준</span>
-          <div id="project-active-filters" class="projects-active-filters" aria-live="polite"></div>
+          <div style="flex:1"></div>
+          <div class="funding-view-toggle" role="group" aria-label="표시 단위">
+            <button type="button" class="ui-btn ui-btn--ghost view-toggle-btn active" data-view="quarter">분기별</button>
+            <button type="button" class="ui-btn ui-btn--ghost view-toggle-btn" data-view="month">월별</button>
+          </div>
         </div>
-        <!-- 총 제안 + 분류 카드 -->
-        <section class="division-card" aria-label="총 제안 + 분류">
-          <div class="division-card-header" id="division-clear-trigger" role="button" tabindex="0" title="분류 필터 해제">
-            <span class="division-card-label">총 제안</span>
-            <span class="division-card-value" id="stat-total">0</span>
-            <span class="division-card-unit">건</span>
-          </div>
-          <div class="division-card-divider"></div>
-          <div class="division-pills" id="division-pills" role="group" aria-label="구분 1 분류 필터">
-            <button type="button" class="division-pill" data-division="과제">
-              <span>과제</span>
-              <span class="division-pill-count" id="stat-div-과제">0</span>
-            </button>
-            <button type="button" class="division-pill" data-division="지원사업">
-              <span>지원사업</span>
-              <span class="division-pill-count" id="stat-div-지원사업">0</span>
-            </button>
-            <button type="button" class="division-pill" data-division="용역">
-              <span>용역</span>
-              <span class="division-pill-count" id="stat-div-용역">0</span>
-            </button>
-            <button type="button" class="division-pill" data-division="기타">
-              <span>기타</span>
-              <span class="division-pill-count" id="stat-div-기타">0</span>
-            </button>
-          </div>
-        </section>
 
-        <section class="projects-stats-grid" aria-label="성과 대시보드">
-          <!-- 대기 카드 (좁음) -->
-          <div class="projects-stat-card projects-stat-card--narrow clickable" id="card-waiting" data-filter="waiting" role="button" tabindex="0" title="제출일이 지났지만 결과 미정인 과제 (status='예정')">
-            <div class="projects-stat-label">대기</div>
-            <div class="projects-stat-value projects-stat--warning" id="stat-waiting">0</div>
-            <div class="projects-stat-sub-hint">제출일 기준</div>
-          </div>
-          <!-- 수행 카드 (계속/신규/종료 sub-stats 포함) -->
-          <div class="projects-stat-card projects-stat-card--ongoing" id="card-ongoing-all">
-            <div class="projects-stat-label">수행</div>
-            <div class="projects-stat-value projects-stat--success clickable" data-filter="ongoing" role="button" tabindex="0" id="stat-ongoing-all">0</div>
-            <div class="ongoing-sub" id="ongoing-sub" style="display:none;">
-              <span class="ongoing-sub-item clickable" data-filter="continue" role="button" tabindex="0">
-                계속 <strong id="stat-continue">0</strong>
-              </span>
-              <span class="ongoing-sub-divider">|</span>
-              <span class="ongoing-sub-item clickable" data-filter="new" role="button" tabindex="0">
-                신규 <strong id="stat-new">0</strong>
-              </span>
-              <span class="ongoing-sub-divider">|</span>
-              <span class="ongoing-sub-item ongoing-sub-item--ended clickable" data-filter="ended" role="button" tabindex="0" title="종료일이 선택 연도인 종료 과제">
-                종료 <strong id="stat-ended">0</strong>
-              </span>
-            </div>
-          </div>
-          <!-- 선정(기타) 카드 (좁음) -->
-          <div class="projects-stat-card projects-stat-card--narrow clickable" id="card-selected-other" data-filter="selected-other" role="button" tabindex="0" title="제출일이 선택 연도인 선정(기타) 과제">
-            <div class="projects-stat-label">선정(기타)</div>
-            <div class="projects-stat-value projects-stat--other" id="stat-selected-other">0</div>
-            <div class="projects-stat-sub-hint">제출일 기준</div>
-          </div>
-          <div class="projects-stat-card projects-stat-card--narrow clickable" data-filter="unselected" role="button" tabindex="0" title="제출일 기준 — 선택한 연도에 제출한 미선정 과제">
-            <div class="projects-stat-label">미선정</div>
-            <div class="projects-stat-value projects-stat--danger" id="stat-unselected">0</div>
-            <div class="projects-stat-sub-hint">제출일 기준</div>
-          </div>
-          <!-- 당해 수주 총 지원금 (그 해에 시작된 연차의 정부지원금 합) -->
-          <div class="projects-stat-card projects-stat-card--ongoing" id="card-ongoing-sum" title="선택 연도에 시작된 연차의 정부지원금 합 (status=수행/종료/선정기타만)">
+        <!-- 카드: 당해 수주 / 당해 입금 -->
+        <section class="projects-stats-grid" aria-label="자금 요약">
+          <div class="projects-stat-card projects-stat-card--ongoing">
             <div class="projects-stat-label">당해 수주 총 지원금</div>
-            <div class="projects-stat-value projects-stat--success" id="stat-ongoing-sum">0</div>
+            <div class="projects-stat-value projects-stat--success" id="funding-suju-total">0</div>
             <div class="projects-stat-sub-hint">그 해 시작된 연차의 지원금</div>
-            <div class="ongoing-sub ongoing-sub--stack" id="ongoing-sum-sub" style="display:none;">
-              <span class="ongoing-sub-item">
-                <span class="ongoing-sub-label">계속</span>
-                <strong id="stat-continue-sum">0</strong>
-              </span>
-              <span class="ongoing-sub-item">
-                <span class="ongoing-sub-label">신규</span>
-                <strong id="stat-new-sum">0</strong>
-              </span>
-            </div>
           </div>
-          <!-- 당해에 입금되는 총 지원금 -->
-          <div class="projects-stat-card projects-stat-card--ongoing" id="card-ipgm-sum" title="회계연도 기준 분배 — 선택한 연도에 실제로 입금되는 정부지원금">
+          <div class="projects-stat-card projects-stat-card--ongoing">
             <div class="projects-stat-label">당해에 입금되는 총 지원금</div>
-            <div class="projects-stat-value" id="stat-year-sum">0</div>
+            <div class="projects-stat-value" id="funding-ipgm-total">0</div>
             <div class="projects-stat-sub-hint">회계연도 분배 기준</div>
-            <div class="ongoing-sub ongoing-sub--stack ongoing-sub--blue" id="ipgm-sum-sub" style="display:none;">
-              <span class="ongoing-sub-item">
-                <span class="ongoing-sub-label">계속</span>
-                <strong id="stat-continue-ipgm">0</strong>
-              </span>
-              <span class="ongoing-sub-item">
-                <span class="ongoing-sub-label">신규</span>
-                <strong id="stat-new-ipgm">0</strong>
-              </span>
-            </div>
           </div>
-          <!-- 당해 입금 완료 (실제 수령) -->
-          <div class="projects-stat-card projects-stat-card--ongoing" id="card-actual-sum" title="실제 수령된 입금 합계 (입금 일정에 입력된 실제 금액)">
-            <div class="projects-stat-label">당해 입금 완료</div>
-            <div class="projects-stat-value projects-stat--success" id="stat-actual-sum">0</div>
-            <div class="projects-stat-sub-hint" id="stat-actual-hint">실제 수령 / 예상 대비</div>
-            <div class="ongoing-sub ongoing-sub--stack ongoing-sub--green" id="actual-sum-sub" style="display:none;">
-              <span class="ongoing-sub-item">
-                <span class="ongoing-sub-label">수령 비율</span>
-                <strong id="stat-actual-rate">0%</strong>
-              </span>
-              <span class="ongoing-sub-item">
-                <span class="ongoing-sub-label">잔액</span>
-                <strong id="stat-actual-remain">0</strong>
-              </span>
-            </div>
+          <div class="projects-stat-card projects-stat-card--ongoing">
+            <div class="projects-stat-label">실제 수령 합계</div>
+            <div class="projects-stat-value" id="funding-actual-total" style="color:#15803d">0</div>
+            <div class="projects-stat-sub-hint">입금 일정의 실제 금액 합</div>
+          </div>
+          <div class="projects-stat-card projects-stat-card--ongoing">
+            <div class="projects-stat-label">미수 (예정 - 실제)</div>
+            <div class="projects-stat-value" id="funding-unpaid-total" style="color:#b91c1c">0</div>
+            <div class="projects-stat-sub-hint">예정 금액 대비 미수령</div>
           </div>
         </section>
 
-        <div class="projects-actions-row">
-          <div class="projects-search-wrap" id="search-wrap">
-            <span class="projects-search-icon" aria-hidden="true">🔍</span>
-            <input type="search" id="project-search" class="projects-search-input"
-              placeholder="과제명, 담당자, 부처, 키워드로 검색…" autocomplete="off"
-              aria-label="과제 검색">
-            <button type="button" class="projects-search-clear" id="search-clear" aria-label="검색어 지우기">×</button>
-          </div>
-          <div class="projects-actions-spacer"></div>
-          <div class="projects-actions-buttons">
-            <button type="button" class="ui-btn ui-btn--ghost" id="export-excel-btn" title="현재 화면의 과제 목록을 엑셀로 내보냅니다">📥 엑셀 다운로드</button>
-            <div class="projects-col-dropdown">
-              <button type="button" class="ui-btn ui-btn--ghost" id="col-toggle-btn">열 선택</button>
-              <div class="projects-col-panel" id="col-panel">
-                <label><input type="checkbox" data-col="부처"> 부처</label>
-                <label><input type="checkbox" data-col="예산"> 예산</label>
-                <label><input type="checkbox" data-col="과제명"> 과제명</label>
-                <label><input type="checkbox" data-col="기관명"> 기관명</label>
-                <label><input type="checkbox" data-col="연구기간"> 연구기간</label>
-                <label><input type="checkbox" data-col="지원금당해"> 당해 입금</label>
-                <label><input type="checkbox" data-col="지원금총"> 당해 수주</label>
-                <label><input type="checkbox" data-col="비고"> 비고</label>
-              </div>
-            </div>
-          </div>
-        </div>
+        <!-- 분기별/월별 cash flow -->
+        <section style="margin-top:1.5rem;">
+          <h2 style="font-size:1.1rem; margin:0 0 0.75rem 0; color:#111827;">시기별 입금 현황</h2>
+          <div id="funding-period-bar"></div>
+        </section>
 
-        <!-- 카드 클릭 시 표 위에 보이는 요약 한 줄 (현재는 미선정에만) -->
-        <div id="filter-summary-row" class="filter-summary-row" style="display:none;" aria-live="polite"></div>
-
-        <div class="projects-table-wrap">
-          <table class="projects-table" id="projects-table">
-            <thead>
-              <tr>
-                <th>No</th>
-                <th>유형</th>
-                <th>진행 여부</th>
-                <th>제출일</th>
-                <th>키워드</th>
-                <th>책임자</th>
-                <th>시작일</th>
-                <th>종료일</th>
-                <th class="col-opt" data-col="부처">부처</th>
-                <th class="col-opt" data-col="예산">예산</th>
-                <th class="col-opt" data-col="과제명">과제명</th>
-                <th class="col-opt" data-col="기관명">기관명</th>
-                <th class="col-opt" data-col="연구기간">연구기간</th>
-                <th class="col-opt" data-col="지원금당해">당해 입금</th>
-                <th class="col-opt" data-col="지원금총">당해 수주</th>
-                <th class="col-opt" data-col="비고">비고</th>
-                <th style="width:60px">수정</th>
-              </tr>
-            </thead>
-            <tbody id="projects-tbody"></tbody>
-          </table>
-        </div>
+        <!-- 과제별 입금 일정 표 -->
+        <section style="margin-top:1.5rem;">
+          <h2 style="font-size:1.1rem; margin:0 0 0.75rem 0; color:#111827;">과제별 입금 일정</h2>
+          <div id="funding-project-table"></div>
+        </section>
       </div>
     </main>
   </div>
@@ -704,7 +797,7 @@
   <script src="firebase.js"></script>
   <script src="auth-guard.js"></script>
   <script src="firestore-service.js"></script>
-  <script src="projects.js"></script>
+  <script src="funding.js"></script>
   <script src="floating-buttons.js"></script>
 </body>
 </html>

@@ -12,7 +12,12 @@
     var y = String(year);
     var start = (it.startDate || it.start || '').toString().slice(0, 10);
     var end = (it.endDate || it.end || '').toString().slice(0, 10);
-    if (!start && !end) return true;
+    // 시작일/종료일 둘 다 없으면 — 제출일로 매칭 (미선정/대기/선정기타 등 시작 안 한 과제)
+    if (!start && !end) {
+      var submitDate = (it.submitDate || it['제출일'] || '').toString().slice(0, 10);
+      if (!submitDate) return false;  // 제출일도 없으면 매칭 안 함
+      return submitDate.slice(0, 4) === y;
+    }
     var yearStart = y + '-01-01';
     var yearEnd = y + '-12-31';
     if (start && start > yearEnd) return false;
@@ -48,34 +53,45 @@
   }
 
   function getDivision2Class(status) {
-    var s = (status || '').trim().toLowerCase();
+    var s = (status || '').trim();
     if (s === '종료') return 'projects-badge--end';
     if (s === '수행' || s === '수행중') return 'projects-badge--ongoing';
     if (s === '예정') return 'projects-badge--scheduled';
     if (s === '대기') return 'projects-badge--waiting';
     if (s === '미선정') return 'projects-badge--unselected';
     if (s === '미제출') return 'projects-badge--unsubmitted';
+    if (s === '선정(기타)' || s === '선정 (기타)') return 'projects-badge--other';
     return 'projects-badge--end';
   }
 
-  // 진행 여부 정규화 — 자동 "대기" 전환 포함
-  // 저장된 데이터의 status는 그대로 두고, 표시할 때 "예정 + 제출일 지남" → "대기"로 변환
+  // 진행 여부 정규화 — 자동 전환 포함
+  // 저장된 데이터의 status는 그대로 두고, 표시할 때만 변환:
+  //   - "예정" + 제출일 지남 → "대기"
+  //   - "수행" + 종료일 지남 → "종료"
   function normalizeStatus(it) {
     var raw = (it.status || it['진행 여부'] || '').toString().trim();
     var n = raw.replace(/\s/g, '');
-    if (n === '수행중' || n === '수행') return '수행';
-    // "예정" + 제출일 지남 → 자동으로 "대기" 표시 (저장 데이터는 "예정" 그대로)
+
+    // 오늘 날짜 (YYYY-MM-DD)
+    var today = new Date();
+    var todayStr = today.getFullYear() + '-' +
+      String(today.getMonth() + 1).padStart(2, '0') + '-' +
+      String(today.getDate()).padStart(2, '0');
+
+    // "수행" + 종료일 지남 → 자동 "종료" 표시 (저장 데이터는 "수행" 그대로)
+    if (n === '수행중' || n === '수행') {
+      var endDate = (it.endDate || it.end || it['종료일'] || '').toString().slice(0, 10);
+      if (endDate && todayStr > endDate) return '종료';
+      return '수행';
+    }
+
+    // "예정" + 제출일 지남 → 자동 "대기" 표시
     if (raw === '예정') {
       var submitDate = (it.submitDate || it['제출일'] || '').toString().slice(0, 10);
-      if (submitDate) {
-        var today = new Date();
-        var todayStr = today.getFullYear() + '-' +
-          String(today.getMonth() + 1).padStart(2, '0') + '-' +
-          String(today.getDate()).padStart(2, '0');
-        if (todayStr > submitDate) return '대기';
-      }
+      if (submitDate && todayStr > submitDate) return '대기';
       return '예정';
     }
+
     if (raw === '대기' || raw === '종료' || raw === '미선정' || raw === '미제출') return raw;
     return raw || '미정';
   }
@@ -100,53 +116,286 @@
     return Number(n).toLocaleString();
   }
 
-  function updateStats(items, year) {
-    year = year || STAT_YEAR;
-    var hasYearFilter = !!year;  // 항상 true (year는 fallback)
-    var rawYear = year;
-    var filtered = items.filter(function (it) { return projectOverlapsYear(it, year); });
-    var total = filtered.length;
-    var ongoingAll = 0;   // 수행 중 전체 (전체 연도 모드에서 사용)
+  /**
+   * yearBudget 행이 특정 연도에 차지하는 지원금
+   *   - yearBudget.calendarBreakdown[year] 있으면 그 값 (사용자 직접 입력)
+   *   - 없으면 일별 비례 분배 (자동)
+   */
+  function supportInYear(yb, year) {
+    if (!yb) return 0;
+
+    // 사용자 직접 입력값 우선
+    var cb = yb.calendarBreakdown;
+    if (cb && typeof cb === 'object' && cb[year] != null && cb[year] !== '') {
+      return Number(cb[year]) || 0;
+    }
+
+    // 자동 비례
+    var s = (yb.startDate || '').toString().slice(0, 10);
+    var e = (yb.endDate   || '').toString().slice(0, 10);
+    if (!s || !e) return 0;
+
+    var support = Number(yb.support || 0);
+    if (!support) return 0;
+
+    var sd = new Date(s + 'T00:00:00');
+    var ed = new Date(e + 'T00:00:00');
+    if (isNaN(sd.getTime()) || isNaN(ed.getTime())) return 0;
+    if (ed < sd) return 0;
+
+    var yearStart = new Date(year + '-01-01T00:00:00');
+    var yearEnd   = new Date(year + '-12-31T00:00:00');
+    var overlapStart = sd > yearStart ? sd : yearStart;
+    var overlapEnd   = ed < yearEnd   ? ed : yearEnd;
+    if (overlapStart > overlapEnd) return 0;
+
+    var totalDays   = ((ed - sd) / 86400000) + 1;
+    var overlapDays = ((overlapEnd - overlapStart) / 86400000) + 1;
+
+    if (sd.getFullYear() === ed.getFullYear()) {
+      return Number(year) === sd.getFullYear() ? support : 0;
+    }
+    return Math.round(support * overlapDays / totalDays);
+  }
+
+  /**
+   * 카드 클릭 시 표 위 한 줄 요약 갱신
+   *   - 수행/수행(계속)/수행(신규)/종료/미선정 카드 활성 시 표시
+   *   - 유형별 카운트 + R&D 카운트 (회고/패턴 발견용)
+   */
+  function updateFilterSummary(listItems, activeCardFilter) {
+    var el = document.getElementById('filter-summary-row');
+    if (!el) return;
+
+    var titleMap = {
+      'unselected':     '미선정',
+      'ongoing':        '수행',
+      'continue':       '수행 (계속)',
+      'new':            '수행 (신규)',
+      'ended':          '종료'
+    };
+
+    // 해당 필터가 아니면 숨김 (대기/선정기타 등)
+    if (!titleMap[activeCardFilter]) {
+      el.style.display = 'none';
+      return;
+    }
+
+    // 유형별 + R&D 카운트
+    var counts   = { '과제': 0, '지원사업': 0, '용역': 0, '기타': 0 };
+    var rdCounts = { '과제': 0, '지원사업': 0, '용역': 0, '기타': 0 };
+    listItems.forEach(function (it) {
+      var d = (it.division1 || it['구분1'] || '').toString();
+      if (!counts.hasOwnProperty(d)) return;
+      counts[d]++;
+      var isRd = it.isRd === true || it.rd === true || it['R&D 여부'] === true;
+      if (isRd) rdCounts[d]++;
+    });
+    function pill(label, n, rd) {
+      var zero = n === 0 ? ' filter-summary-pill--zero' : '';
+      var rdText = rd > 0 ? '<span class="filter-summary-rd">(R&amp;D ' + rd + ')</span>' : '';
+      return '<span class="filter-summary-pill' + zero + '">' + label + ' <strong>' + n + '</strong>' + rdText + '</span>';
+    }
+    el.innerHTML =
+      '<span class="filter-summary-title">' + titleMap[activeCardFilter] + ' ' + listItems.length + '건</span>' +
+      '<span class="filter-summary-label">·  유형별 </span>' +
+      pill('과제', counts['과제'], rdCounts['과제']) +
+      pill('지원사업', counts['지원사업'], rdCounts['지원사업']) +
+      pill('용역', counts['용역'], rdCounts['용역']) +
+      pill('기타', counts['기타'], rdCounts['기타']);
+    el.style.display = '';
+  }
+
+  /**
+   * 카드 통계 계산
+   * @param {Array}  items      전체 과제 데이터
+   * @param {number} statsYear  통계 기준 연도 (filterYear || STAT_YEAR)
+   * @param {string|null} filterYear  사용자가 선택한 연도 (null = "전체")
+   */
+  function updateStats(items, statsYear, filterYear) {
+    statsYear = statsYear || STAT_YEAR;
+    var yearStr = String(statsYear);
+    var cutoff = statsYear + '-01-01';
+    var hasFilter = !!filterYear;
+
+    // 카운트 변수
+    var ongoingAll = 0;
     var continueCnt = 0;
     var newCnt = 0;
+    var endedCnt = 0;        // 종료일이 statsYear인 status='종료' 과제
+    var waitingCnt = 0;      // 제출일이 statsYear인 대기 상태 과제 ("예정" + 제출일 지남)
+    var selectedOtherCnt = 0;// 제출일이 statsYear인 status='선정(기타)' 과제
     var unselectedCnt = 0;
-    var yearSum = 0;
-    var totalSum = 0;
-    var cutoff = year + '-01-01';
+    var yearSum = 0;     // 당해에 입금되는 총 지원금 (calendarBreakdown + 자동 비례)
 
-    filtered.forEach(function (it) {
+    // 당해 수주 총 지원금: status가 수주(수행/종료/선정기타) 인 과제 중,
+    //   yearBudget.startDate가 statsYear인 연차의 support 합
+    //   - 신규: 그 yearBudget이 1차 (index 0) → 과제 자체가 그 해 신규 시작
+    //   - 계속: 2차 이상 → 다년 과제가 그 해 새 연차로 진입
+    var sujuTotal = 0;
+    var sujuContinue = 0;
+    var sujuNew = 0;
+
+    // 당해에 입금되는 총 지원금: 모든 과제의 그 해 입금분 합 (yearSum과 동일)
+    //   - 신규: 과제 startDate가 그 해 (과제 자체가 그 해 시작)
+    //   - 계속: 과제 startDate가 그 해 이전 (다년 과제의 그 해 입금분)
+    var ipgmContinue = 0;
+    var ipgmNew = 0;
+
+    // 당해 입금 완료: actualPayments의 그 해 받은 합 (옛 payments 자동 호환)
+    var actualSum = 0;
+
+    items.forEach(function (it) {
       var start = (it.startDate || it.start || '').toString().slice(0, 10);
-      var status = (it.status || it['진행 여부'] || '').toString().trim();
-      var statusNorm = status.replace(/\s/g, '');
-      if (statusNorm === '수행중' || status === '수행') {
-        ongoingAll++;
-        if (start && start < cutoff) continueCnt++;
-        else newCnt++;
-      }
-      if (statusNorm === '미선정' || status === '미선정') unselectedCnt++;
+      var end   = (it.endDate || it.end || '').toString().slice(0, 10);
+      var status = normalizeStatus(it);
+      var submitDate = (it.submitDate || it['제출일'] || '').toString().slice(0, 10);
+      var submitYear = submitDate ? submitDate.slice(0, 4) : '';
+      var startYear = start ? start.slice(0, 4) : '';
+      var endYear = end ? end.slice(0, 4) : '';
 
-      var sy = 0;
-      if (Number(year) === 2026 && it.supportYear != null && !isNaN(Number(it.supportYear))) {
-        sy = Number(it.supportYear);
-      } else if (it.yearBudgets && Array.isArray(it.yearBudgets)) {
-        it.yearBudgets.forEach(function (y) {
-          var s = (y.startDate || '').slice(0, 4);
-          var e = (y.endDate || '').slice(0, 4);
-          if ((s && s <= String(year)) && (e && e >= String(year))) sy += Number(y.support || 0);
+      // ── 수행 카드 (건수) ── statsYear에 진행 중이었던 status='수행' 과제
+      if (status === '수행' && projectOverlapsYear(it, statsYear)) {
+        ongoingAll++;
+        if (start && start < cutoff) {
+          continueCnt++;
+        } else {
+          newCnt++;
+        }
+      }
+
+      // ── 종료 (sub-section) ── 종료일이 statsYear인 status='종료' 과제
+      // 수행 카드 합계(ongoingAll)에도 포함 — "그 해에 활동했던 과제 전체"
+      if (status === '종료' && endYear === yearStr) {
+        endedCnt++;
+        ongoingAll++;
+      }
+
+      // ── 당해 수주 총 지원금 ──
+      // 조건: status가 수주(수행/종료/선정기타) AND yearBudget.startDate가 statsYear
+      // 합산: 그 연차의 support (정부지원금)
+      // 분류: 그 yearBudget이 1차(index 0) → 신규, 2차 이상 → 계속
+      var isSelected = (status === '수행' || status === '종료' ||
+                        status === '선정(기타)' || status === '선정 (기타)');
+      if (isSelected && Array.isArray(it.yearBudgets)) {
+        it.yearBudgets.forEach(function (yb, ybIdx) {
+          var ybStartYear = (yb.startDate || '').toString().slice(0, 4);
+          if (ybStartYear !== yearStr) return;
+          var sup = Number(yb.support || 0);
+          if (!sup) return;
+          sujuTotal += sup;
+          if (ybIdx === 0) {
+            sujuNew += sup;       // 1차 = 신규 (과제 자체가 그 해 시작)
+          } else {
+            sujuContinue += sup;  // 2차 이상 = 계속 (다년 과제의 새 연차)
+          }
         });
       }
+
+      // ── 대기 카드 ── 제출일이 statsYear인 status='대기' (= '예정'이지만 제출일 지남)
+      if (status === '대기' && submitYear === yearStr) {
+        waitingCnt++;
+      }
+
+      // ── 선정(기타) 카드 ── 제출일이 statsYear인 status='선정(기타)' 과제
+      if ((status === '선정(기타)' || status === '선정 (기타)') && submitYear === yearStr) {
+        selectedOtherCnt++;
+      }
+
+      // ── 미선정 카드 ── 제출일이 statsYear인 status='미선정' 과제
+      if (status === '미선정' && submitYear === yearStr) {
+        unselectedCnt++;
+      }
+
+      // ── 당해에 입금되는 총 지원금 ── 각 yearBudget의 calendarBreakdown 우선, 없으면 자동 비례
+      var sy = 0;
+      if (it.yearBudgets && Array.isArray(it.yearBudgets)) {
+        it.yearBudgets.forEach(function (y) {
+          sy += supportInYear(y, statsYear);
+        });
+      } else if (it.supportYear != null && !isNaN(Number(it.supportYear)) && Number(statsYear) === STAT_YEAR) {
+        // 옛 데이터 폴백
+        sy = Number(it.supportYear);
+      }
       yearSum += sy;
-      var st = it.supportTotal != null ? Number(it.supportTotal) : (it.budget != null ? Number(it.budget) : 0);
-      if (!isNaN(st)) totalSum += st;
+
+      // 입금 분류 (신규/계속) — 과제 startDate 기준
+      // 신규: 과제 startDate.연도 == statsYear (그 해 신규 시작 과제의 그 해 입금분)
+      // 계속: 과제 startDate.연도 < statsYear (이전 연도 시작 과제의 그 해 입금분)
+      if (sy > 0) {
+        if (startYear === yearStr) {
+          ipgmNew += sy;
+        } else {
+          ipgmContinue += sy;
+        }
+      }
+
+      // 당해 입금 완료 — actualPayments + 옛 payments 마이그레이션
+      if (Array.isArray(it.yearBudgets)) {
+        it.yearBudgets.forEach(function (yb) {
+          // 새 구조: actualPayments
+          if (Array.isArray(yb.actualPayments)) {
+            yb.actualPayments.forEach(function (p) {
+              var aY = (p.date || '').toString().slice(0, 4);
+              if (aY === yearStr && p.amount) {
+                actualSum += Number(p.amount) || 0;
+              }
+            });
+          }
+          // 옛 구조: payments에서 actualDate/actualAmount
+          if (Array.isArray(yb.payments)) {
+            yb.payments.forEach(function (p) {
+              var aY = (p.actualDate || '').toString().slice(0, 4);
+              if (aY === yearStr && p.actualAmount) {
+                actualSum += Number(p.actualAmount) || 0;
+              }
+            });
+          }
+        });
+      }
     });
 
-    setEl('stat-total', total);
+    // 전체 건수 (참고 — pill 표시용)
+    var totalCount = items.length;
+    if (hasFilter) {
+      totalCount = items.filter(function (it) { return projectOverlapsYear(it, statsYear); }).length;
+    }
+
+    setEl('stat-total', totalCount);
     setEl('stat-ongoing-all', ongoingAll);
     setEl('stat-continue', continueCnt);
     setEl('stat-new', newCnt);
+    setEl('stat-ended', endedCnt);
+    setEl('stat-waiting', waitingCnt);
+    setEl('stat-selected-other', selectedOtherCnt);
     setEl('stat-unselected', unselectedCnt);
     setEl('stat-year-sum', formatNum(yearSum));
-    setEl('stat-total-sum', formatNum(totalSum));
+
+    // 당해 수주 총 지원금 + 하위 (계속/신규)
+    setEl('stat-ongoing-sum', formatNum(sujuTotal));
+    setEl('stat-continue-sum', formatNum(sujuContinue));
+    setEl('stat-new-sum', formatNum(sujuNew));
+
+    // 당해 입금 총 지원금 + 하위 (계속/신규)
+    setEl('stat-continue-ipgm', formatNum(ipgmContinue));
+    setEl('stat-new-ipgm', formatNum(ipgmNew));
+
+    // 당해 입금 완료 (실제 수령)
+    setEl('stat-actual-sum', formatNum(actualSum));
+    // 수령 비율 + 잔액
+    var ipgmTotal = ipgmNew + ipgmContinue;  // 예정 입금 합 (yearSum과 동일)
+    var rate = ipgmTotal > 0 ? Math.round((actualSum / ipgmTotal) * 100) : 0;
+    var remain = Math.max(0, ipgmTotal - actualSum);
+    setEl('stat-actual-rate', rate + '%');
+    setEl('stat-actual-remain', formatNum(remain));
+
+    // sub-section: filterYear 있을 때만 표시 (수주/입금/실제 셋 다)
+    var sumSub = document.getElementById('ongoing-sum-sub');
+    if (sumSub) sumSub.style.display = filterYear ? '' : 'none';
+    var ipgmSub = document.getElementById('ipgm-sum-sub');
+    if (ipgmSub) ipgmSub.style.display = filterYear ? '' : 'none';
+    var actualSub = document.getElementById('actual-sum-sub');
+    if (actualSub) actualSub.style.display = filterYear ? '' : 'none';
   }
 
   function setEl(id, val) {
@@ -215,12 +464,17 @@
       // 진행 여부: normalizeStatus + 특정 연도 선택 시 "수행"에 (계속/신규) 부착
       var status = normalizeStatus(it);
       var statusDisplay = status;
+      var badgeClass = getDivision2Class(status);
       if (status === '수행' && filterYear) {
         var cutoff = filterYear + '-01-01';
-        if (start && start < cutoff) statusDisplay = '수행 (계속)';
-        else                         statusDisplay = '수행 (신규)';
+        if (start && start < cutoff) {
+          statusDisplay = '수행 (계속)';
+          // 계속은 기존 ongoing 클래스 (진한 초록)
+        } else {
+          statusDisplay = '수행 (신규)';
+          badgeClass = 'projects-badge--ongoing-new';  // 신규는 청록
+        }
       }
-      var badgeClass = getDivision2Class(status);
 
       var tr = document.createElement('tr');
       tr.setAttribute('data-id', id);
@@ -242,11 +496,38 @@
         var val;
         if (k === '연구기간') {
           val = getResearchPeriodDisplay(it, filterYear);
-        } else if (k === '지원금당해' || k === '지원금총' || k === '예산') {
-          // 숫자 컬럼은 천단위 콤마 표시
+        } else if (k === '지원금당해') {
+          // 당해 입금: 필터연도 있으면 그 해 입금분(calendarBreakdown 우선), 없으면 supportTotal
+          var num1 = 0;
+          if (filterYear) {
+            if (Array.isArray(it.yearBudgets)) {
+              it.yearBudgets.forEach(function (yb) { num1 += supportInYear(yb, filterYear); });
+            } else if (it.supportYear != null && !isNaN(Number(it.supportYear))) {
+              num1 = Number(it.supportYear);
+            }
+          } else {
+            num1 = Number(it.supportTotal != null ? it.supportTotal : (it.budget || 0));
+          }
+          val = num1 > 0 ? formatNum(num1) : (filterYear ? '0' : '-');
+        } else if (k === '지원금총') {
+          // 당해 수주: 필터연도 있으면 그 해 시작 yearBudget.support 합, 없으면 supportTotal
+          var num2 = 0;
+          if (filterYear) {
+            if (Array.isArray(it.yearBudgets)) {
+              it.yearBudgets.forEach(function (yb) {
+                var ybs = (yb.startDate || '').toString().slice(0, 4);
+                if (ybs === filterYear) num2 += Number(yb.support || 0);
+              });
+            }
+          } else {
+            num2 = Number(it.supportTotal != null ? it.supportTotal : (it.budget || 0));
+          }
+          val = num2 > 0 ? formatNum(num2) : (filterYear ? '0' : '-');
+        } else if (k === '예산') {
+          // 숫자 컬럼 — 단순 필드 + 콤마
           var raw = getVal(it, k);
-          var num = Number(raw);
-          val = (raw && !isNaN(num)) ? formatNum(num) : (raw || '-');
+          var num3 = Number(raw);
+          val = (raw && !isNaN(num3)) ? formatNum(num3) : (raw || '-');
         } else {
           val = getVal(it, k) || '-';
         }
@@ -329,7 +610,7 @@
       var status = params.get('status');
       var division = params.get('division');
 
-      if (filter === 'ongoing' || filter === 'continue' || filter === 'new' || filter === 'unselected') {
+      if (filter === 'ongoing' || filter === 'continue' || filter === 'new' || filter === 'ended' || filter === 'waiting' || filter === 'selected-other' || filter === 'unselected') {
         activeCardFilter = filter;
       }
 
@@ -367,15 +648,50 @@
     // 카드 필터(ongoing/continue/new/unselected) 매칭
     function projectMatchesCardFilter(it, filter, cutoff) {
       if (!filter) return true;
-      var status = (it.status || it['진행 여부'] || '').toString();
-      var statusNorm = status.replace(/\s/g, '');
+      var status = normalizeStatus(it);
       var start = (it.startDate || it.start || '').toString().slice(0, 10);
-      var isOngoing = statusNorm === '수행중' || status === '수행';
+      var isOngoing = status === '수행';
+      var yearStr = cutoff ? cutoff.slice(0, 4) : '';
 
-      if (filter === 'ongoing')  return isOngoing;
-      if (filter === 'continue') return isOngoing && !!start && start < cutoff;
-      if (filter === 'new')      return isOngoing && (!start || start >= cutoff);
-      if (filter === 'unselected') return statusNorm === '미선정';
+      if (filter === 'ongoing')  {
+        // 수행 카드 = status='수행' AND 선택 연도에 진행 중 OR status='종료' AND 종료일이 선택 연도
+        if (isOngoing && (!yearStr || projectOverlapsYear(it, yearStr))) return true;
+        if (status === '종료' && yearStr) {
+          var endYearO = (it.endDate || it.end || '').toString().slice(0, 4);
+          return endYearO === yearStr;
+        }
+        return false;
+      }
+      if (filter === 'continue') return isOngoing && projectOverlapsYear(it, yearStr) && !!start && start < cutoff;
+      if (filter === 'new')      return isOngoing && projectOverlapsYear(it, yearStr) && (!start || start >= cutoff);
+      if (filter === 'ended') {
+        // 종료 sub-item = status='종료' AND 종료일이 선택 연도
+        if (status !== '종료') return false;
+        if (!yearStr) return true;
+        var endYear = (it.endDate || it.end || '').toString().slice(0, 4);
+        return endYear === yearStr;
+      }
+      if (filter === 'unselected') {
+        // 미선정 카드 = status='미선정' AND 제출일이 선택 연도
+        if (status !== '미선정') return false;
+        if (!yearStr) return true;  // 전체 모드일 때는 모든 미선정
+        var submitYear = (it.submitDate || it['제출일'] || '').toString().slice(0, 4);
+        return submitYear === yearStr;
+      }
+      if (filter === 'waiting') {
+        // 대기 카드 = status='대기' (예정+제출일지남) AND 제출일이 선택 연도
+        if (status !== '대기') return false;
+        if (!yearStr) return true;
+        var submitYearW = (it.submitDate || it['제출일'] || '').toString().slice(0, 4);
+        return submitYearW === yearStr;
+      }
+      if (filter === 'selected-other') {
+        // 선정(기타) 카드 = status='선정(기타)' AND 제출일이 선택 연도
+        if (status !== '선정(기타)' && status !== '선정 (기타)') return false;
+        if (!yearStr) return true;
+        var submitYearS = (it.submitDate || it['제출일'] || '').toString().slice(0, 4);
+        return submitYearS === yearStr;
+      }
       return true;
     }
 
@@ -485,21 +801,26 @@
       var statsYear = getStatsYear();
       var cutoff = statsYear + '-01-01';
 
-      // 1단계: 연도 필터
-      var listItems = filterYear ? items.filter(function (it) { return projectOverlapsYear(it, filterYear); }) : items;
+      // 분류 pill 카운트용 풀 — 항상 "연도 필터까지만" 적용 (카드 클릭과 무관하게 의미 가짐)
+      var yearFiltered = filterYear ? items.filter(function (it) { return projectOverlapsYear(it, filterYear); }) : items.slice();
 
-      // 분류별 카운트는 (연도 필터까지만 적용된) 풀에서 계산 — pill 숫자가 의미 가지도록
+      // 분류별 카운트 갱신
       var divisionCounts = { '과제': 0, '지원사업': 0, '용역': 0, '기타': 0 };
-      listItems.forEach(function (it) {
+      yearFiltered.forEach(function (it) {
         var d = (it.division1 || it['구분1'] || '').toString();
         if (divisionCounts.hasOwnProperty(d)) divisionCounts[d]++;
       });
 
-      // 2단계: 카드 필터
+      // 표에 표시할 listItems 시작 풀
+      //  - 카드 필터 활성: 전체 items에서 시작 (카드 함수가 자체 연도 매칭 → 시작일 없는 미선정도 잡힘)
+      //  - 카드 필터 없음: 연도 필터만 적용 (yearFiltered)
+      var listItems;
       if (activeCardFilter) {
-        listItems = listItems.filter(function (it) {
+        listItems = items.filter(function (it) {
           return projectMatchesCardFilter(it, activeCardFilter, cutoff);
         });
+      } else {
+        listItems = yearFiltered;
       }
 
       // 3단계: status 필터 (URL 진입용)
@@ -527,7 +848,7 @@
       lastFilteredItems = listItems;
 
       // 통계는 항상 연도 기준 전체 (모든 필터 무시 — 그래야 카드/pill 숫자가 의미를 가짐)
-      updateStats(items, statsYear);
+      updateStats(items, statsYear, filterYear);
       // 분류 pill 카운트 갱신
       Object.keys(divisionCounts).forEach(function (d) {
         var el = document.getElementById('stat-div-' + d);
@@ -541,19 +862,22 @@
       if (ongoingSub) {
         ongoingSub.style.display = filterYear ? '' : 'none';
       }
-      // 전체 모드로 전환 → continue/new 필터 활성화돼있으면 ongoing으로 통합
-      if (!filterYear && (activeCardFilter === 'continue' || activeCardFilter === 'new')) {
-        activeCardFilter = 'ongoing';
+      // 전체 모드로 전환 → sub-section 필터(continue/new/ended)는 모두 ongoing으로 통합 또는 해제
+      if (!filterYear && (activeCardFilter === 'continue' || activeCardFilter === 'new' || activeCardFilter === 'ended')) {
+        activeCardFilter = activeCardFilter === 'ended' ? null : 'ongoing';
         syncURL();
       }
 
       // sub-section의 active 상태 표시
       var subContinue = document.querySelector('.ongoing-sub-item[data-filter="continue"]');
       var subNew      = document.querySelector('.ongoing-sub-item[data-filter="new"]');
+      var subEnded    = document.querySelector('.ongoing-sub-item[data-filter="ended"]');
       if (subContinue) subContinue.classList.toggle('active', activeCardFilter === 'continue');
       if (subNew)      subNew.classList.toggle('active', activeCardFilter === 'new');
+      if (subEnded)    subEnded.classList.toggle('active', activeCardFilter === 'ended');
 
       renderTable(listItems, colVis, filterYear, projectEditHandler);
+      updateFilterSummary(listItems, activeCardFilter);
 
       if (filterHint) {
         var listLabel = filterYear ? filterYear + '년' : '전체';

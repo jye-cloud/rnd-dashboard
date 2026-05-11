@@ -261,6 +261,166 @@
       color: var(--text-primary);
     }
 
+    /* 연차별 회계연도 분배 영역 */
+    .cal-breakdown-wrap {
+      margin-top: 1rem;
+      border: 1px solid #e5e7eb;
+      border-radius: 0.6rem;
+      overflow: hidden;
+    }
+    .cal-breakdown-header {
+      padding: 0.75rem 1rem;
+      background: #f9fafb;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-weight: 600;
+      font-size: 0.92rem;
+      color: #374151;
+      user-select: none;
+    }
+    .cal-breakdown-header:hover { background: #f3f4f6; }
+    .cal-breakdown-header-left {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .cal-breakdown-toggle-icon {
+      transition: transform 0.15s;
+      font-size: 0.85rem;
+      color: #6b7280;
+    }
+    .cal-breakdown-wrap.expanded .cal-breakdown-toggle-icon {
+      transform: rotate(90deg);
+    }
+    .cal-breakdown-hint {
+      font-size: 0.78rem;
+      color: #9ca3af;
+      font-weight: 400;
+    }
+    .cal-breakdown-body {
+      display: none;
+      padding: 1rem;
+      background: #fff;
+      border-top: 1px solid #e5e7eb;
+    }
+    .cal-breakdown-wrap.expanded .cal-breakdown-body { display: block; }
+    .cal-breakdown-note {
+      font-size: 0.82rem;
+      color: #6b7280;
+      margin-bottom: 0.75rem;
+      padding: 0.5rem 0.75rem;
+      background: #eff6ff;
+      border-left: 3px solid #93c5fd;
+      border-radius: 0.3rem;
+    }
+    /* 연차별 그룹 */
+    .cal-breakdown-group {
+      margin-bottom: 1rem;
+      padding: 0.85rem;
+      border: 1px solid #e5e7eb;
+      border-radius: 0.5rem;
+      background: #fafafa;
+    }
+    .cal-breakdown-group:last-child { margin-bottom: 0; }
+    .cal-breakdown-group-header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      gap: 0.5rem;
+      margin-bottom: 0.7rem;
+      padding-bottom: 0.55rem;
+      border-bottom: 1px solid #e5e7eb;
+      font-size: 0.88rem;
+      color: #4b5563;
+    }
+    .cal-group-badge {
+      display: inline-block;
+      padding: 0.15rem 0.55rem;
+      background: #dbeafe;
+      color: #1d4ed8;
+      border-radius: 0.3rem;
+      font-weight: 700;
+      font-size: 0.85rem;
+    }
+    .cal-group-period { color: #6b7280; }
+    .cal-group-support {
+      margin-left: auto;
+      font-weight: 600;
+      color: #111827;
+    }
+    .cal-breakdown-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      gap: 0.7rem;
+    }
+    .cal-breakdown-item {
+      display: flex;
+      align-items: center;
+      gap: 0.7rem;
+    }
+    .cal-breakdown-item label {
+      flex: 0 0 70px;
+      font-weight: 600;
+      color: #374151;
+      font-size: 0.88rem;
+    }
+    .cal-breakdown-item input {
+      flex: 1;
+      min-width: 0;
+      padding: 0.42rem 0.65rem;
+      border: 1px solid #d1d5db;
+      border-radius: 0.35rem;
+      font-size: 0.88rem;
+      text-align: right;
+    }
+    .cal-breakdown-item input:focus {
+      outline: none;
+      border-color: #93c5fd;
+      box-shadow: 0 0 0 2px #dbeafe;
+    }
+    .cal-breakdown-empty {
+      color: #9ca3af;
+      font-size: 0.88rem;
+      text-align: center;
+      padding: 1rem;
+    }
+    /* 합계 검증 메시지 */
+    .cal-breakdown-sum-msg {
+      margin-top: 0.7rem;
+      padding: 0.5rem 0.75rem;
+      border-radius: 0.35rem;
+      font-size: 0.83rem;
+      display: none;
+    }
+    .cal-breakdown-sum-msg.show { display: block; }
+    .cal-breakdown-sum-ok {
+      background: #f0fdf4;
+      color: #15803d;
+      border: 1px solid #bbf7d0;
+    }
+    .cal-breakdown-sum-error {
+      background: #fef2f2;
+      color: #b91c1c;
+      border: 1px solid #fecaca;
+    }
+    .cal-breakdown-actions {
+      margin-top: 0.75rem;
+      display: flex;
+      gap: 0.5rem;
+    }
+    .cal-breakdown-btn {
+      padding: 0.35rem 0.75rem;
+      background: #fff;
+      border: 1px solid #d1d5db;
+      border-radius: 0.35rem;
+      font-size: 0.82rem;
+      color: #4b5563;
+      cursor: pointer;
+    }
+    .cal-breakdown-btn:hover { background: #f3f4f6; }
+
     /* placeholder 섹션 (향후 추가 영역) */
     .detail-section--placeholder {
       background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
@@ -464,6 +624,198 @@
       text-align: center;
       padding: 0.5rem;
     }
+
+    /* 입금 일정 섹션 */
+    /* 입금 일정 섹션 — 예정/실제 분리 */
+    .payment-section {
+      margin-bottom: 1rem;
+    }
+    .payment-section-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.5rem;
+    }
+    .payment-section-actions {
+      display: flex;
+      gap: 0.5rem;
+    }
+    .payment-auto-btn {
+      padding: 0.35rem 0.75rem;
+      background: #f0f9ff;
+      border: 1px solid #93c5fd;
+      border-radius: 0.35rem;
+      font-size: 0.82rem;
+      color: #1d4ed8;
+      cursor: pointer;
+      font-weight: 500;
+    }
+    .payment-auto-btn:hover { background: #dbeafe; border-color: #60a5fa; }
+    .payment-section-title {
+      font-size: 0.92rem;
+      font-weight: 700;
+      color: #374151;
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+    .payment-section-title .pay-section-emoji { font-size: 1.05rem; }
+    .payment-section--planned .payment-table th { background: #eff6ff; color: #1e40af; }
+    .payment-section--actual .payment-table th { background: #f0fdf4; color: #047857; }
+    .payment-section--actual .payment-table tbody tr { background: #fafff9; }
+    /* 분기 라벨 셀 (자동) */
+    .pay-q-label {
+      text-align: center;
+      font-weight: 700;
+      color: #6b7280;
+      font-size: 0.82rem;
+      background: #f9fafb;
+    }
+    .payment-section--planned .pay-q-label { color: #1d4ed8; }
+    .payment-section--actual .pay-q-label { color: #047857; }
+    /* 행 사이 구분 좀 더 명확 */
+    .payment-section .payment-table tbody tr {
+      border-bottom: 1px solid #f3f4f6;
+    }
+    .payment-section .payment-table tbody tr:last-child {
+      border-bottom: none;
+    }
+
+    .payment-group {
+      margin-bottom: 1rem;
+      padding: 0.85rem;
+      border: 1px solid #e5e7eb;
+      border-radius: 0.5rem;
+      background: #fafafa;
+    }
+    .payment-group:last-child { margin-bottom: 0; }
+    .payment-group-header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      gap: 0.5rem;
+      margin-bottom: 0.7rem;
+      padding-bottom: 0.55rem;
+      border-bottom: 1px solid #e5e7eb;
+      font-size: 0.88rem;
+      color: #4b5563;
+    }
+    .payment-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.86rem;
+    }
+    .payment-table th, .payment-table td {
+      padding: 0.4rem 0.5rem;
+      vertical-align: middle;
+    }
+    .payment-table th {
+      background: #f3f4f6;
+      font-weight: 600;
+      color: #4b5563;
+      font-size: 0.78rem;
+      border-bottom: 1px solid #d1d5db;
+      text-align: left;
+    }
+    .payment-table td input {
+      width: 100%;
+      padding: 0.32rem 0.5rem;
+      border: 1px solid #d1d5db;
+      border-radius: 0.3rem;
+      font-size: 0.85rem;
+    }
+    .payment-table td input.pay-amount { text-align: right; }
+    .payment-table td.pay-actual { background: #f0fdf4; }
+    .payment-table td.pay-del { width: 32px; text-align: center; }
+    .payment-table .pay-del-btn {
+      width: 24px; height: 24px;
+      border: none;
+      background: #fee2e2;
+      color: #b91c1c;
+      border-radius: 0.3rem;
+      cursor: pointer;
+      font-size: 0.8rem;
+    }
+    .payment-table .pay-del-btn:hover { background: #fecaca; }
+    .payment-actions { margin-top: 0.5rem; display: flex; gap: 0.5rem; }
+    .payment-add-btn {
+      padding: 0.35rem 0.75rem;
+      background: #fff;
+      border: 1px solid #d1d5db;
+      border-radius: 0.35rem;
+      font-size: 0.82rem;
+      color: #4b5563;
+      cursor: pointer;
+    }
+    .payment-add-btn:hover { background: #f3f4f6; }
+    .payment-sum-msg {
+      margin-top: 0.6rem;
+      padding: 0.4rem 0.6rem;
+      border-radius: 0.3rem;
+      font-size: 0.8rem;
+    }
+    .payment-sum-ok { background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; }
+    .payment-sum-warn { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
+    .payment-empty { color: #9ca3af; font-size: 0.88rem; text-align: center; padding: 1rem; }
+
+    /* 분기별 요약 표 */
+    .payment-quarterly-wrap {
+      margin-top: 1rem;
+      padding-top: 1rem;
+      border-top: 1px solid #e5e7eb;
+    }
+    .payment-quarterly-title {
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: #4b5563;
+      margin-bottom: 0.5rem;
+    }
+    .quarterly-summary {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.83rem;
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 0.45rem;
+      overflow: hidden;
+    }
+    .quarterly-summary th,
+    .quarterly-summary td {
+      padding: 0.35rem 0.5rem;
+      border-bottom: 1px solid #f3f4f6;
+      text-align: right;
+    }
+    .quarterly-summary th:first-child,
+    .quarterly-summary td:first-child {
+      text-align: left;
+      font-weight: 600;
+      color: #6b7280;
+      background: #f9fafb;
+      width: 90px;
+    }
+    .quarterly-summary th {
+      background: #f3f4f6;
+      font-weight: 600;
+      font-size: 0.75rem;
+      color: #4b5563;
+    }
+    .quarterly-summary tr:last-child td { border-bottom: none; }
+    .quarterly-summary th:last-child,
+    .quarterly-summary td:last-child {
+      background: #fafbff;
+      border-left: 1px solid #e5e7eb;
+    }
+    .quarterly-summary .q-diff-warn { color: #b91c1c; font-weight: 600; }
+    .quarterly-summary .q-ok { color: #15803d; }
+    .quarterly-empty {
+      color: #9ca3af;
+      font-size: 0.83rem;
+      text-align: center;
+      padding: 0.75rem;
+      background: #fafafa;
+      border: 1px dashed #e5e7eb;
+      border-radius: 0.4rem;
+    }
   </style>
 </head>
 <body>
@@ -476,16 +828,16 @@
         <button type="button" class="sidebar-toggle" id="sidebar-toggle" aria-label="메뉴 접기/펼치기" title="메뉴 접기/펼치기">☰</button>
         <h1 class="sidebar-title">CI_R&DM</h1>
       </div>
-      <nav class="sidebar-nav">
+            <nav class="sidebar-nav">
         <a href="projects-history.html" class="sidebar-link" id="nav-history"><span class="sidebar-link-icon" aria-hidden="true">📜</span><span class="sidebar-link-text">과제 수행 현황</span></a>
         <a href="index.html#/calendar" class="sidebar-link" id="nav-calendar"><span class="sidebar-link-icon" aria-hidden="true">📅</span><span class="sidebar-link-text">제출 일정 관리</span></a>
         <div class="sidebar-divider" aria-hidden="true"></div>
         <a href="dashboard.html" class="sidebar-link" id="nav-dashboard"><span class="sidebar-link-icon" aria-hidden="true">🏠</span><span class="sidebar-link-text">대시보드</span></a>
+        <a href="funding.html" class="sidebar-link" id="nav-funding"><span class="sidebar-link-icon" aria-hidden="true">💵</span><span class="sidebar-link-text">자금 관리</span></a>
         <a href="projects.html" class="sidebar-link active" id="nav-projects"><span class="sidebar-link-icon" aria-hidden="true">📋</span><span class="sidebar-link-text">과제 관리</span></a>
         <a href="index.html" class="sidebar-link" id="nav-hr"><span class="sidebar-link-icon" aria-hidden="true">👤</span><span class="sidebar-link-text">인력 정보 관리</span></a>
         <a href="index.html#/payroll" class="sidebar-link" id="nav-payroll"><span class="sidebar-link-icon" aria-hidden="true">💰</span><span class="sidebar-link-text">인건비 관리</span></a>
         <a href="index.html#/participation" class="sidebar-link" id="nav-participation"><span class="sidebar-link-icon" aria-hidden="true">📊</span><span class="sidebar-link-text">참여율 관리</span></a>
-      
       </nav>
     </aside>
 
@@ -698,19 +1050,38 @@
               </table>
             </div>
             <div class="year-budget-total" id="year-budget-total">총 사업비: 0원</div>
+
+            <!-- 연차별 예산 회계연도 기준 분배 (선택 입력) -->
+            <div class="cal-breakdown-wrap expanded" id="cal-breakdown-wrap">
+              <div class="cal-breakdown-header" id="cal-breakdown-toggle" role="button" tabindex="0" aria-expanded="true">
+                <span class="cal-breakdown-header-left">
+                  <span class="cal-breakdown-toggle-icon">▸</span>
+                  <span>연차별 예산 회계연도 기준 분배</span>
+                  <span class="cal-breakdown-hint" id="cal-breakdown-hint">(선택 입력 — 빈 칸이면 자동 비례)</span>
+                </span>
+              </div>
+              <div class="cal-breakdown-body">
+                <div class="cal-breakdown-note">
+                  각 연차의 예산을 회계연도별로 어떻게 받는지 직접 입력할 수 있습니다.
+                  <strong>빈 칸은 자동 비례</strong>(일별 기간 비율)가 적용됩니다.
+                </div>
+                <div class="cal-breakdown-groups" id="cal-breakdown-groups"></div>
+                <div class="cal-breakdown-actions">
+                  <button type="button" class="cal-breakdown-btn" id="cal-breakdown-refresh" title="연차별 예산을 변경했을 때 자동 비례 값 갱신">↻ 자동값 다시 계산</button>
+                  <button type="button" class="cal-breakdown-btn" id="cal-breakdown-clear" title="입력한 모든 값을 지우고 자동 비례 사용">전체 비우기 (자동 비례)</button>
+                </div>
+              </div>
+            </div>
           </section>
 
-          <!-- 4. 향후 추가 영역 (placeholder) -->
-          <section class="detail-section detail-section--placeholder">
-            <h2 class="detail-section-title">향후 추가 예정 영역</h2>
-            <p class="detail-placeholder-text">이 과제와 관련된 추가 정보가 여기에 모일 예정입니다.</p>
-            <div class="detail-placeholder-pills">
-              <span class="detail-placeholder-pill">자금 입금 일정</span>
-              <span class="detail-placeholder-pill">인건비 집행</span>
-              <span class="detail-placeholder-pill">비목별 사용 현황</span>
-              <span class="detail-placeholder-pill">첨부 문서</span>
-              <span class="detail-placeholder-pill">메모</span>
-            </div>
+          <!-- 4. 입금 일정 (연차별 입금 예정/실제) -->
+          <section class="detail-section">
+            <h2 class="detail-section-title">입금 일정</h2>
+            <p style="font-size:0.85rem; color:#6b7280; margin:0 0 0.75rem 0;">
+              각 연차별로 정부지원금 입금 예정 일자/금액과 실제 수령 내역을 입력합니다.
+              실제 수령 정보(연두색 칸)는 받았을 때 입력하세요.
+            </p>
+            <div id="payment-groups"></div>
           </section>
 
           <div class="detail-bottom-actions">

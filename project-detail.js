@@ -27,6 +27,81 @@
     return isNaN(n) ? 0 : n;
   }
 
+  /**
+   * yearBudget 행이 특정 연도에 차지하는 지원금 (일별 비례 분배)
+   * 단일 연도 행이면 전액, 다년 행이면 그 연도와 겹친 일수 비율만큼.
+   */
+  function autoSupportInYear(yb, year) {
+    if (!yb) return 0;
+    var s = (yb.startDate || '').toString().slice(0, 10);
+    var e = (yb.endDate   || '').toString().slice(0, 10);
+    if (!s || !e) return 0;
+
+    var support = Number(yb.support || 0);
+    if (!support) return 0;
+
+    var sd = new Date(s + 'T00:00:00');
+    var ed = new Date(e + 'T00:00:00');
+    if (isNaN(sd.getTime()) || isNaN(ed.getTime())) return 0;
+    if (ed < sd) return 0;
+
+    var yearStart = new Date(year + '-01-01T00:00:00');
+    var yearEnd   = new Date(year + '-12-31T00:00:00');
+    var overlapStart = sd > yearStart ? sd : yearStart;
+    var overlapEnd   = ed < yearEnd   ? ed : yearEnd;
+    if (overlapStart > overlapEnd) return 0;
+
+    var totalDays   = ((ed - sd) / 86400000) + 1;
+    var overlapDays = ((overlapEnd - overlapStart) / 86400000) + 1;
+
+    if (sd.getFullYear() === ed.getFullYear()) {
+      return Number(year) === sd.getFullYear() ? support : 0;
+    }
+    return Math.round(support * overlapDays / totalDays);
+  }
+
+  /**
+   * yearBudgets 배열 전체에서 특정 연도의 자동 비례 지원금 합계
+   */
+  function autoSupportSumInYear(yearBudgets, year) {
+    var sum = 0;
+    if (!Array.isArray(yearBudgets)) return 0;
+    yearBudgets.forEach(function (yb) {
+      sum += autoSupportInYear(yb, year);
+    });
+    return sum;
+  }
+
+  /**
+   * yearBudgets에 걸치는 모든 캘린더 연도 추출 (정렬됨)
+   */
+  function getCalendarYearsForBudgets(yearBudgets) {
+    if (!Array.isArray(yearBudgets) || !yearBudgets.length) return [];
+    var minY = null, maxY = null;
+    yearBudgets.forEach(function (yb) {
+      var s = (yb.startDate || '').toString().slice(0, 4);
+      var e = (yb.endDate || '').toString().slice(0, 4);
+      if (s) {
+        var ys = parseInt(s, 10);
+        if (!isNaN(ys)) {
+          if (minY === null || ys < minY) minY = ys;
+          if (maxY === null || ys > maxY) maxY = ys;
+        }
+      }
+      if (e) {
+        var ye = parseInt(e, 10);
+        if (!isNaN(ye)) {
+          if (minY === null || ye < minY) minY = ye;
+          if (maxY === null || ye > maxY) maxY = ye;
+        }
+      }
+    });
+    if (minY === null || maxY === null) return [];
+    var years = [];
+    for (var y = minY; y <= maxY; y++) years.push(y);
+    return years;
+  }
+
   function setFormValue(id, val) {
     var el = document.getElementById(id);
     if (el) el.value = val != null ? String(val) : '';
@@ -307,6 +382,743 @@
     return tr;
   }
 
+  // ===== 캘린더 분배 =====
+
+  // 현재 yearBudget 테이블의 raw 데이터를 읽어 [{startDate, endDate, support}] 반환
+  function readCurrentYearBudgets() {
+    var out = [];
+    if (!tbodyEl) return out;
+    tbodyEl.querySelectorAll('tr').forEach(function (row) {
+      var s   = (row.querySelector('.yb-start')   || {}).value || '';
+      var e   = (row.querySelector('.yb-end')     || {}).value || '';
+      var sup = parseNum((row.querySelector('.yb-support') || {}).value);
+      out.push({ startDate: s, endDate: e, support: sup });
+    });
+    return out;
+  }
+
+  /**
+   * 단일 yearBudget이 걸치는 캘린더 연도 목록
+   */
+  function getYearsInBudget(yb) {
+    if (!yb || !yb.startDate || !yb.endDate) return [];
+    var ys = parseInt((yb.startDate || '').slice(0, 4), 10);
+    var ye = parseInt((yb.endDate || '').slice(0, 4), 10);
+    if (isNaN(ys) || isNaN(ye)) return [];
+    var arr = [];
+    for (var y = ys; y <= ye; y++) arr.push(y);
+    return arr;
+  }
+
+  /**
+   * 한 차수 그룹의 입력 합을 정부지원금과 비교하여 메시지 갱신
+   * - 모든 칸이 입력된 경우만 검증 (일부 빈 칸은 자동 비례라 검증 의미 없음)
+   * @param {HTMLElement} groupEl - .cal-breakdown-group 요소
+   */
+  function updateBreakdownSum(groupEl) {
+    if (!groupEl) return;
+    var msgEl = groupEl.querySelector('.cal-breakdown-sum-msg');
+    if (!msgEl) return;
+
+    var support = Number(groupEl.getAttribute('data-support') || 0);
+    var inputs = groupEl.querySelectorAll('input.cal-budget-input');
+
+    var sum = 0;
+    var filledCount = 0;
+    inputs.forEach(function (inp) {
+      var raw = (inp.value || '').trim();
+      if (raw === '') return;
+      filledCount++;
+      sum += parseNum(raw);
+    });
+
+    // 검증 케이스:
+    // 1) 빈 칸 0개 (모두 입력) → 합 검증
+    // 2) 빈 칸 있음 → 검증 안 함 (자동 비례 혼합)
+    // 3) 정부지원금 0 → 검증 안 함
+    if (filledCount === 0 || filledCount < inputs.length || support === 0) {
+      msgEl.classList.remove('show', 'cal-breakdown-sum-ok', 'cal-breakdown-sum-error');
+      msgEl.innerHTML = '';
+      return;
+    }
+
+    var diff = sum - support;
+    if (diff === 0) {
+      msgEl.className = 'cal-breakdown-sum-msg show cal-breakdown-sum-ok';
+      msgEl.innerHTML = '✓ 입력 합 ' + formatNum(sum) + '원 — 정부지원금과 일치합니다.';
+    } else {
+      msgEl.className = 'cal-breakdown-sum-msg show cal-breakdown-sum-error';
+      var sign = diff > 0 ? '초과' : '부족';
+      msgEl.innerHTML = '⚠️ 입력 합 <strong>' + formatNum(sum) + '원</strong> — 정부지원금 ' +
+        formatNum(support) + '원 대비 <strong>' + formatNum(Math.abs(diff)) + '원 ' + sign + '</strong>';
+    }
+  }
+
+  /**
+   * 캘린더 분배 입력란을 연차별 그룹으로 다시 그림
+   * @param {Object} keepValues - 이미 입력된 사용자 값들 { '0:2024': 'xxx', ... } (yb_index:year 키)
+   */
+  function renderCalendarBreakdown(keepValues) {
+    var container = document.getElementById('cal-breakdown-groups');
+    if (!container) return;
+
+    // 현재 사용자 입력값 보존 (전달 안 됐으면 DOM에서 읽음)
+    if (!keepValues) {
+      keepValues = {};
+      container.querySelectorAll('input.cal-budget-input').forEach(function (inp) {
+        var key = inp.getAttribute('data-yb-idx') + ':' + inp.getAttribute('data-year');
+        if (inp.value && inp.value.trim() !== '') keepValues[key] = inp.value;
+      });
+    }
+
+    var ybs = readCurrentYearBudgets();
+    // 유효한 yearBudget만 (시작일/종료일 있는 것)
+    var validYbs = ybs
+      .map(function (yb, idx) { return { yb: yb, idx: idx }; })
+      .filter(function (x) { return x.yb.startDate && x.yb.endDate; });
+
+    if (!validYbs.length) {
+      container.innerHTML = '<div class="cal-breakdown-empty">연차별 예산을 먼저 입력하세요 (시작일/종료일).</div>';
+      return;
+    }
+
+    container.innerHTML = validYbs.map(function (x) {
+      var yb = x.yb;
+      var idx = x.idx;
+      var years = getYearsInBudget(yb);
+      if (!years.length) return '';
+
+      var headerSupport = yb.support > 0 ? '<span class="cal-group-support">정부지원금 ' + formatNum(yb.support) + '원</span>' : '';
+      var header =
+        '<div class="cal-breakdown-group-header">' +
+          '<span class="cal-group-badge">' + (idx + 1) + '차</span>' +
+          '<span class="cal-group-period">' + escapeHtml(yb.startDate) + ' ~ ' + escapeHtml(yb.endDate) + '</span>' +
+          headerSupport +
+        '</div>';
+
+      var items = years.map(function (y) {
+        var auto = autoSupportInYear(yb, y);
+        var key = idx + ':' + y;
+        var userVal = keepValues[key];
+        var displayVal = (userVal != null && userVal !== '') ? userVal : '';
+        return (
+          '<div class="cal-breakdown-item">' +
+            '<label>' + y + '년</label>' +
+            '<input type="text" class="cal-budget-input" ' +
+              'data-yb-idx="' + idx + '" data-year="' + y + '" ' +
+              'value="' + escapeHtml(displayVal) + '" ' +
+              'placeholder="자동 ' + (auto > 0 ? formatNum(auto) : '0') + '" ' +
+              'inputmode="numeric">' +
+          '</div>'
+        );
+      }).join('');
+
+      return '<div class="cal-breakdown-group" data-yb-idx="' + idx + '" data-support="' + (yb.support || 0) + '">' +
+        header +
+        '<div class="cal-breakdown-grid">' + items + '</div>' +
+        '<div class="cal-breakdown-sum-msg"></div>' +
+      '</div>';
+    }).join('');
+
+    // 입력 시 천단위 콤마 (blur) + 합계 검증
+    container.querySelectorAll('input.cal-budget-input').forEach(function (inp) {
+      inp.addEventListener('blur', function () {
+        var n = parseNum(inp.value);
+        inp.value = n > 0 ? formatNum(n) : '';
+        // 이 input이 속한 그룹의 합계 갱신
+        var groupEl = inp.closest('.cal-breakdown-group');
+        updateBreakdownSum(groupEl);
+      });
+    });
+
+    // 초기 합계 메시지 갱신 (모든 그룹)
+    container.querySelectorAll('.cal-breakdown-group').forEach(function (g) {
+      updateBreakdownSum(g);
+    });
+  }
+
+  /**
+   * 폼에서 각 yearBudget별 calendarBreakdown 객체 추출
+   * 반환: [{ '2025': N, '2026': N }, { '2026': N, ... }] — yearBudget 순서대로
+   */
+  function getCalendarBreakdownsFromForm() {
+    var container = document.getElementById('cal-breakdown-groups');
+    if (!container) return [];
+    var byIdx = {};
+    container.querySelectorAll('input.cal-budget-input').forEach(function (inp) {
+      var idx = inp.getAttribute('data-yb-idx');
+      var y = inp.getAttribute('data-year');
+      var raw = inp.value;
+      if (idx == null || !y) return;
+      var trimmed = String(raw || '').trim();
+      if (trimmed === '') return;  // 빈 칸은 자동 비례
+      if (!byIdx[idx]) byIdx[idx] = {};
+      byIdx[idx][y] = parseNum(trimmed);
+    });
+    return byIdx;  // { '0': {...}, '1': {...} }
+  }
+
+  // ===== 입금 일정 =====
+
+  /**
+   * 옛 payments 배열을 plannedPayments + actualPayments로 분리 (자동 마이그레이션)
+   */
+  function migratePayments(yb) {
+    var planned = Array.isArray(yb.plannedPayments) ? yb.plannedPayments.slice() : [];
+    var actual = Array.isArray(yb.actualPayments) ? yb.actualPayments.slice() : [];
+    if (Array.isArray(yb.payments)) {
+      yb.payments.forEach(function (p) {
+        if (p.plannedDate || (p.plannedAmount && p.plannedAmount > 0)) {
+          planned.push({
+            date: p.plannedDate || '',
+            amount: Number(p.plannedAmount || 0)
+          });
+        }
+        if (p.actualDate || (p.actualAmount && p.actualAmount > 0)) {
+          actual.push({
+            date: p.actualDate || '',
+            amount: Number(p.actualAmount || 0)
+          });
+        }
+      });
+    }
+    return { planned: planned, actual: actual };
+  }
+
+  /**
+   * 입금 일정을 yearBudget별 그룹으로 다시 그림
+   * @param {Object} initialByIdx - 각 yearBudget의 { planned: [...], actual: [...] } (yb index 키)
+   */
+  function renderPayments(initialByIdx) {
+    var container = document.getElementById('payment-groups');
+    if (!container) return;
+
+    var ybs = readCurrentYearBudgets();
+    var validYbs = ybs
+      .map(function (yb, idx) { return { yb: yb, idx: idx }; })
+      .filter(function (x) { return x.yb.startDate && x.yb.endDate; });
+
+    // 사용자 입력값 보존 (initialByIdx 없으면 DOM에서 읽음)
+    var payByIdx;
+    if (initialByIdx && typeof initialByIdx === 'object') {
+      payByIdx = initialByIdx;
+    } else {
+      payByIdx = getAllPaymentsFromForm();
+    }
+
+    if (!validYbs.length) {
+      container.innerHTML = '<div class="payment-empty">연차별 예산을 먼저 입력하세요 (시작일/종료일).</div>';
+      return;
+    }
+
+    container.innerHTML = validYbs.map(function (x) {
+      var yb = x.yb;
+      var idx = x.idx;
+      var pays = payByIdx[idx] || { planned: [], actual: [] };
+
+      var headerSupport = yb.support > 0 ? '<span class="cal-group-support">정부지원금 ' + formatNum(yb.support) + '원</span>' : '';
+      var header =
+        '<div class="payment-group-header">' +
+          '<span class="cal-group-badge">' + (idx + 1) + '차</span>' +
+          '<span class="cal-group-period">' + escapeHtml(yb.startDate) + ' ~ ' + escapeHtml(yb.endDate) + '</span>' +
+          headerSupport +
+        '</div>';
+
+      var plannedRows = (pays.planned || []).length
+        ? pays.planned.map(function (p) { return plannedRowHtml(idx, p); }).join('')
+        : '';
+      var actualRows = (pays.actual || []).length
+        ? pays.actual.map(function (p) { return actualRowHtml(idx, p); }).join('')
+        : '';
+
+      // 예정 입금 섹션
+      var plannedSection =
+        '<div class="payment-section payment-section--planned">' +
+          '<div class="payment-section-header">' +
+            '<div class="payment-section-title"><span class="pay-section-emoji">📋</span>예정 입금</div>' +
+            '<div class="payment-section-actions">' +
+              '<button type="button" class="payment-auto-btn pay-auto-btn" data-yb-idx="' + idx + '" title="정부지원금을 분기 마지막 날 기준으로 균등 분배">⚡ 자동 분배</button>' +
+              '<button type="button" class="payment-add-btn pay-add-planned-btn" data-yb-idx="' + idx + '">+ 예정 입금 추가</button>' +
+            '</div>' +
+          '</div>' +
+          '<table class="payment-table payment-planned-table">' +
+            '<thead><tr>' +
+              '<th style="width:60px">분기</th>' +
+              '<th style="width:140px">예정일</th>' +
+              '<th style="text-align:right">예정 금액</th>' +
+              '<th style="width:32px"></th>' +
+            '</tr></thead>' +
+            '<tbody class="planned-tbody">' + plannedRows + '</tbody>' +
+          '</table>' +
+          '<div class="payment-sum-msg planned-sum-msg"></div>' +
+        '</div>';
+
+      // 실제 수령 섹션
+      var actualSection =
+        '<div class="payment-section payment-section--actual">' +
+          '<div class="payment-section-header">' +
+            '<div class="payment-section-title"><span class="pay-section-emoji">💰</span>실제 수령</div>' +
+            '<div class="payment-section-actions">' +
+              '<button type="button" class="payment-add-btn pay-add-actual-btn" data-yb-idx="' + idx + '">+ 실제 수령 추가</button>' +
+            '</div>' +
+          '</div>' +
+          '<table class="payment-table payment-actual-table">' +
+            '<thead><tr>' +
+              '<th style="width:60px">분기</th>' +
+              '<th style="width:140px">수령일</th>' +
+              '<th style="text-align:right">수령 금액</th>' +
+              '<th style="width:32px"></th>' +
+            '</tr></thead>' +
+            '<tbody class="actual-tbody">' + actualRows + '</tbody>' +
+          '</table>' +
+          '<div class="payment-sum-msg actual-sum-msg"></div>' +
+        '</div>';
+
+      return '<div class="payment-group" data-yb-idx="' + idx + '" data-support="' + (yb.support || 0) + '">' +
+        header +
+        plannedSection +
+        actualSection +
+        '<div class="payment-quarterly-wrap"></div>' +
+      '</div>';
+    }).join('');
+
+    // 이벤트 바인딩
+    bindPaymentEvents();
+
+    // 합계 + 분기 요약 (모든 그룹)
+    container.querySelectorAll('.payment-group').forEach(function (g) {
+      updatePaymentSum(g);
+      updateQuarterlySummary(g);
+    });
+  }
+
+  function plannedRowHtml(ybIdx, p) {
+    p = p || {};
+    var date = (p.date || '').toString();
+    var amount = p.amount != null && p.amount !== '' ? formatNum(p.amount) : '';
+    var qLabel = getQuarterLabel(date);
+    return (
+      '<tr class="payment-row planned-row" data-yb-idx="' + ybIdx + '">' +
+        '<td class="pay-q-label">' + qLabel + '</td>' +
+        '<td><input type="text" class="pay-date pay-planned-date" placeholder="YYYY-MM-DD" maxlength="10" inputmode="numeric" value="' + escapeHtml(date) + '"></td>' +
+        '<td><input type="text" class="pay-amount pay-planned-amount" inputmode="numeric" value="' + escapeHtml(amount) + '"></td>' +
+        '<td class="pay-del"><button type="button" class="pay-del-btn" title="이 행 삭제">×</button></td>' +
+      '</tr>'
+    );
+  }
+
+  function actualRowHtml(ybIdx, p) {
+    p = p || {};
+    var date = (p.date || '').toString();
+    var amount = p.amount != null && p.amount !== '' ? formatNum(p.amount) : '';
+    var qLabel = getQuarterLabel(date);
+    return (
+      '<tr class="payment-row actual-row" data-yb-idx="' + ybIdx + '">' +
+        '<td class="pay-q-label">' + qLabel + '</td>' +
+        '<td><input type="text" class="pay-date pay-actual-date" placeholder="YYYY-MM-DD" maxlength="10" inputmode="numeric" value="' + escapeHtml(date) + '"></td>' +
+        '<td><input type="text" class="pay-amount pay-actual-amount" inputmode="numeric" value="' + escapeHtml(amount) + '"></td>' +
+        '<td class="pay-del"><button type="button" class="pay-del-btn" title="이 행 삭제">×</button></td>' +
+      '</tr>'
+    );
+  }
+
+  // 날짜에서 분기 라벨 추출 (예: '2026-04-15' → '2Q')
+  function getQuarterLabel(dateStr) {
+    if (!dateStr) return '-';
+    var m = parseInt(String(dateStr).slice(5, 7), 10);
+    if (isNaN(m) || m < 1 || m > 12) return '-';
+    var q = Math.ceil(m / 3);
+    return q + 'Q';
+  }
+
+  // YYYY-MM-DD 문자열을 로컬 Date로 파싱
+  function parseLocalDate(s) {
+    if (!s) return null;
+    var parts = String(s).slice(0, 10).split('-');
+    if (parts.length !== 3) return null;
+    var y = parseInt(parts[0], 10);
+    var m = parseInt(parts[1], 10);
+    var d = parseInt(parts[2], 10);
+    if (isNaN(y) || isNaN(m) || isNaN(d)) return null;
+    var dt = new Date(y, m - 1, d);
+    return isNaN(dt.getTime()) ? null : dt;
+  }
+
+  function formatLocalDate(dt) {
+    return dt.getFullYear() + '-' +
+      String(dt.getMonth() + 1).padStart(2, '0') + '-' +
+      String(dt.getDate()).padStart(2, '0');
+  }
+
+  /**
+   * yearBudget을 분기별 균등 분배 → 예정 입금 배열 반환
+   * - 분기 종료일 기준 (3/31, 6/30, 9/30, 12/31)
+   * - yb 종료일이 분기 종료일보다 빠르면 yb 종료일 사용
+   * - 천원 단위로 떨어지게 분배 (마지막 분기에서 차이 조정)
+   */
+  function autoDistributeQuarterly(yb) {
+    if (!yb || !yb.startDate || !yb.endDate) return [];
+    var support = Number(yb.support || 0);
+    if (!support || support <= 0) return [];
+
+    var sd = parseLocalDate(yb.startDate);
+    var ed = parseLocalDate(yb.endDate);
+    if (!sd || !ed || ed < sd) return [];
+
+    var quarters = [];
+    var year = sd.getFullYear();
+    var qIdx = Math.floor(sd.getMonth() / 3);  // 0~3
+
+    while (true) {
+      var qEndMonth = (qIdx + 1) * 3;  // 3,6,9,12
+      var qEnd = new Date(year, qEndMonth, 0);  // 분기 마지막 날 (예: 3월 31일)
+
+      // 분기 종료일 vs yb 종료일 중 빠른 것
+      var payDate = qEnd <= ed ? qEnd : ed;
+      // yb 시작일보다 분기 종료일이 빠르면 건너뜀 (이 케이스는 거의 없음)
+      if (qEnd >= sd) {
+        quarters.push({ date: formatLocalDate(payDate) });
+      }
+
+      // 다음 분기로
+      qIdx++;
+      if (qIdx > 3) { qIdx = 0; year++; }
+      var nextQStart = new Date(year, qIdx * 3, 1);
+      if (nextQStart > ed) break;
+    }
+
+    if (!quarters.length) return [];
+
+    // 천원 단위 균등 분배 (마지막 분기에서 차이 조정)
+    var n = quarters.length;
+    var perQ = Math.floor(support / n / 1000) * 1000;  // 천원 단위 내림
+    var partialSum = perQ * (n - 1);
+
+    quarters.forEach(function (q, i) {
+      q.amount = (i < n - 1) ? perQ : (support - partialSum);
+    });
+
+    return quarters;
+  }
+
+  /**
+   * plannedPayments + actualPayments 배열을 분기별로 그룹화하여 요약 데이터 반환
+   * 반환: [{ year, q, planned, actual, plannedCnt, actualCnt }, ...]
+   */
+  function computeQuarterlySummary(planned, actual) {
+    var quarters = {};
+
+    function ensureBin(y, q) {
+      var key = y + '-Q' + q;
+      if (!quarters[key]) {
+        quarters[key] = {
+          year: parseInt(y, 10), q: q,
+          planned: 0, actual: 0,
+          plannedCnt: 0, actualCnt: 0
+        };
+      }
+      return quarters[key];
+    }
+
+    (planned || []).forEach(function (p) {
+      if (!p.date) return;
+      var y = p.date.toString().slice(0, 4);
+      var m = parseInt(p.date.toString().slice(5, 7), 10);
+      if (!y || isNaN(m) || m < 1) return;
+      var bin = ensureBin(y, Math.ceil(m / 3));
+      var amt = Number(p.amount || 0);
+      if (amt > 0) {
+        bin.planned += amt;
+        bin.plannedCnt += 1;
+      }
+    });
+
+    (actual || []).forEach(function (p) {
+      if (!p.date) return;
+      var y = p.date.toString().slice(0, 4);
+      var m = parseInt(p.date.toString().slice(5, 7), 10);
+      if (!y || isNaN(m) || m < 1) return;
+      var bin = ensureBin(y, Math.ceil(m / 3));
+      var amt = Number(p.amount || 0);
+      if (amt > 0) {
+        bin.actual += amt;
+        bin.actualCnt += 1;
+      }
+    });
+
+    return Object.keys(quarters).sort().map(function (k) { return quarters[k]; });
+  }
+
+  /**
+   * 분기 요약 표 HTML 생성
+   */
+  function renderQuarterlyHtml(quarters) {
+    if (!quarters.length) {
+      return '<div class="quarterly-empty">입금 일정을 입력하면 분기별 요약이 자동 표시됩니다.</div>';
+    }
+
+    var head = '<tr><th></th>';
+    var rowPlanned = '<tr><td>예정 금액</td>';
+    var rowActual  = '<tr><td>수령 금액</td>';
+    var rowCount   = '<tr><td>수령 건수</td>';
+    var rowDiff    = '<tr><td>잔액</td>';
+
+    var totals = { planned: 0, actual: 0, plannedCnt: 0, actualCnt: 0 };
+
+    quarters.forEach(function (q) {
+      head += '<th>' + q.year + ' ' + q.q + 'Q</th>';
+      rowPlanned += '<td>' + (q.planned > 0 ? formatNum(q.planned) : '-') + '</td>';
+      rowActual  += '<td>' + (q.actual > 0 ? formatNum(q.actual) : '-') + '</td>';
+      var countOk = (q.actualCnt === q.plannedCnt && q.plannedCnt > 0);
+      rowCount += '<td' + (countOk ? ' class="q-ok"' : '') + '>' +
+        q.actualCnt + '/' + q.plannedCnt + (countOk ? ' ✓' : '') + '</td>';
+      var diff = q.planned - q.actual;
+      rowDiff += '<td' + (diff > 0 ? ' class="q-diff-warn"' : '') + '>' + formatNum(diff) + '</td>';
+      totals.planned += q.planned;
+      totals.actual += q.actual;
+      totals.plannedCnt += q.plannedCnt;
+      totals.actualCnt += q.actualCnt;
+    });
+
+    head += '<th>합계</th></tr>';
+    rowPlanned += '<td><strong>' + formatNum(totals.planned) + '</strong></td></tr>';
+    rowActual  += '<td><strong>' + (totals.actual > 0 ? formatNum(totals.actual) : '-') + '</strong></td></tr>';
+    var totalCountOk = totals.actualCnt === totals.plannedCnt && totals.plannedCnt > 0;
+    rowCount   += '<td' + (totalCountOk ? ' class="q-ok"' : '') + '><strong>' +
+      totals.actualCnt + '/' + totals.plannedCnt + (totalCountOk ? ' ✓' : '') + '</strong></td></tr>';
+    var totalDiff = totals.planned - totals.actual;
+    rowDiff    += '<td><strong' + (totalDiff > 0 ? ' class="q-diff-warn"' : '') + '>' + formatNum(totalDiff) + '</strong></td></tr>';
+
+    return '<table class="quarterly-summary"><thead>' + head + '</thead><tbody>' +
+      rowPlanned + rowActual + rowCount + rowDiff + '</tbody></table>';
+  }
+
+  /**
+   * 특정 yb 그룹의 분기 요약 다시 그리기 (입금 행 변경 시 호출)
+   */
+  function updateQuarterlySummary(groupEl) {
+    if (!groupEl) return;
+    var wrapEl = groupEl.querySelector('.payment-quarterly-wrap');
+    if (!wrapEl) return;
+    var idx = groupEl.getAttribute('data-yb-idx');
+    var allPays = getAllPaymentsFromForm();
+    var pays = allPays[idx] || { planned: [], actual: [] };
+    var quarters = computeQuarterlySummary(pays.planned, pays.actual);
+    wrapEl.innerHTML = '<div class="payment-quarterly-title">분기별 요약</div>' + renderQuarterlyHtml(quarters);
+  }
+
+  function autoFormatDateOnBlur(inp) {
+    var v = (inp.value || '').replace(/\D/g, '');
+    if (v.length === 8) {
+      inp.value = v.slice(0,4) + '-' + v.slice(4,6) + '-' + v.slice(6,8);
+    }
+  }
+
+  function bindPaymentEvents() {
+    var container = document.getElementById('payment-groups');
+    if (!container) return;
+
+    // 예정 행 추가
+    container.querySelectorAll('.pay-add-planned-btn').forEach(function (btn) {
+      btn.onclick = function () {
+        var idx = btn.getAttribute('data-yb-idx');
+        var group = container.querySelector('.payment-group[data-yb-idx="' + idx + '"]');
+        if (!group) return;
+        var tbody = group.querySelector('.planned-tbody');
+        if (!tbody) return;
+        tbody.insertAdjacentHTML('beforeend', plannedRowHtml(idx, {}));
+        bindPaymentEvents();
+        updatePaymentSum(group);
+        updateQuarterlySummary(group);
+      };
+    });
+
+    // 자동 분배 버튼
+    container.querySelectorAll('.pay-auto-btn').forEach(function (btn) {
+      btn.onclick = function () {
+        var idx = parseInt(btn.getAttribute('data-yb-idx'), 10);
+        var ybs = readCurrentYearBudgets();
+        var yb = ybs[idx];
+        if (!yb) return;
+        if (!yb.startDate || !yb.endDate || !yb.support) {
+          alert('해당 연차의 시작일/종료일/정부지원금을 먼저 입력하세요.');
+          return;
+        }
+        // 기존 예정 입금이 있으면 덮어쓰기 확인
+        var existingRows = container.querySelectorAll('.payment-group[data-yb-idx="' + idx + '"] .planned-row');
+        if (existingRows.length > 0) {
+          if (!confirm('이 연차의 기존 예정 입금 ' + existingRows.length + '건이 모두 삭제되고 새로 채워집니다. 진행할까요?')) return;
+        }
+        var quarters = autoDistributeQuarterly(yb);
+        if (!quarters.length) {
+          alert('분배할 분기를 계산할 수 없습니다. 시작일/종료일을 확인하세요.');
+          return;
+        }
+        // 새 데이터로 다시 렌더 (기존 actual은 보존)
+        var allPays = getAllPaymentsFromForm();
+        if (!allPays[idx]) allPays[idx] = { planned: [], actual: [] };
+        allPays[idx].planned = quarters;
+        renderPayments(allPays);
+      };
+    });
+
+    // 실제 행 추가
+    container.querySelectorAll('.pay-add-actual-btn').forEach(function (btn) {
+      btn.onclick = function () {
+        var idx = btn.getAttribute('data-yb-idx');
+        var group = container.querySelector('.payment-group[data-yb-idx="' + idx + '"]');
+        if (!group) return;
+        var tbody = group.querySelector('.actual-tbody');
+        if (!tbody) return;
+        tbody.insertAdjacentHTML('beforeend', actualRowHtml(idx, {}));
+        bindPaymentEvents();
+        updatePaymentSum(group);
+        updateQuarterlySummary(group);
+      };
+    });
+
+    // 행 삭제 (공통)
+    container.querySelectorAll('.pay-del-btn').forEach(function (btn) {
+      btn.onclick = function () {
+        var row = btn.closest('.payment-row');
+        var group = btn.closest('.payment-group');
+        if (row) row.remove();
+        if (group) {
+          updatePaymentSum(group);
+          updateQuarterlySummary(group);
+        }
+      };
+    });
+
+    // 금액 input blur: 콤마 + 합계 + 분기 요약
+    container.querySelectorAll('input.pay-amount').forEach(function (inp) {
+      inp.onblur = function () {
+        var n = parseNum(inp.value);
+        inp.value = n > 0 ? formatNum(n) : '';
+        var group = inp.closest('.payment-group');
+        if (group) {
+          updatePaymentSum(group);
+          updateQuarterlySummary(group);
+        }
+      };
+    });
+
+    // 날짜 input blur: 자동 YYYY-MM-DD + 분기 라벨 갱신 + 요약 갱신
+    container.querySelectorAll('input.pay-date').forEach(function (inp) {
+      inp.onblur = function () {
+        autoFormatDateOnBlur(inp);
+        // 분기 라벨 (행 첫 칸) 갱신
+        var row = inp.closest('.payment-row');
+        if (row) {
+          var qCell = row.querySelector('.pay-q-label');
+          if (qCell) qCell.textContent = getQuarterLabel(inp.value);
+        }
+        var group = inp.closest('.payment-group');
+        if (group) updateQuarterlySummary(group);
+      };
+    });
+  }
+
+  function updatePaymentSum(groupEl) {
+    if (!groupEl) return;
+    var support = Number(groupEl.getAttribute('data-support') || 0);
+
+    // 예정 합
+    var plannedSum = 0;
+    groupEl.querySelectorAll('.planned-row .pay-planned-amount').forEach(function (inp) {
+      plannedSum += parseNum(inp.value);
+    });
+    // 실제 합
+    var actualSum = 0;
+    groupEl.querySelectorAll('.actual-row .pay-actual-amount').forEach(function (inp) {
+      actualSum += parseNum(inp.value);
+    });
+
+    // 예정 합계 메시지 (정부지원금 비교)
+    var plannedMsgEl = groupEl.querySelector('.planned-sum-msg');
+    if (plannedMsgEl) {
+      if (plannedSum === 0) {
+        plannedMsgEl.className = 'payment-sum-msg planned-sum-msg';
+        plannedMsgEl.innerHTML = '';
+      } else if (support > 0) {
+        var diff = plannedSum - support;
+        if (diff === 0) {
+          plannedMsgEl.className = 'payment-sum-msg planned-sum-msg payment-sum-ok';
+          plannedMsgEl.innerHTML = '✓ 예정 합 ' + formatNum(plannedSum) + '원 (정부지원금 일치)';
+        } else {
+          plannedMsgEl.className = 'payment-sum-msg planned-sum-msg payment-sum-warn';
+          var sign = diff > 0 ? '초과' : '부족';
+          plannedMsgEl.innerHTML = '⚠️ 예정 합 ' + formatNum(plannedSum) + '원 — 정부지원금 ' + formatNum(support) + '원 대비 ' + formatNum(Math.abs(diff)) + '원 ' + sign;
+        }
+      } else {
+        plannedMsgEl.className = 'payment-sum-msg planned-sum-msg';
+        plannedMsgEl.innerHTML = '예정 합 ' + formatNum(plannedSum) + '원';
+      }
+    }
+
+    // 실제 합계 메시지 (잔액 계산)
+    var actualMsgEl = groupEl.querySelector('.actual-sum-msg');
+    if (actualMsgEl) {
+      if (actualSum === 0) {
+        actualMsgEl.className = 'payment-sum-msg actual-sum-msg';
+        actualMsgEl.innerHTML = '';
+      } else if (plannedSum > 0) {
+        var remain = plannedSum - actualSum;
+        if (remain <= 0) {
+          actualMsgEl.className = 'payment-sum-msg actual-sum-msg payment-sum-ok';
+          actualMsgEl.innerHTML = '✓ 실제 수령 ' + formatNum(actualSum) + '원 (전액 수령 완료)';
+        } else {
+          actualMsgEl.className = 'payment-sum-msg actual-sum-msg';
+          actualMsgEl.innerHTML = '실제 수령 ' + formatNum(actualSum) + '원 · 잔액 ' + formatNum(remain) + '원';
+        }
+      } else {
+        actualMsgEl.className = 'payment-sum-msg actual-sum-msg';
+        actualMsgEl.innerHTML = '실제 수령 ' + formatNum(actualSum) + '원';
+      }
+    }
+  }
+
+  /**
+   * 폼에서 모든 yearBudget의 plannedPayments + actualPayments 추출
+   * 반환: { '0': { planned: [{date, amount}, ...], actual: [...] }, '1': {...} }
+   */
+  function getAllPaymentsFromForm() {
+    var container = document.getElementById('payment-groups');
+    if (!container) return {};
+    var byIdx = {};
+
+    function ensureIdx(idx) {
+      if (!byIdx[idx]) byIdx[idx] = { planned: [], actual: [] };
+      return byIdx[idx];
+    }
+
+    container.querySelectorAll('.planned-row').forEach(function (row) {
+      var idx = row.getAttribute('data-yb-idx');
+      if (idx == null) return;
+      var date = ((row.querySelector('.pay-planned-date') || {}).value || '').trim();
+      var amount = parseNum((row.querySelector('.pay-planned-amount') || {}).value);
+      if (!date && !amount) return;
+      var p = {};
+      if (date) p.date = date;
+      if (amount > 0) p.amount = amount;
+      ensureIdx(idx).planned.push(p);
+    });
+
+    container.querySelectorAll('.actual-row').forEach(function (row) {
+      var idx = row.getAttribute('data-yb-idx');
+      if (idx == null) return;
+      var date = ((row.querySelector('.pay-actual-date') || {}).value || '').trim();
+      var amount = parseNum((row.querySelector('.pay-actual-amount') || {}).value);
+      if (!date && !amount) return;
+      var p = {};
+      if (date) p.date = date;
+      if (amount > 0) p.amount = amount;
+      ensureIdx(idx).actual.push(p);
+    });
+
+    return byIdx;
+  }
+
   // ===== 데이터 로드 =====
 
   // status 값에 따라 제출일 / 미제출 사유 입력란 표시/숨김
@@ -382,6 +1194,28 @@
     } else {
       years.forEach(function (y) { addYearRow(y); });
     }
+
+    // 캘린더 분배 — 각 yearBudget의 calendarBreakdown에서 keepValues 구성
+    var keepValues = {};
+    years.forEach(function (yb, idx) {
+      var cb = yb && yb.calendarBreakdown;
+      if (cb && typeof cb === 'object') {
+        Object.keys(cb).forEach(function (k) {
+          var v = cb[k];
+          if (v != null && v !== '') keepValues[idx + ':' + k] = formatNum(v);
+        });
+      }
+    });
+    renderCalendarBreakdown(keepValues);
+
+    // 입금 일정 — plannedPayments + actualPayments 로드 (옛 payments 자동 마이그레이션)
+    var paymentsByIdx = {};
+    years.forEach(function (yb, idx) {
+      if (yb) {
+        paymentsByIdx[idx] = migratePayments(yb);
+      }
+    });
+    renderPayments(paymentsByIdx);
   }
 
   function loadProject(items) {
@@ -391,6 +1225,8 @@
     if (isNewMode) {
       // 빈 폼: 첫 연차 1개 미리 추가
       addYearRow();
+      renderCalendarBreakdown();
+      renderPayments();
       return;
     }
 
@@ -417,7 +1253,13 @@
     var supportTotal = 0;
     if (!tbodyEl) return { years: years, startDate: startDate, endDate: endDate, supportTotal: supportTotal };
 
-    tbodyEl.querySelectorAll('tr').forEach(function (row) {
+    // 각 yearBudget별 캘린더 분배 추출
+    var breakdownsByIdx = getCalendarBreakdownsFromForm();
+    // 각 yearBudget별 입금 일정 추출 (예정/실제 분리)
+    var paymentsByIdx = getAllPaymentsFromForm();
+
+    var rows = tbodyEl.querySelectorAll('tr');
+    rows.forEach(function (row, idx) {
       var s   = (row.querySelector('.yb-start')   || {}).value || '';
       var e   = (row.querySelector('.yb-end')     || {}).value || '';
       var sup = parseNum((row.querySelector('.yb-support') || {}).value);
@@ -426,7 +1268,19 @@
       var sub = sup + cash + ink;
       // 완전히 빈 행은 건너뜀
       if (!s && !e && sup === 0 && cash === 0 && ink === 0) return;
-      years.push({ startDate: s, endDate: e, support: sup, cash: cash, inKind: ink, subtotal: sub });
+      var ybObj = { startDate: s, endDate: e, support: sup, cash: cash, inKind: ink, subtotal: sub };
+      // 캘린더 분배 통합
+      var cb = breakdownsByIdx[String(idx)];
+      if (cb && Object.keys(cb).length) {
+        ybObj.calendarBreakdown = cb;
+      }
+      // 입금 일정 통합 (예정/실제 분리, 옛 payments는 더이상 저장 안 함)
+      var ps = paymentsByIdx[String(idx)];
+      if (ps) {
+        if (ps.planned && ps.planned.length) ybObj.plannedPayments = ps.planned;
+        if (ps.actual && ps.actual.length) ybObj.actualPayments = ps.actual;
+      }
+      years.push(ybObj);
       if (s && (!startDate || s < startDate)) startDate = s;
       if (e && (!endDate || e > endDate)) endDate = e;
       supportTotal += sub;
@@ -1123,7 +1977,48 @@
     var formEl          = document.getElementById('project-detail-form');
     var backLink        = document.getElementById('detail-back-link');
 
-    if (addYearBtn) addYearBtn.addEventListener('click', function () { addYearRow(); });
+    if (addYearBtn) addYearBtn.addEventListener('click', function () {
+      addYearRow();
+      renderCalendarBreakdown();
+      renderPayments();
+    });
+
+    // 캘린더 분배: 토글
+    var calToggle = document.getElementById('cal-breakdown-toggle');
+    var calWrap   = document.getElementById('cal-breakdown-wrap');
+    if (calToggle && calWrap) {
+      calToggle.addEventListener('click', function () {
+        var expanded = calWrap.classList.toggle('expanded');
+        calToggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+        if (expanded) renderCalendarBreakdown();  // 펼칠 때 최신 yearBudget으로 갱신
+      });
+      calToggle.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); calToggle.click(); }
+      });
+    }
+    // 자동값 다시 계산 (yearBudgets 변경 후 placeholder 갱신)
+    var calRefreshBtn = document.getElementById('cal-breakdown-refresh');
+    if (calRefreshBtn) calRefreshBtn.addEventListener('click', function () {
+      renderCalendarBreakdown();
+    });
+    // 전체 비우기 (모든 사용자 입력값 제거 → 자동 비례 전체 적용)
+    var calClearBtn = document.getElementById('cal-breakdown-clear');
+    if (calClearBtn) calClearBtn.addEventListener('click', function () {
+      renderCalendarBreakdown({});  // 빈 객체 = 모두 빈 칸
+    });
+
+    // yearBudget 행의 시작/종료/지원금이 바뀌면 캘린더 분배 + 입금 일정 그룹 헤더 자동 갱신
+    if (tbodyEl) {
+      tbodyEl.addEventListener('blur', function (e) {
+        if (e.target && e.target.matches && e.target.matches('.yb-start, .yb-end, .yb-support')) {
+          // 사용자가 입력한 값은 보존, placeholder/헤더만 갱신
+          if (calWrap && calWrap.classList.contains('expanded')) {
+            renderCalendarBreakdown();
+          }
+          renderPayments();
+        }
+      }, true);
+    }
 
     // 이전 책임자 추가 버튼
     var addManagerHistoryBtn = document.getElementById('add-manager-history-btn');
