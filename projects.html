@@ -31,26 +31,27 @@
     body.body-ready { display: block !important; }
     .projects-stats-grid {
       display: flex;
-      flex-wrap: wrap;
-      gap: 1rem;
+      flex-wrap: nowrap;
+      gap: 0.75rem;
       margin-bottom: 1.5rem;
     }
     .projects-stat-card {
-      flex: 1.4 1 160px;
-      min-width: 140px;
+      flex: 1.4 1 0;
+      min-width: 0;
       background: var(--card-bg);
       border: 1px solid var(--border-color);
       border-radius: 0.75rem;
-      padding: 1rem 1.25rem;
+      padding: 0.85rem 1rem;
       box-shadow: var(--shadow-sm);
+      overflow: hidden;
     }
     .projects-stat-card--narrow {
-      flex: 1 1 110px;
-      min-width: 100px;
+      flex: 1 1 0;
+      min-width: 0;
     }
     .projects-stat-card--ongoing {
-      flex: 1.6 1 200px;
-      min-width: 200px;
+      flex: 1.6 1 0;
+      min-width: 0;
     }
     .projects-stat-value.projects-stat--warning { color: #b45309; }
     .projects-stat-value.projects-stat--other { color: #65a30d; }
@@ -60,7 +61,7 @@
       margin-bottom: 0.35rem;
     }
     .projects-stat-value {
-      font-size: 1.5rem;
+      font-size: 1.25rem;
       font-weight: 700;
       color: var(--primary-color);
     }
@@ -203,7 +204,7 @@
     }
     .ongoing-sub--stack .ongoing-sub-item strong {
       margin-left: 0;
-      font-size: 1.05rem;
+      font-size: 0.9rem;
       font-weight: 700;
     }
     /* 입금 카드는 파란 톤 */
@@ -424,6 +425,132 @@
       font-weight: 500;
       color: var(--text-secondary);
     }
+    .division-card-sub {
+      font-size: 0.75rem;
+      color: var(--text-muted, #9ca3af);
+      font-weight: 400;
+      margin-left: 0.35rem;
+    }
+    .division-card-sub-line {
+      font-size: 0.75rem;
+      color: #9ca3af;
+      margin-bottom: 0.4rem;
+    }
+
+    /* 총 신규 제안 + 월별 차트 row */
+    .proposal-summary-row {
+      display: grid;
+      grid-template-columns: 240px 1fr;
+      gap: 1rem;
+      margin-bottom: 1rem;
+      align-items: stretch;
+    }
+    .proposal-summary-row .division-card,
+    .proposal-summary-row .monthly-proposal-section {
+      margin-bottom: 0;
+    }
+    /* row 안에서는 분류 pill 세로로 stack */
+    .proposal-summary-row .division-pills {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 0.35rem;
+    }
+    .proposal-summary-row .division-pill {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      width: 100%;
+      padding: 0.45rem 0.7rem;
+    }
+
+    /* 월별 신규 제안 섹션 */
+    .monthly-proposal-section {
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 0.75rem;
+      padding: 1rem 1.25rem 1.1rem;
+      box-shadow: var(--shadow-sm);
+      margin-bottom: 1rem;
+    }
+    .monthly-proposal-title {
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: #374151;
+      margin-bottom: 0.75rem;
+    }
+    .monthly-proposal-sub {
+      font-size: 0.72rem;
+      color: #9ca3af;
+      font-weight: 400;
+      margin-left: 0.25rem;
+    }
+    .monthly-chart-wrap {
+      position: relative;
+      height: 280px;
+      width: 100%;
+    }
+    .monthly-cards-grid {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 0.5rem;
+    }
+    .monthly-card {
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 0.45rem;
+      padding: 0.55rem 0.7rem 0.6rem;
+    }
+    .monthly-card--empty {
+      background: #fbfcfd;
+      border-color: #f1f5f9;
+    }
+    .monthly-card--empty .mp-total { color: #cbd5e1; }
+    .monthly-card--empty .mp-cum { color: #cbd5e1; }
+    .mp-label {
+      font-size: 0.72rem;
+      color: #6b7280;
+      font-weight: 500;
+      margin-bottom: 0.2rem;
+    }
+    .mp-total {
+      font-size: 1.15rem;
+      font-weight: 800;
+      color: #111827;
+      line-height: 1.1;
+    }
+    .mp-unit {
+      font-size: 0.72rem;
+      font-weight: 500;
+      color: #6b7280;
+      margin-left: 0.15rem;
+    }
+    .mp-by-row {
+      margin-top: 0.4rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.25rem;
+    }
+    .mp-by {
+      font-size: 0.7rem;
+      padding: 0.08rem 0.4rem;
+      border-radius: 0.25rem;
+      background: white;
+      border: 1px solid #e5e7eb;
+      color: #6b7280;
+      line-height: 1.4;
+    }
+    .mp-by-과제 { background: #eff6ff; color: #1e40af; border-color: #bfdbfe; }
+    .mp-by-지원사업 { background: #ecfdf5; color: #047857; border-color: #a7f3d0; }
+    .mp-by-용역 { background: #fff7ed; color: #c2410c; border-color: #fed7aa; }
+    .mp-by-기타 { background: #f3f4f6; color: #4b5563; border-color: #d1d5db; }
+    .mp-cum {
+      margin-top: 0.45rem;
+      padding-top: 0.4rem;
+      border-top: 1px dashed #e5e7eb;
+      font-size: 0.7rem;
+      color: #6b7280;
+    }
+    .mp-cum-value { font-weight: 600; color: #374151; }
     .division-card-divider {
       height: 1px;
       background: var(--border-color);
@@ -474,7 +601,15 @@
       margin: 0.75rem 1rem;
       opacity: 0.7;
     }
+
+    /* 페이지 전체 너비 고정 — 화면 크기와 무관 */
+    .container {
+      width: 1400px;
+      margin: 0 auto;
+    }
   </style>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
 </head>
 <body>
   <script>
@@ -520,33 +655,45 @@
           <span class="section-footnote" id="project-filter-hint">리스트: 전체 / 통계: 2026년 기준</span>
           <div id="project-active-filters" class="projects-active-filters" aria-live="polite"></div>
         </div>
-        <!-- 총 제안 + 분류 카드 -->
-        <section class="division-card" aria-label="총 제안 + 분류">
-          <div class="division-card-header" id="division-clear-trigger" role="button" tabindex="0" title="분류 필터 해제">
-            <span class="division-card-label">총 제안</span>
-            <span class="division-card-value" id="stat-total">0</span>
-            <span class="division-card-unit">건</span>
-          </div>
-          <div class="division-card-divider"></div>
-          <div class="division-pills" id="division-pills" role="group" aria-label="구분 1 분류 필터">
-            <button type="button" class="division-pill" data-division="과제">
-              <span>과제</span>
-              <span class="division-pill-count" id="stat-div-과제">0</span>
-            </button>
-            <button type="button" class="division-pill" data-division="지원사업">
-              <span>지원사업</span>
-              <span class="division-pill-count" id="stat-div-지원사업">0</span>
-            </button>
-            <button type="button" class="division-pill" data-division="용역">
-              <span>용역</span>
-              <span class="division-pill-count" id="stat-div-용역">0</span>
-            </button>
-            <button type="button" class="division-pill" data-division="기타">
-              <span>기타</span>
-              <span class="division-pill-count" id="stat-div-기타">0</span>
-            </button>
-          </div>
-        </section>
+        <!-- 총 신규 제안 + 월별 차트 (한 줄 row) -->
+        <div class="proposal-summary-row">
+          <!-- 총 신규 제안 + 분류 카드 -->
+          <section class="division-card" aria-label="총 제안 + 분류">
+            <div class="division-card-header" id="division-clear-trigger" role="button" tabindex="0" title="분류 필터 해제">
+              <span class="division-card-label">총 신규 제안</span>
+              <span class="division-card-value" id="stat-total">0</span>
+              <span class="division-card-unit">건</span>
+            </div>
+            <div class="division-card-sub-line">(제출일 기준)</div>
+            <div class="division-card-divider"></div>
+            <div class="division-pills" id="division-pills" role="group" aria-label="구분 1 분류 필터">
+              <button type="button" class="division-pill" data-division="과제">
+                <span>과제</span>
+                <span class="division-pill-count" id="stat-div-과제">0</span>
+              </button>
+              <button type="button" class="division-pill" data-division="지원사업">
+                <span>지원사업</span>
+                <span class="division-pill-count" id="stat-div-지원사업">0</span>
+              </button>
+              <button type="button" class="division-pill" data-division="용역">
+                <span>용역</span>
+                <span class="division-pill-count" id="stat-div-용역">0</span>
+              </button>
+              <button type="button" class="division-pill" data-division="기타">
+                <span>기타</span>
+                <span class="division-pill-count" id="stat-div-기타">0</span>
+              </button>
+            </div>
+          </section>
+
+          <!-- 월별 신규 제안 차트 -->
+          <section class="monthly-proposal-section" id="monthly-proposal-section" aria-label="월별 신규 제안">
+            <div class="monthly-proposal-title">월별 신규 제안 <span class="monthly-proposal-sub">(제출일 기준)</span></div>
+            <div class="monthly-chart-wrap">
+              <canvas id="monthly-proposal-chart" aria-label="월별 신규 제안 그래프"></canvas>
+            </div>
+          </section>
+        </div>
 
         <section class="projects-stats-grid" aria-label="성과 대시보드">
           <!-- 대기 카드 (좁음) -->

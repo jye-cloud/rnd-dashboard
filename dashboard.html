@@ -71,9 +71,6 @@
       grid-template-columns: repeat(3, 1fr);
       gap: 1.25rem;
     }
-    @media (max-width: 1100px) {
-      .dash-hero-grid { grid-template-columns: 1fr; }
-    }
 
     .hero-panel {
       border-radius: 1rem;
@@ -300,9 +297,6 @@
       gap: 1.25rem;
       margin-bottom: 1.5rem;
     }
-    @media (max-width: 1024px) {
-      .dash-row { grid-template-columns: 1fr; }
-    }
     .dash-card {
       background: var(--card-bg);
       border: 1px solid var(--border-color);
@@ -464,6 +458,103 @@
       opacity: 0.7;
     }
   </style>
+  <style>
+    /* 총 신규 제안 + 월별 차트 row */
+    .proposal-summary-row {
+      display: grid;
+      grid-template-columns: 240px 1fr;
+      gap: 1rem;
+      margin-bottom: 1rem;
+      align-items: stretch;
+    }
+    .proposal-summary-row .division-card,
+    .proposal-summary-row .monthly-proposal-section {
+      background: #ffffff;
+      border: 1px solid #e5e7eb;
+      border-radius: 0.75rem;
+      padding: 1.25rem 1.5rem;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+    }
+    .proposal-summary-row .division-card-header {
+      display: flex;
+      align-items: baseline;
+      gap: 0.6rem;
+      margin-bottom: 0.2rem;
+    }
+    .proposal-summary-row .division-card-label {
+      font-size: 0.85rem;
+      color: #6b7280;
+      font-weight: 500;
+    }
+    .proposal-summary-row .division-card-value {
+      font-size: 1.85rem;
+      font-weight: 800;
+      color: #1d4ed8;
+      line-height: 1;
+      letter-spacing: -0.02em;
+    }
+    .proposal-summary-row .division-card-unit {
+      font-size: 0.95rem;
+      font-weight: 500;
+      color: #6b7280;
+    }
+    .proposal-summary-row .division-card-sub-line {
+      font-size: 0.75rem;
+      color: #9ca3af;
+      margin-bottom: 0.6rem;
+    }
+    .proposal-summary-row .division-card-divider {
+      height: 1px;
+      background: #e5e7eb;
+      margin: 0.5rem 0 0.85rem;
+    }
+    .proposal-summary-row .division-pills {
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+    }
+    .proposal-summary-row .division-pill {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      width: 100%;
+      padding: 0.45rem 0.7rem;
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 999px;
+      font-size: 0.85rem;
+      color: #374151;
+    }
+    .proposal-summary-row .division-pill-count {
+      font-weight: 700;
+      color: #111827;
+    }
+    .proposal-summary-row .monthly-proposal-title {
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: #374151;
+      margin-bottom: 0.75rem;
+    }
+    .proposal-summary-row .monthly-proposal-sub {
+      font-size: 0.72rem;
+      color: #9ca3af;
+      font-weight: 400;
+      margin-left: 0.25rem;
+    }
+    .proposal-summary-row .monthly-chart-wrap {
+      position: relative;
+      height: 280px;
+      width: 100%;
+    }
+
+    /* 페이지 전체 너비 고정 — 화면 크기와 무관 */
+    .container {
+      width: 1400px;
+      margin: 0 auto;
+    }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
 </head>
 <body>
   <script>
@@ -599,6 +690,44 @@
 
           </div>
         </section>
+
+        <!-- 총 신규 제안 + 월별 차트 (한 줄 row) -->
+        <div class="proposal-summary-row">
+          <section class="division-card" aria-label="총 신규 제안 + 분류">
+            <div class="division-card-header">
+              <span class="division-card-label">총 신규 제안</span>
+              <span class="division-card-value" id="dash-stat-total">0</span>
+              <span class="division-card-unit">건</span>
+            </div>
+            <div class="division-card-sub-line">(제출일 기준)</div>
+            <div class="division-card-divider"></div>
+            <div class="division-pills">
+              <div class="division-pill" data-division="과제">
+                <span>과제</span>
+                <span class="division-pill-count" id="dash-stat-div-과제">0</span>
+              </div>
+              <div class="division-pill" data-division="지원사업">
+                <span>지원사업</span>
+                <span class="division-pill-count" id="dash-stat-div-지원사업">0</span>
+              </div>
+              <div class="division-pill" data-division="용역">
+                <span>용역</span>
+                <span class="division-pill-count" id="dash-stat-div-용역">0</span>
+              </div>
+              <div class="division-pill" data-division="기타">
+                <span>기타</span>
+                <span class="division-pill-count" id="dash-stat-div-기타">0</span>
+              </div>
+            </div>
+          </section>
+
+          <section class="monthly-proposal-section">
+            <div class="monthly-proposal-title">월별 신규 제안 <span class="monthly-proposal-sub">(제출일 기준)</span></div>
+            <div class="monthly-chart-wrap">
+              <canvas id="dash-monthly-proposal-chart" aria-label="월별 신규 제안 그래프"></canvas>
+            </div>
+          </section>
+        </div>
 
         <!-- Charts row -->
         <div class="dash-row">

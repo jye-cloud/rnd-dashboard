@@ -64,7 +64,12 @@
     var y = String(year);
     var start = (it.startDate || it.start || '').toString().slice(0, 10);
     var end = (it.endDate || it.end || '').toString().slice(0, 10);
-    if (!start && !end) return true;
+    // 시작일/종료일 둘 다 없으면 — 제출일로 매칭 (미선정/대기/선정기타 등 시작 안 한 과제)
+    if (!start && !end) {
+      var submitDate = (it.submitDate || it['제출일'] || '').toString().slice(0, 10);
+      if (!submitDate) return false;  // 제출일도 없으면 매칭 안 함
+      return submitDate.slice(0, 4) === y;
+    }
     var yearStart = y + '-01-01';
     var yearEnd = y + '-12-31';
     if (start && start > yearEnd) return false;
@@ -73,30 +78,55 @@
   }
 
   function normalizeStatus(it) {
+    return statusAsOf(it, null);  // null = 오늘 기준
+  }
+
+  /**
+   * 주어진 시점 기준 status 판정
+   * @param {Object} it - 과제
+   * @param {string|null} asOfDate - 'YYYY-MM-DD' 또는 null (null이면 오늘)
+   */
+  function statusAsOf(it, asOfDate) {
     var raw = (it.status || it['진행 여부'] || '').toString().trim();
     var n = raw.replace(/\s/g, '');
 
-    var today = new Date();
-    var todayStr = today.getFullYear() + '-' +
-      String(today.getMonth() + 1).padStart(2, '0') + '-' +
-      String(today.getDate()).padStart(2, '0');
+    if (!asOfDate) {
+      var today = new Date();
+      asOfDate = today.getFullYear() + '-' +
+        String(today.getMonth() + 1).padStart(2, '0') + '-' +
+        String(today.getDate()).padStart(2, '0');
+    }
 
-    // "수행" + 종료일 지남 → "종료"
-    if (n === '수행중' || n === '수행') {
+    // "수행" 또는 "종료" + 종료일이 asOfDate 이전 → "종료", 이후 → "수행"
+    if (n === '수행중' || n === '수행' || raw === '종료') {
       var endDate = (it.endDate || it.end || it['종료일'] || '').toString().slice(0, 10);
-      if (endDate && todayStr > endDate) return '종료';
+      if (endDate && asOfDate > endDate) return '종료';
       return '수행';
     }
 
-    // "예정" + 제출일 지남 → "대기"
+    // "예정" + 제출일이 asOfDate 이전 → "대기"
     if (raw === '예정') {
       var submitDate = (it.submitDate || it['제출일'] || '').toString().slice(0, 10);
-      if (submitDate && todayStr > submitDate) return '대기';
+      if (submitDate && asOfDate > submitDate) return '대기';
       return '예정';
     }
 
     if (raw === '대기' || raw === '종료' || raw === '미선정' || raw === '미제출') return raw;
     return raw || '미정';
+  }
+
+  /**
+   * statsYear 기준 status 판정용 asOfDate
+   *  - 과거 연도: 그 해 마지막 날 (예: 2024 → '2024-12-31')
+   *  - 현재/미래 연도: 오늘로 cap (그래야 종료일이 미래면 '종료'로 잡히지 않음)
+   */
+  function yearEndDate(year) {
+    var today = new Date();
+    var todayStr = today.getFullYear() + '-' +
+      String(today.getMonth() + 1).padStart(2, '0') + '-' +
+      String(today.getDate()).padStart(2, '0');
+    var yearEnd = String(year) + '-12-31';
+    return yearEnd > todayStr ? todayStr : yearEnd;
   }
 
   /**
@@ -184,9 +214,10 @@
     var yearSupport = 0, yearCash = 0, yearInKind = 0;
     var totalSum = 0;
     var cutoff = year + '-01-01';
+    var asOfDate = yearEndDate(year);  // 그 연도 시점 기준 status
 
     filtered.forEach(function (it) {
-      var status = normalizeStatus(it);
+      var status = statusAsOf(it, asOfDate);
       var start = (it.startDate || it.start || '').toString().slice(0, 10);
 
       if (status === '수행') {
@@ -393,8 +424,9 @@
     var empty = document.getElementById('recent-empty');
     if (!table || !tbody || !empty) return;
 
+    var asOfDate = yearEndDate(year);
     var ongoing = items.filter(function (it) {
-      return normalizeStatus(it) === '수행' && projectOverlapsYear(it, year);
+      return statusAsOf(it, asOfDate) === '수행' && projectOverlapsYear(it, year);
     });
     ongoing.sort(function (a, b) {
       var sa = (a.startDate || a.start || '').toString();
@@ -464,6 +496,121 @@
     var latestItems = [];
     var currentYear = DEFAULT_YEAR;
 
+    // 월별 신규 제안 차트 (총 신규 제안 카드 + 분류 pill + 스택 막대 + 누적 라인)
+    var monthlyChart = null;
+    var datalabelsRegistered = false;
+
+    function renderMonthlyProposalCard(items, year) {
+      items = Array.isArray(items) ? items : [];
+      var yearStr = String(year);
+
+      // B 기준 — 제출일이 그 연도
+      var submitYearItems = items.filter(function (it) {
+        var sd = (it.submitDate || it['제출일'] || '').toString().slice(0, 10);
+        return sd.slice(0, 4) === yearStr;
+      });
+
+      // 총 신규 제안 + 분류 카운트
+      setText('dash-stat-total', submitYearItems.length);
+      var divCounts = { '과제': 0, '지원사업': 0, '용역': 0, '기타': 0 };
+      submitYearItems.forEach(function (it) {
+        var d = (it.division1 || it['구분1'] || '').toString();
+        if (divCounts.hasOwnProperty(d)) divCounts[d]++;
+      });
+      Object.keys(divCounts).forEach(function (d) {
+        setText('dash-stat-div-' + d, divCounts[d]);
+      });
+
+      // 차트
+      var canvas = document.getElementById('dash-monthly-proposal-chart');
+      if (!canvas || typeof Chart === 'undefined') return;
+
+      if (!datalabelsRegistered && typeof ChartDataLabels !== 'undefined') {
+        Chart.register(ChartDataLabels);
+        datalabelsRegistered = true;
+      }
+
+      var byType = {
+        '과제':     new Array(12).fill(0),
+        '지원사업': new Array(12).fill(0),
+        '용역':     new Array(12).fill(0),
+        '기타':     new Array(12).fill(0)
+      };
+      submitYearItems.forEach(function (it) {
+        var sd = (it.submitDate || it['제출일'] || '').toString();
+        if (!sd) return;
+        var mo = parseInt(sd.slice(5, 7), 10);
+        if (isNaN(mo) || mo < 1 || mo > 12) return;
+        var d = (it.division1 || it['구분1'] || '기타').toString();
+        if (byType.hasOwnProperty(d)) byType[d][mo - 1] += 1;
+      });
+
+      var cumulative = new Array(12).fill(0);
+      var cum = 0;
+      for (var i = 0; i < 12; i++) {
+        cum += byType['과제'][i] + byType['지원사업'][i] + byType['용역'][i] + byType['기타'][i];
+        cumulative[i] = cum;
+      }
+
+      if (monthlyChart) {
+        try { monthlyChart.destroy(); } catch (e) {}
+      }
+
+      var barDatalabels = {
+        color: '#374151',
+        font: { weight: '700', size: 10 },
+        formatter: function (v) { return v > 0 ? v : ''; }
+      };
+
+      monthlyChart = new Chart(canvas.getContext('2d'), {
+        type: 'bar',
+        data: {
+          labels: ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'],
+          datasets: [
+            { label: '과제',     data: byType['과제'],     backgroundColor: '#93c5fd', borderColor: '#60a5fa', borderWidth: 1, stack: 'monthly', order: 2, datalabels: barDatalabels },
+            { label: '지원사업', data: byType['지원사업'], backgroundColor: '#6ee7b7', borderColor: '#34d399', borderWidth: 1, stack: 'monthly', order: 2, datalabels: barDatalabels },
+            { label: '용역',     data: byType['용역'],     backgroundColor: '#fdba74', borderColor: '#fb923c', borderWidth: 1, stack: 'monthly', order: 2, datalabels: barDatalabels },
+            { label: '기타',     data: byType['기타'],     backgroundColor: '#cbd5e1', borderColor: '#94a3b8', borderWidth: 1, stack: 'monthly', order: 2, datalabels: barDatalabels },
+            {
+              type: 'line', label: '누적', data: cumulative,
+              borderColor: '#1d4ed8', backgroundColor: 'rgba(29, 78, 216, 0.08)',
+              tension: 0.25, pointBackgroundColor: '#1d4ed8',
+              pointRadius: 4, pointHoverRadius: 6, borderWidth: 2.5,
+              fill: false, order: 1,
+              datalabels: {
+                anchor: 'end', align: 'top', offset: 4,
+                color: '#1d4ed8', font: { weight: '700', size: 11 },
+                formatter: function (v, ctx) {
+                  var idx = ctx.dataIndex;
+                  if (idx === 0) return v;
+                  var prev = ctx.dataset.data[idx - 1];
+                  return v !== prev ? v : '';
+                }
+              }
+            }
+          ]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          layout: { padding: { top: 16 } },
+          scales: {
+            x: { stacked: true, grid: { display: false } },
+            y: { stacked: true, beginAtZero: true, ticks: { precision: 0, stepSize: 1 }, grid: { color: '#f3f4f6' } }
+          },
+          plugins: {
+            legend: {
+              position: 'bottom',
+              labels: { boxWidth: 14, boxHeight: 14, padding: 12, font: { size: 12 } }
+            },
+            tooltip: {
+              callbacks: { label: function (ctx) { return ctx.dataset.label + ': ' + ctx.parsed.y + '건'; } }
+            }
+          }
+        }
+      });
+    }
+
     function rerender() {
       var kpis = computeKPIs(latestItems, currentYear);
       renderPills(kpis, currentYear);
@@ -471,6 +618,7 @@
       renderAlerts(latestItems, currentYear, kpis);
       renderDonut(kpis, currentYear);
       renderRecent(latestItems, currentYear);
+      renderMonthlyProposalCard(latestItems, currentYear);
 
       var meta = document.getElementById('dash-meta');
       if (meta) meta.textContent = currentYear + '년 R&D 과제 통합 현황';

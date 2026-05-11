@@ -523,8 +523,15 @@
     // 입력 시 천단위 콤마 (blur) + 합계 검증
     container.querySelectorAll('input.cal-budget-input').forEach(function (inp) {
       inp.addEventListener('blur', function () {
-        var n = parseNum(inp.value);
-        inp.value = n > 0 ? formatNum(n) : '';
+        var raw = (inp.value || '').trim();
+        if (raw === '') {
+          // 빈 칸은 그대로 유지 (자동 비례 의미)
+          inp.value = '';
+        } else {
+          // 숫자 입력 (0 포함) → 명시적 값으로 유지
+          var n = parseNum(inp.value);
+          inp.value = formatNum(n);
+        }
         // 이 input이 속한 그룹의 합계 갱신
         var groupEl = inp.closest('.cal-breakdown-group');
         updateBreakdownSum(groupEl);
@@ -566,7 +573,9 @@
   function migratePayments(yb) {
     var planned = Array.isArray(yb.plannedPayments) ? yb.plannedPayments.slice() : [];
     var actual = Array.isArray(yb.actualPayments) ? yb.actualPayments.slice() : [];
-    if (Array.isArray(yb.payments)) {
+    // 새 구조에 이미 데이터가 있으면 옛 payments는 무시 (중복 방지)
+    // 둘 다 비어있을 때만 옛 payments에서 마이그레이션
+    if (planned.length === 0 && actual.length === 0 && Array.isArray(yb.payments)) {
       yb.payments.forEach(function (p) {
         if (p.plannedDate || (p.plannedAmount && p.plannedAmount > 0)) {
           planned.push({
@@ -1064,10 +1073,16 @@
         actualMsgEl.innerHTML = '';
       } else if (plannedSum > 0) {
         var remain = plannedSum - actualSum;
-        if (remain <= 0) {
+        if (remain === 0) {
+          // 정확히 일치
           actualMsgEl.className = 'payment-sum-msg actual-sum-msg payment-sum-ok';
           actualMsgEl.innerHTML = '✓ 실제 수령 ' + formatNum(actualSum) + '원 (전액 수령 완료)';
+        } else if (remain < 0) {
+          // 실제 > 예정 (초과) — 경고
+          actualMsgEl.className = 'payment-sum-msg actual-sum-msg payment-sum-error';
+          actualMsgEl.innerHTML = '⚠️ 실제 수령 ' + formatNum(actualSum) + '원이 예정 ' + formatNum(plannedSum) + '원보다 ' + formatNum(-remain) + '원 많습니다';
         } else {
+          // 잔액 있음
           actualMsgEl.className = 'payment-sum-msg actual-sum-msg';
           actualMsgEl.innerHTML = '실제 수령 ' + formatNum(actualSum) + '원 · 잔액 ' + formatNum(remain) + '원';
         }
