@@ -133,6 +133,14 @@
       color: var(--text-primary);
       white-space: nowrap;
     }
+    .projects-table tbody td {
+      white-space: nowrap;
+    }
+    /* 단, 긴 텍스트가 들어가는 컬럼은 wrap 허용 (max-width로 길이 제한 + 줄바꿈 허용) */
+    .projects-table tbody td.cell-wrap {
+      white-space: normal;
+      max-width: 320px;
+    }
     .projects-table tbody tr {
       cursor: default;
       transition: background 0.15s;
@@ -141,9 +149,18 @@
       background: #f8fafc;
     }
     .projects-table .project-edit-btn {
-      font-size: 0.75rem;
-      padding: 0.25rem 0.5rem;
+      font-size: 0.7rem !important;
+      padding: 0.1rem 0.4rem !important;
       cursor: pointer;
+      line-height: 1.4 !important;
+      min-width: 0 !important;
+    }
+    /* "수정" 컬럼 — 글자만 들어가는 minimal 너비 */
+    .projects-table thead th:last-child,
+    .projects-table tbody td:last-child {
+      padding-left: 0.35rem !important;
+      padding-right: 0.35rem !important;
+      text-align: center !important;
     }
     .projects-badge { display: inline-block; padding: 0.2rem 0.5rem; border-radius: 0.35rem; font-size: 0.75rem; font-weight: 600; }
     .projects-badge--rd { background: #dbeafe; color: #1d4ed8; margin-right: 0.25rem; }
@@ -185,27 +202,32 @@
       font-size: 1rem;
       margin-left: 0.25rem;
     }
-    /* 두 줄 레이아웃 (라벨 위, 큰 값 아래) — 수주/입금 카드용 */
+    /* 라벨/값을 한 줄에 양쪽 정렬, 두 sub-item(계속/신규 등)은 세로로 stack — 큰 숫자가 잘리지 않도록 */
     .ongoing-sub--stack {
       display: flex;
-      gap: 1.2rem;
+      flex-direction: column;
+      gap: 0.3rem;
       align-items: stretch;
     }
     .ongoing-sub--stack .ongoing-sub-item {
       display: flex;
-      flex-direction: column;
-      align-items: flex-start;
-      gap: 0.15rem;
-      flex: 1;
+      flex-direction: row;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 0.5rem;
+      flex: 0 0 auto;
+      padding: 0.15rem 0.4rem;
     }
     .ongoing-sub--stack .ongoing-sub-label {
       font-size: 0.75rem;
       color: #6b7280;
+      white-space: nowrap;
     }
     .ongoing-sub--stack .ongoing-sub-item strong {
       margin-left: 0;
       font-size: 0.9rem;
       font-weight: 700;
+      white-space: nowrap;
     }
     /* 입금 카드는 파란 톤 */
     .ongoing-sub--blue .ongoing-sub-item strong { color: #1d4ed8; }
@@ -831,7 +853,7 @@
                 <th class="col-opt" data-col="지원금당해">당해 입금</th>
                 <th class="col-opt" data-col="지원금총">당해 수주</th>
                 <th class="col-opt" data-col="비고">비고</th>
-                <th style="width:60px">수정</th>
+                <th style="width:40px">수정</th>
               </tr>
             </thead>
             <tbody id="projects-tbody"></tbody>
