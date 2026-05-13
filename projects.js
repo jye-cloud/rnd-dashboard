@@ -64,6 +64,16 @@
     return 'projects-badge--end';
   }
 
+  // 유형(division1) 배지 클래스 — 차트 색상과 통일
+  function getTypeBadgeClass(type) {
+    var s = (type || '').trim();
+    if (s === '과제') return 'projects-badge--type-task';
+    if (s === '지원사업') return 'projects-badge--type-grant';
+    if (s === '용역') return 'projects-badge--type-service';
+    if (s === '기타') return 'projects-badge--type-other';
+    return '';
+  }
+
   // 진행 여부 정규화 — 자동 전환 포함
   // 저장된 데이터의 status는 그대로 두고, 표시할 때만 변환:
   //   - "예정" + 제출일 지남 → "대기"
@@ -514,8 +524,12 @@
       var start = (it.startDate || it.start || '').toString().slice(0, 10);
       var end = (it.endDate || it.end || '').toString().slice(0, 10);
 
-      // 유형: division1 (과제/지원사업/용역/기타) — 입력값 그대로
+      // 유형: division1 (과제/지원사업/용역/기타) — 색상 배지
       var typeText = (it.division1 || it['구분1'] || '').toString() || '-';
+      var typeBadgeClass = getTypeBadgeClass(typeText);
+      var typeCellHtml = typeBadgeClass
+        ? '<span class="projects-badge ' + typeBadgeClass + '">' + escapeHtml(typeText) + '</span>'
+        : escapeHtml(typeText);
 
       // 진행 여부: filterYear 시점 status (선택 연도 시점 기준), 전체 모드면 오늘 기준
       var statusAsOfDate = filterYear ? yearEndDate(filterYear) : null;
@@ -539,7 +553,7 @@
       var submitDate = (it.submitDate || it['제출일'] || '').toString().slice(0, 10);
       var cells = [
         '<td>' + escapeHtml(no) + '</td>',
-        '<td>' + escapeHtml(typeText) + '</td>',
+        '<td>' + typeCellHtml + '</td>',
         '<td><span class="projects-badge ' + badgeClass + '">' + escapeHtml(statusDisplay) + '</span></td>',
         '<td>' + escapeHtml(submitDate || '-') + '</td>',
         '<td>' + getKeywordHtml(it) + '</td>',
@@ -869,7 +883,7 @@
     var datalabelsRegistered = false;
 
     /**
-     * 월별 신규 제안 차트 — 스택 막대(유형별 파스텔) + 누적 라인 + 데이터 라벨
+     * 월별 신규 제안 차트 — 스택 막대(유형별 파스텔) + 월별 총합 라인 + 데이터 라벨
      */
     function renderMonthlyProposalChart(items, filterYear) {
       var canvas = document.getElementById('monthly-proposal-chart');
@@ -898,12 +912,10 @@
         if (byType.hasOwnProperty(d)) byType[d][mo - 1] += 1;
       });
 
-      // 누적
-      var cumulative = new Array(12).fill(0);
-      var cum = 0;
+      // 월별 총합 (유형별 막대 합계)
+      var monthlyTotal = new Array(12).fill(0);
       for (var i = 0; i < 12; i++) {
-        cum += byType['과제'][i] + byType['지원사업'][i] + byType['용역'][i] + byType['기타'][i];
-        cumulative[i] = cum;
+        monthlyTotal[i] = byType['과제'][i] + byType['지원사업'][i] + byType['용역'][i] + byType['기타'][i];
       }
 
       if (monthlyChart) {
@@ -922,36 +934,30 @@
         data: {
           labels: ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'],
           datasets: [
-            { label: '과제',     data: byType['과제'],     backgroundColor: '#93c5fd', borderColor: '#60a5fa', borderWidth: 1, stack: 'monthly', order: 2, datalabels: barDatalabels },
-            { label: '지원사업', data: byType['지원사업'], backgroundColor: '#6ee7b7', borderColor: '#34d399', borderWidth: 1, stack: 'monthly', order: 2, datalabels: barDatalabels },
-            { label: '용역',     data: byType['용역'],     backgroundColor: '#fdba74', borderColor: '#fb923c', borderWidth: 1, stack: 'monthly', order: 2, datalabels: barDatalabels },
-            { label: '기타',     data: byType['기타'],     backgroundColor: '#cbd5e1', borderColor: '#94a3b8', borderWidth: 1, stack: 'monthly', order: 2, datalabels: barDatalabels },
+            { label: '과제',     data: byType['과제'],     backgroundColor: '#dbeafe', borderColor: '#bfdbfe', borderWidth: 1, stack: 'monthly', order: 2, datalabels: barDatalabels },
+            { label: '지원사업', data: byType['지원사업'], backgroundColor: '#d1fae5', borderColor: '#a7f3d0', borderWidth: 1, stack: 'monthly', order: 2, datalabels: barDatalabels },
+            { label: '용역',     data: byType['용역'],     backgroundColor: '#ffedd5', borderColor: '#fed7aa', borderWidth: 1, stack: 'monthly', order: 2, datalabels: barDatalabels },
+            { label: '기타',     data: byType['기타'],     backgroundColor: '#f3f4f6', borderColor: '#e5e7eb', borderWidth: 1, stack: 'monthly', order: 2, datalabels: barDatalabels },
             {
               type: 'line',
-              label: '누적',
-              data: cumulative,
+              label: '월별 총합',
+              data: monthlyTotal,
               borderColor: '#1d4ed8',
               backgroundColor: 'rgba(29, 78, 216, 0.08)',
-              tension: 0.25,
+              tension: 0,
               pointBackgroundColor: '#1d4ed8',
-              pointRadius: 4,
-              pointHoverRadius: 6,
-              borderWidth: 2.5,
+              pointRadius: 3,
+              pointHoverRadius: 5,
+              borderWidth: 1.8,
               fill: false,
-              order: 1,
+              order: 0,
               datalabels: {
                 anchor: 'end',
                 align: 'top',
                 offset: 4,
                 color: '#1d4ed8',
                 font: { weight: '700', size: 11 },
-                formatter: function (v, ctx) {
-                  // 이전 값과 같으면 표시 안 함 (변동 있을 때만)
-                  var idx = ctx.dataIndex;
-                  if (idx === 0) return v;
-                  var prev = ctx.dataset.data[idx - 1];
-                  return v !== prev ? v : '';
-                }
+                formatter: function (v) { return v > 0 ? v : ''; }
               }
             }
           ]
@@ -960,7 +966,7 @@
           responsive: true,
           maintainAspectRatio: false,
           interaction: { mode: 'index', intersect: false },
-          layout: { padding: { top: 16 } },
+          layout: { padding: { top: 28 } },
           scales: {
             x: { stacked: true, grid: { display: false } },
             y: { stacked: true, beginAtZero: true, ticks: { precision: 0, stepSize: 1 }, grid: { color: '#f3f4f6' } }

@@ -154,6 +154,79 @@
       color: var(--text-secondary);
       font-weight: 500;
     }
+    /* 카드 색상 도트 — 카테고리별 시각 구분 */
+    .pill-stat-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .pill-stat-dot--waiting    { background: #f59e0b; }
+    .pill-stat-dot--continue   { background: #10b981; }
+    .pill-stat-dot--new        { background: #14b8a6; }
+    .pill-stat-dot--ended      { background: #6b7280; }
+    .pill-stat-dot--other      { background: #84cc16; }
+    .pill-stat-dot--unselected { background: #ef4444; }
+
+    /* Status cards (Panel 1 — 6칸 한 줄 그리드, divider+section-title 아래) */
+    .status-cards-row {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 0.35rem;
+      align-content: start;
+    }
+    .status-card {
+      background: rgba(255, 255, 255, 0.85);
+      border: 1px solid rgba(148, 163, 184, 0.3);
+      border-radius: 0.5rem;
+      padding: 0.55rem 0.3rem 0.6rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      text-align: center;
+      gap: 0.5rem;
+      cursor: pointer;
+      transition: all 0.18s ease;
+      font-family: inherit;
+    }
+    .status-card:hover {
+      background: #fff;
+      border-color: var(--primary-color, #2563eb);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(37, 99, 235, 0.1);
+    }
+    .status-card-header {
+      font-size: 0.72rem;
+      color: var(--text-secondary);
+      font-weight: 600;
+      line-height: 1.3;
+      word-break: keep-all;
+      display: block;
+      /* 두 줄 분량 공간 강제 — 한 줄 라벨도 두 줄 자리 차지, 숫자 높이 일치 */
+      min-height: calc(0.72rem * 1.3 * 2);
+    }
+    .status-card-dot {
+      display: inline-block;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      margin-right: 0.25rem;
+      vertical-align: middle;
+    }
+    .status-card-dot--waiting    { background: #f59e0b; }
+    .status-card-dot--continue   { background: #10b981; }
+    .status-card-dot--new        { background: #14b8a6; }
+    .status-card-dot--ended      { background: #6b7280; }
+    .status-card-dot--other      { background: #84cc16; }
+    .status-card-dot--unselected { background: #ef4444; }
+    .status-card-value {
+      font-size: 1.2rem;
+      font-weight: 800;
+      color: #475569;
+      line-height: 1;
+      letter-spacing: -0.02em;
+    }
 
     /* Big stats (panel 2) */
     .big-stats {
@@ -162,6 +235,17 @@
       gap: 0.75rem;
       text-align: center;
       margin-bottom: 0.5rem;
+    }
+    .big-stats--single { grid-template-columns: 1fr; }
+    .big-stats--triple {
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 0.5rem;  /* 3칸은 더 좁아서 gap 줄임 */
+    }
+    .big-stats--triple .big-stat-num {
+      font-size: 1.9rem;  /* 3칸은 폰트 약간 줄임 */
+    }
+    .big-stats--triple .big-stat-label {
+      word-break: keep-all;  /* "입금 예정 지원금" 등 wrap 허용 */
     }
     .big-stat-num {
       font-size: 2.1rem;
@@ -182,6 +266,7 @@
       font-weight: 500;
     }
     .big-stat-num--neutral { color: #475569; }
+    .big-stat-num--soft    { color: #94a3b8; }
 
     .panel-divider {
       height: 1px;
@@ -193,6 +278,12 @@
       font-weight: 700;
       color: var(--text-primary);
       margin: 0 0 0.65rem;
+    }
+    /* blue 패널(0000년 현황) 섹션 제목만 톤다운 — 안내 텍스트 느낌 */
+    .hero-panel--blue .panel-section-title {
+      font-size: 0.82rem;
+      font-weight: 500;
+      color: var(--text-secondary);
     }
 
     /* Mini bars (panel 2) */
@@ -319,6 +410,11 @@
       align-items: center;
       gap: 0.4rem;
     }
+    .dash-card-subtitle {
+      font-size: 0.78rem;
+      font-weight: 500;
+      color: #94a3b8;
+    }
     .dash-card-meta {
       font-size: 0.75rem;
       color: var(--text-secondary);
@@ -354,7 +450,7 @@
     .donut-center-num {
       font-size: 1.85rem;
       font-weight: 800;
-      color: var(--text-primary);
+      color: #475569;
       line-height: 1;
       letter-spacing: -0.02em;
     }
@@ -387,11 +483,18 @@
       flex-shrink: 0;
     }
     .donut-legend-label { flex: 1; color: var(--text-primary); }
-    .donut-legend-count { font-weight: 700; color: var(--text-primary); }
+    .donut-legend-count {
+      font-weight: 700;
+      color: var(--text-primary);
+      min-width: 1.5em;
+      text-align: right;
+    }
     .donut-legend-pct {
       font-size: 0.72rem;
       color: var(--text-secondary);
       margin-left: 0.35rem;
+      min-width: 3.2em;
+      text-align: right;
     }
 
     /* Recent ongoing list (table-style, matching projects-table) */
@@ -421,18 +524,36 @@
     }
     .recent-table tbody tr:hover { background: #f8fafc; }
     .recent-table tbody tr:last-child td { border-bottom: none; }
+    .recent-keyword {
+      font-weight: 500;
+      color: #475569;
+      max-width: 120px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 0.88rem;
+    }
     .recent-name {
       font-weight: 500;
-      color: var(--text-primary);
+      color: #475569;
       max-width: 280px;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
+    .recent-org {
+      font-weight: 500;
+      color: #475569;
+      max-width: 110px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 0.88rem;
+    }
     .recent-amount {
       text-align: right;
       font-weight: 700;
-      color: var(--text-primary);
+      color: #475569;
       white-space: nowrap;
     }
     .recent-empty {
@@ -603,30 +724,44 @@
         <section class="dash-hero" aria-label="핵심 지표">
           <div class="dash-hero-grid">
 
-            <!-- Panel 1: 지원 현황 (blue) -->
+            <!-- Panel 1: 0000년 현황 (blue) -->
             <div class="hero-panel hero-panel--blue">
-              <h2 class="hero-panel-title">지원 현황 <span aria-hidden="true">📋</span></h2>
-              <p class="hero-panel-subtitle" id="status-subtitle">2026년 기준</p>
-              <div class="pill-stats" id="status-pills">
-                <button type="button" class="pill-stat" data-status="">
-                  <span>전체</span>
-                  <span class="pill-stat-count">(<span id="pill-total">0</span>)</span>
+              <h2 class="hero-panel-title" id="status-panel-title">2026년 현황 <span aria-hidden="true">📋</span></h2>
+              <p class="hero-panel-subtitle">올해 진행 상태</p>
+              <!-- 큰 숫자 (자금현황 big-stats와 동일 스타일, 1칸) -->
+              <div class="big-stats big-stats--single">
+                <div>
+                  <div class="big-stat-num big-stat-num--neutral"><span id="status-total-num">0</span><small> 건</small></div>
+                  <div class="big-stat-label">총 과제</div>
+                </div>
+              </div>
+              <div class="panel-divider"></div>
+              <h3 class="panel-section-title">신청 → 수행 → 결과 흐름</h3>
+              <!-- 6개 카드 한 줄 -->
+              <div class="status-cards-row">
+                <button type="button" class="status-card" data-filter="waiting">
+                  <span class="status-card-header"><span class="status-card-dot status-card-dot--waiting"></span>대기</span>
+                  <span class="status-card-value" id="pill-waiting">0</span>
                 </button>
-                <button type="button" class="pill-stat" data-status="수행">
-                  <span>수행</span>
-                  <span class="pill-stat-count">(<span id="pill-ongoing">0</span>)</span>
+                <button type="button" class="status-card" data-filter="continue">
+                  <span class="status-card-header"><span class="status-card-dot status-card-dot--continue"></span>계속</span>
+                  <span class="status-card-value" id="pill-continue">0</span>
                 </button>
-                <button type="button" class="pill-stat" data-status="예정">
-                  <span>예정</span>
-                  <span class="pill-stat-count">(<span id="pill-planned">0</span>)</span>
+                <button type="button" class="status-card" data-filter="new">
+                  <span class="status-card-header"><span class="status-card-dot status-card-dot--new"></span>신규</span>
+                  <span class="status-card-value" id="pill-new">0</span>
                 </button>
-                <button type="button" class="pill-stat" data-status="종료">
-                  <span>종료</span>
-                  <span class="pill-stat-count">(<span id="pill-ended">0</span>)</span>
+                <button type="button" class="status-card" data-filter="ended">
+                  <span class="status-card-header"><span class="status-card-dot status-card-dot--ended"></span>종료</span>
+                  <span class="status-card-value" id="pill-ended">0</span>
                 </button>
-                <button type="button" class="pill-stat" data-status="미선정">
-                  <span>미선정</span>
-                  <span class="pill-stat-count">(<span id="pill-unselected">0</span>)</span>
+                <button type="button" class="status-card" data-filter="selected-other">
+                  <span class="status-card-header"><span class="status-card-dot status-card-dot--other"></span>선정 (기타)</span>
+                  <span class="status-card-value" id="pill-selected-other">0</span>
+                </button>
+                <button type="button" class="status-card" data-filter="unselected">
+                  <span class="status-card-header"><span class="status-card-dot status-card-dot--unselected"></span>미선정</span>
+                  <span class="status-card-value" id="pill-unselected">0</span>
                 </button>
               </div>
               <p class="hero-panel-footnote">* 클릭 시 해당 상태로 필터링</p>
@@ -635,15 +770,19 @@
             <!-- Panel 2: 자금 현황 (green) -->
             <div class="hero-panel hero-panel--green">
               <h2 class="hero-panel-title">자금 현황 <span aria-hidden="true">💰</span></h2>
-              <p class="hero-panel-subtitle" id="funding-subtitle">2026 누적 / 전체</p>
-              <div class="big-stats">
+              <p class="hero-panel-subtitle" id="funding-subtitle">2026년 수주 / 입금</p>
+              <div class="big-stats big-stats--triple">
                 <div>
                   <div class="big-stat-num"><span id="hero-year-sum">0</span><small id="hero-year-unit">원</small></div>
-                  <div class="big-stat-label">당해 지원금</div>
+                  <div class="big-stat-label">수주 지원금</div>
                 </div>
                 <div>
                   <div class="big-stat-num big-stat-num--neutral"><span id="hero-total-sum">0</span><small id="hero-total-unit">원</small></div>
-                  <div class="big-stat-label">누적 총 지원금</div>
+                  <div class="big-stat-label">입금 예정 지원금</div>
+                </div>
+                <div>
+                  <div class="big-stat-num big-stat-num--soft"><span id="hero-payment-rate">0</span><small> %</small></div>
+                  <div class="big-stat-label">입금 완료율</div>
                 </div>
               </div>
               <div class="panel-divider"></div>
@@ -671,21 +810,21 @@
             <!-- Panel 3: 알림 (orange) -->
             <div class="hero-panel hero-panel--orange">
               <h2 class="hero-panel-title">알림 / 임박 <span aria-hidden="true">⏰</span></h2>
-              <p class="hero-panel-subtitle">D-30 임박 · 미선정 등</p>
+              <p class="hero-panel-subtitle">이번 달 종료 · D-7 제출 임박</p>
               <div class="alert-stats">
                 <div>
                   <div class="alert-stat-num alert-stat-num--warning" id="alert-due-count">0</div>
-                  <div class="alert-stat-label">D-30 종료 임박</div>
+                  <div class="alert-stat-label">이번 달 종료 예정</div>
                 </div>
                 <div>
-                  <div class="alert-stat-num alert-stat-num--danger" id="alert-unselected-count">0</div>
-                  <div class="alert-stat-label">당해 미선정</div>
+                  <div class="alert-stat-num alert-stat-num--danger" id="alert-submit-count">0</div>
+                  <div class="alert-stat-label">D-7 이내 제출</div>
                 </div>
               </div>
               <div class="panel-divider"></div>
               <h3 class="panel-section-title">최근 알림</h3>
               <div class="alert-mini-list" id="alert-list"></div>
-              <p class="hero-panel-footnote hero-panel-footnote--danger">* 종료일 기준 30일 이내 자동 표시</p>
+              <p class="hero-panel-footnote hero-panel-footnote--danger">* 오늘 기준 자동 표시</p>
             </div>
 
           </div>
@@ -699,7 +838,6 @@
               <span class="division-card-value" id="dash-stat-total">0</span>
               <span class="division-card-unit">건</span>
             </div>
-            <div class="division-card-sub-line">(제출일 기준)</div>
             <div class="division-card-divider"></div>
             <div class="division-pills">
               <div class="division-pill" data-division="과제">
@@ -741,7 +879,7 @@
                 <svg id="donut-svg" viewBox="0 0 200 200" aria-label="지원 현황 도넛 차트"></svg>
                 <div class="donut-center">
                   <div class="donut-center-num" id="donut-total">0</div>
-                  <div class="donut-center-label">전체 과제</div>
+                  <div class="donut-center-label">총 과제</div>
                 </div>
               </div>
               <div class="donut-legend" id="donut-legend"></div>
@@ -750,17 +888,17 @@
 
           <div class="dash-card">
             <div class="dash-card-header">
-              <h2 class="dash-card-title">수행 과제</h2>
+              <h2 class="dash-card-title">수행 과제 <span class="dash-card-subtitle">(당해 지원금 Top 5)</span></h2>
               <a href="projects.html" class="dash-card-link">전체 보기 →</a>
             </div>
             <div id="recent-wrap">
               <table class="recent-table" id="recent-table" style="display:none">
                 <thead>
                   <tr>
-                    <th style="width:80px">상태</th>
+                    <th style="width:120px">키워드</th>
                     <th>과제명</th>
-                    <th style="width:90px">담당자</th>
-                    <th style="width:110px;text-align:right">당해 지원금</th>
+                    <th style="width:110px">기관명</th>
+                    <th style="width:100px;text-align:right">당해 지원금</th>
                   </tr>
                 </thead>
                 <tbody id="recent-tbody"></tbody>

@@ -172,6 +172,11 @@
     .projects-badge--unselected { background: #fef2f2; color: #b91c1c; }           /* 미선정 — 톤다운 분홍 */
     .projects-badge--unsubmitted { background: #f3f4f6; color: #6b7280; }          /* 미제출 — 라이트 회색 */
     .projects-badge--other { background: #ecfccb; color: #65a30d; }                /* 선정(기타) — 라임 */
+    /* 유형(division1) 배지 — 차트 색상과 통일 (파스텔톤) */
+    .projects-badge--type-task    { background: #dbeafe; color: #1e40af; }         /* 과제 — 파랑 */
+    .projects-badge--type-grant   { background: #d1fae5; color: #065f46; }         /* 지원사업 — 초록 */
+    .projects-badge--type-service { background: #ffedd5; color: #9a3412; }         /* 용역 — 주황 */
+    .projects-badge--type-other   { background: #f3f4f6; color: #4b5563; }         /* 기타 — 회색 */
 
     /* "수행" 카드 안의 계속/신규 sub-section */
     .ongoing-sub {
@@ -686,7 +691,6 @@
               <span class="division-card-value" id="stat-total">0</span>
               <span class="division-card-unit">건</span>
             </div>
-            <div class="division-card-sub-line">(제출일 기준)</div>
             <div class="division-card-divider"></div>
             <div class="division-pills" id="division-pills" role="group" aria-label="구분 1 분류 필터">
               <button type="button" class="division-pill" data-division="과제">

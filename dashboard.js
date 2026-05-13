@@ -166,6 +166,26 @@
     return Math.round(support * overlapDays / totalDays);
   }
 
+  /**
+   * 그 해 입금 완료액 — yearBudget.actualPayments 합 (date가 그 해인 것만)
+   * 데이터 구조 가정: actualPayments = [{date: 'YYYY-MM-DD', amount: number}, ...]
+   */
+  function getYearActualPayments(it, year) {
+    var total = 0;
+    var arr = (it.yearBudgets && Array.isArray(it.yearBudgets)) ? it.yearBudgets : [];
+    arr.forEach(function (yb) {
+      if (!Array.isArray(yb.actualPayments)) return;
+      yb.actualPayments.forEach(function (p) {
+        if (!p) return;
+        var d = (p.date || p.paidDate || '').toString().slice(0, 10);
+        if (d.slice(0, 4) === String(year)) {
+          total += Number(p.amount || 0);
+        }
+      });
+    });
+    return total;
+  }
+
   function getYearAmounts(it, year) {
     var sup = 0, cash = 0, ink = 0;
     var arr = (it.yearBudgets && Array.isArray(it.yearBudgets)) ? it.yearBudgets : [];
@@ -208,80 +228,133 @@
   // ===== KPI 계산 =====
 
   function computeKPIs(items, year) {
-    var filtered = items.filter(function (it) { return projectOverlapsYear(it, year); });
-    var ongoing = 0, ongoingCont = 0, ongoingNew = 0;
-    var planned = 0, ended = 0, unselected = 0;
-    var yearSupport = 0, yearCash = 0, yearInKind = 0;
-    var totalSum = 0;
+    var yearStr = String(year);
     var cutoff = year + '-01-01';
     var asOfDate = yearEndDate(year);  // 그 연도 시점 기준 status
 
-    filtered.forEach(function (it) {
+    // 카드 카운트 (projects.js와 동일 로직)
+    var waitingCnt = 0;
+    var continueCnt = 0;
+    var newCnt = 0;
+    var endedCnt = 0;
+    var selectedOtherCnt = 0;
+    var unselectedCnt = 0;
+
+    // 자금
+    var sujuTotal = 0;       // 수주 지원금 — 그 해 시작 yearBudget.support 합 (status 수행/종료/선정기타)
+    var yearSupport = 0;     // 입금 예정 지원금 — 그 해 입금 예정 금액
+    var yearActual = 0;      // 입금 완료 — 그 해 actualPayments 합
+    var yearCash = 0;
+    var yearInKind = 0;
+
+    items.forEach(function (it) {
       var status = statusAsOf(it, asOfDate);
       var start = (it.startDate || it.start || '').toString().slice(0, 10);
+      var end   = (it.endDate || it.end || '').toString().slice(0, 10);
+      var submitDate = (it.submitDate || it['제출일'] || '').toString().slice(0, 10);
+      var submitYear = submitDate ? submitDate.slice(0, 4) : '';
+      var endYear = end ? end.slice(0, 4) : '';
 
-      if (status === '수행') {
-        ongoing++;
-        if (start && start < cutoff) ongoingCont++;
-        else ongoingNew++;
-      } else if (status === '예정') {
-        planned++;
-      } else if (status === '종료') {
-        ended++;
-      } else if (status === '미선정') {
-        unselected++;
+      // ── 카드 카운트 ──
+      if (status === '대기' && submitYear === yearStr) waitingCnt++;
+      if (status === '수행' && projectOverlapsYear(it, year)) {
+        if (start && start < cutoff) continueCnt++;
+        else newCnt++;
+      }
+      if (status === '종료' && endYear === yearStr) endedCnt++;
+      if ((status === '선정(기타)' || status === '선정 (기타)') && submitYear === yearStr) selectedOtherCnt++;
+      if (status === '미선정' && submitYear === yearStr) unselectedCnt++;
+
+      // ── 수주 지원금 ── status='수행/종료/선정기타' AND yearBudget.startDate==year
+      var isSelected = (status === '수행' || status === '종료' ||
+                        status === '선정(기타)' || status === '선정 (기타)');
+      if (isSelected) {
+        if (Array.isArray(it.yearBudgets) && it.yearBudgets.length > 0) {
+          it.yearBudgets.forEach(function (yb, ybIdx) {
+            var ybStartRaw = yb.startDate || (ybIdx === 0 ? it.startDate : '');
+            var ybStartYear = (ybStartRaw || '').toString().slice(0, 4);
+            if (ybStartYear !== yearStr) return;
+            var sup = Number(yb.support || 0);
+            if (!sup && ybIdx === 0) {
+              sup = Number(it.supportTotal || it.budget || 0);
+            }
+            if (sup) sujuTotal += sup;
+          });
+        } else {
+          var itStartYear = (it.startDate || '').toString().slice(0, 4);
+          if (itStartYear === yearStr) {
+            sujuTotal += Number(it.supportTotal || it.budget || 0);
+          }
+        }
       }
 
+      // ── 입금 지원금 (그 해 실제 입금되는 금액) ──
       var amt = getYearAmounts(it, year);
       yearSupport += amt.support;
       yearCash    += amt.cash;
       yearInKind  += amt.inKind;
-
-      var st = it.supportTotal != null ? Number(it.supportTotal)
-             : (it.budget != null ? Number(it.budget) : 0);
-      if (!isNaN(st)) totalSum += st;
+      // ── 입금 완료 — actualPayments 합 ──
+      yearActual += getYearActualPayments(it, year);
     });
 
+    var totalForDonut = waitingCnt + continueCnt + newCnt + endedCnt + selectedOtherCnt + unselectedCnt;
+
     return {
-      total: filtered.length,
-      ongoing: ongoing,
-      ongoingCont: ongoingCont,
-      ongoingNew: ongoingNew,
-      planned: planned,
-      ended: ended,
-      unselected: unselected,
+      // 카드 카운트
+      waiting: waitingCnt,
+      continueCnt: continueCnt,
+      newCnt: newCnt,
+      ended: endedCnt,
+      selectedOther: selectedOtherCnt,
+      unselected: unselectedCnt,
+      total: totalForDonut,
+      // 자금
+      sujuTotal: sujuTotal,
       yearSupport: yearSupport,
+      yearActual: yearActual,
       yearCash: yearCash,
       yearInKind: yearInKind,
-      yearTotal: yearSupport + yearCash + yearInKind,
-      totalSum: totalSum,
-      filteredItems: filtered
+      // 알림/수행과제용 (기존 사용처 호환)
+      ongoing: continueCnt + newCnt,
+      filteredItems: items.filter(function (it) { return projectOverlapsYear(it, year); })
     };
   }
 
   // ===== Renderers =====
 
-  // Panel 1: 지원 현황 — pill stats
+  // Panel 1: {연도}년 현황 — pill stats (6 카테고리)
   function renderPills(kpis, year) {
-    setText('pill-total', kpis.total);
-    setText('pill-ongoing', kpis.ongoing);
-    setText('pill-planned', kpis.planned);
+    setText('status-total-num', kpis.total);
+    setText('pill-waiting', kpis.waiting);
+    setText('pill-continue', kpis.continueCnt);
+    setText('pill-new', kpis.newCnt);
     setText('pill-ended', kpis.ended);
+    setText('pill-selected-other', kpis.selectedOther);
     setText('pill-unselected', kpis.unselected);
-    setText('status-subtitle', year + '년 기준');
+    // 제목 동적 (이모지 유지)
+    var titleEl = document.getElementById('status-panel-title');
+    if (titleEl) titleEl.innerHTML = year + '년 현황 <span aria-hidden="true">📋</span>';
   }
 
-  // Panel 2: 자금 현황 — big stats + mini bars
+  // Panel 2: 자금 현황 — 수주 지원금 + 입금 지원금
   function renderFunding(kpis, year) {
-    var yp = formatMoneyParts(kpis.yearSupport);
-    setText('hero-year-sum', yp.value);
-    setText('hero-year-unit', ' ' + yp.unit);
+    // 수주 지원금 (왼쪽, 파랑 강조) — 항상 0.0억 형식 (소수점 1자리, 반올림 없음)
+    var sujuEok = (Number(kpis.sujuTotal) || 0) / 100000000;
+    setText('hero-year-sum', sujuEok.toFixed(1));
+    setText('hero-year-unit', ' 억');
 
-    var tp = formatMoneyParts(kpis.totalSum);
-    setText('hero-total-sum', tp.value);
-    setText('hero-total-unit', ' ' + tp.unit);
+    // 입금 예정 지원금 (가운데, neutral) — 그 해 실제 입금 예정 금액
+    var ip = formatMoneyParts(kpis.yearSupport);
+    setText('hero-total-sum', ip.value);
+    setText('hero-total-unit', ' ' + ip.unit);
 
-    setText('funding-subtitle', year + '년 누적 / 전체');
+    // 입금 완료율 (오른쪽, neutral) — actualPayments / yearSupport * 100
+    var planned = Number(kpis.yearSupport) || 0;
+    var actual = Number(kpis.yearActual) || 0;
+    var rate = planned > 0 ? (actual / planned * 100) : 0;
+    setText('hero-payment-rate', rate.toFixed(1));
+
+    setText('funding-subtitle', year + '년 수주 / 입금');
 
     var support = kpis.yearSupport;
     var cash    = kpis.yearCash;
@@ -308,52 +381,77 @@
 
     var today = new Date();
     var todayStr = today.toISOString().slice(0, 10);
-    var soon = new Date();
-    soon.setDate(soon.getDate() + 30);
-    var soonStr = soon.toISOString().slice(0, 10);
 
-    var dueSoon = [];
+    // 이번 달 마지막 날 (오늘 ~ 이번 달 말일까지의 종료를 "이번 달 종료" 로 본다)
+    var monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+    var monthEndStr = monthEnd.toISOString().slice(0, 10);
+
+    // D+7 (오늘 포함 7일 이내 제출일)
+    var d7 = new Date();
+    d7.setDate(d7.getDate() + 7);
+    var d7Str = d7.toISOString().slice(0, 10);
+
+    // 1. 이번 달 종료 예정 — status='수행' AND endDate가 오늘 ~ 이번 달 말일 사이
+    var endingThisMonth = [];
+    // 2. D-7 이내 제출 — submitDate가 오늘 ~ 오늘+7일 사이 (상태 무관, 보통 '대기'가 해당)
+    var submitSoon = [];
+
     items.forEach(function (it) {
-      if (normalizeStatus(it) !== '수행') return;
-      var end = (it.endDate || it.end || '').toString().slice(0, 10);
-      if (!end) return;
-      if (end >= todayStr && end <= soonStr) {
-        var name = it.projectName || it.keywords || '(제목 없음)';
-        var diff = Math.ceil((new Date(end) - today) / (1000 * 60 * 60 * 24));
-        dueSoon.push({ name: name, end: end, dDay: Math.max(0, diff) });
+      var name = it.projectName || it.keywords || '(제목 없음)';
+
+      // 이번 달 종료
+      if (normalizeStatus(it) === '수행') {
+        var end = (it.endDate || it.end || '').toString().slice(0, 10);
+        if (end && end >= todayStr && end <= monthEndStr) {
+          var diffE = Math.ceil((new Date(end) - today) / (1000 * 60 * 60 * 24));
+          endingThisMonth.push({ name: name, date: end, dDay: Math.max(0, diffE), type: 'end' });
+        }
+      }
+
+      // D-7 이내 제출
+      var submit = (it.submitDate || it['제출일'] || '').toString().slice(0, 10);
+      if (submit && submit >= todayStr && submit <= d7Str) {
+        var diffS = Math.ceil((new Date(submit) - today) / (1000 * 60 * 60 * 24));
+        submitSoon.push({ name: name, date: submit, dDay: Math.max(0, diffS), type: 'submit' });
       }
     });
 
-    setText('alert-due-count', dueSoon.length);
-    setText('alert-unselected-count', kpis.unselected);
+    setText('alert-due-count', endingThisMonth.length);
+    setText('alert-submit-count', submitSoon.length);
 
-    if (dueSoon.length === 0) {
-      listEl.innerHTML = '<div class="alert-empty">임박한 종료 과제가 없습니다.</div>';
+    // 통합 알림 리스트 (가까운 순)
+    var allAlerts = endingThisMonth.concat(submitSoon);
+    allAlerts.sort(function (a, b) { return a.dDay - b.dDay; });
+
+    if (allAlerts.length === 0) {
+      listEl.innerHTML = '<div class="alert-empty">임박한 알림이 없습니다.</div>';
       return;
     }
 
-    // 가까운 순으로 정렬, 최대 4개 노출
-    dueSoon.sort(function (a, b) { return a.dDay - b.dDay; });
-    dueSoon.slice(0, 4).forEach(function (a) {
+    allAlerts.slice(0, 4).forEach(function (a) {
       var div = document.createElement('div');
       div.className = 'alert-mini-item';
+      var icon = a.type === 'end' ? '⏰' : '📝';
+      var label = a.type === 'end' ? '종료' : '제출';
       div.innerHTML =
-        '<span class="alert-mini-icon">⏰</span>' +
+        '<span class="alert-mini-icon">' + icon + '</span>' +
         '<div class="alert-mini-text">' +
           '<strong>' + escapeHtml(a.name) + '</strong>' +
-          '<div class="alert-mini-meta">D-' + a.dDay + ' · 종료 ' + escapeHtml(a.end) + '</div>' +
+          '<div class="alert-mini-meta">D-' + a.dDay + ' · ' + label + ' ' + escapeHtml(a.date) + '</div>' +
         '</div>';
       listEl.appendChild(div);
     });
   }
 
-  // Donut chart
+  // Donut chart — 6 카테고리 (대기/수행계속/수행신규/종료/선정기타/미선정)
   function renderDonut(kpis, year) {
     var data = [
-      { key: '수행', value: kpis.ongoing,   color: STATUS_COLORS['수행'] },
-      { key: '예정',    value: kpis.planned,    color: STATUS_COLORS['예정'] },
-      { key: '종료',    value: kpis.ended,      color: STATUS_COLORS['종료'] },
-      { key: '미선정',  value: kpis.unselected, color: STATUS_COLORS['미선정'] }
+      { key: '대기',         filter: 'waiting',        value: kpis.waiting,       color: '#fef3c7' },
+      { key: '수행 (계속)',  filter: 'continue',       value: kpis.continueCnt,   color: '#d1fae5' },
+      { key: '수행 (신규)',  filter: 'new',            value: kpis.newCnt,        color: '#ccfbf1' },
+      { key: '종료',         filter: 'ended',          value: kpis.ended,         color: '#e5e7eb' },
+      { key: '선정 (기타)',  filter: 'selected-other', value: kpis.selectedOther, color: '#ecfccb' },
+      { key: '미선정',       filter: 'unselected',     value: kpis.unselected,    color: '#fee2e2' }
     ];
     var total = data.reduce(function (s, d) { return s + d.value; }, 0);
     setText('donut-total', total);
@@ -376,12 +474,22 @@
     bg.setAttribute('stroke-width', sw);
     svg.appendChild(bg);
 
+    // 외곽선용 반지름 + 색 (안/밖 동그라미는 같은 옅은 회색, 조각 사이 직선은 더 명확)
+    var rOuter = r + sw / 2;
+    var rInner = r - sw / 2;
+    var COuter = 2 * Math.PI * rOuter;
+    var CInner = 2 * Math.PI * rInner;
+    var ringStroke = '#e2e8f0';   // 안/밖 동그라미 — 살짝
+    var sliceStroke = '#cbd5e1';  // 조각 사이 직선 — 좀 더 명확
+
     if (total > 0) {
       var offset = 0;
       data.forEach(function (d) {
         if (d.value <= 0) return;
         var frac = d.value / total;
         var len = frac * C;
+
+        // 메인 조각 (파스텔 채움)
         var arc = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
         arc.setAttribute('cx', cx);
         arc.setAttribute('cy', cy);
@@ -394,6 +502,50 @@
         arc.setAttribute('stroke-dashoffset', String(-offset));
         arc.setAttribute('transform', 'rotate(-90 ' + cx + ' ' + cy + ')');
         svg.appendChild(arc);
+
+        // 도넛 바깥 동그라미 — 옅은 회색
+        var lenOut = frac * COuter;
+        var arcOuter = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        arcOuter.setAttribute('cx', cx);
+        arcOuter.setAttribute('cy', cy);
+        arcOuter.setAttribute('r', rOuter);
+        arcOuter.setAttribute('fill', 'none');
+        arcOuter.setAttribute('stroke', ringStroke);
+        arcOuter.setAttribute('stroke-width', 1);
+        arcOuter.setAttribute('stroke-dasharray', lenOut + ' ' + (COuter - lenOut));
+        arcOuter.setAttribute('stroke-dashoffset', String(-offset * COuter / C));
+        arcOuter.setAttribute('transform', 'rotate(-90 ' + cx + ' ' + cy + ')');
+        svg.appendChild(arcOuter);
+
+        // 도넛 안쪽 동그라미 — 옅은 회색 (외부와 동일)
+        var lenIn = frac * CInner;
+        var arcInner = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        arcInner.setAttribute('cx', cx);
+        arcInner.setAttribute('cy', cy);
+        arcInner.setAttribute('r', rInner);
+        arcInner.setAttribute('fill', 'none');
+        arcInner.setAttribute('stroke', ringStroke);
+        arcInner.setAttribute('stroke-width', 1);
+        arcInner.setAttribute('stroke-dasharray', lenIn + ' ' + (CInner - lenIn));
+        arcInner.setAttribute('stroke-dashoffset', String(-offset * CInner / C));
+        arcInner.setAttribute('transform', 'rotate(-90 ' + cx + ' ' + cy + ')');
+        svg.appendChild(arcInner);
+
+        // 조각 시작 지점의 radial 구분선 (안쪽 → 바깥쪽)
+        var startAngle = -Math.PI / 2 + (offset / C) * 2 * Math.PI;
+        var x1 = cx + rInner * Math.cos(startAngle);
+        var y1 = cy + rInner * Math.sin(startAngle);
+        var x2 = cx + rOuter * Math.cos(startAngle);
+        var y2 = cy + rOuter * Math.sin(startAngle);
+        var sliceLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        sliceLine.setAttribute('x1', x1);
+        sliceLine.setAttribute('y1', y1);
+        sliceLine.setAttribute('x2', x2);
+        sliceLine.setAttribute('y2', y2);
+        sliceLine.setAttribute('stroke', sliceStroke);
+        sliceLine.setAttribute('stroke-width', 1);
+        svg.appendChild(sliceLine);
+
         offset += len;
       });
     }
@@ -411,13 +563,13 @@
         '<span class="donut-legend-count">' + d.value + '</span>' +
         '<span class="donut-legend-pct">(' + pct + '%)</span>';
       item.addEventListener('click', function () {
-        window.location.href = 'projects.html?status=' + encodeURIComponent(d.key);
+        window.location.href = 'projects.html?filter=' + d.filter;
       });
       legend.appendChild(item);
     });
   }
 
-  // 수행 과제 (table)
+  // 수행 과제 (table) — 키워드 / 과제명 / 당해 지원금, 당해 지원금 내림차순
   function renderRecent(items, year) {
     var table = document.getElementById('recent-table');
     var tbody = document.getElementById('recent-tbody');
@@ -425,14 +577,16 @@
     if (!table || !tbody || !empty) return;
 
     var asOfDate = yearEndDate(year);
+    // 수행 과제만 + 그 해 당해 지원금 사전 계산
     var ongoing = items.filter(function (it) {
       return statusAsOf(it, asOfDate) === '수행' && projectOverlapsYear(it, year);
+    }).map(function (it) {
+      var amt = getYearAmounts(it, year);
+      var amount = amt.support || it.supportYear || 0;
+      return { it: it, amount: Number(amount) || 0 };
     });
-    ongoing.sort(function (a, b) {
-      var sa = (a.startDate || a.start || '').toString();
-      var sb = (b.startDate || b.start || '').toString();
-      return sb.localeCompare(sa);
-    });
+    // 당해 지원금 내림차순
+    ongoing.sort(function (a, b) { return b.amount - a.amount; });
     var top5 = ongoing.slice(0, 5);
 
     tbody.innerHTML = '';
@@ -446,18 +600,18 @@
     table.style.display = 'table';
     empty.style.display = 'none';
 
-    top5.forEach(function (it) {
-      var name = it.projectName || it['과제명'] || it.keywords || it.keyword || '(제목 없음)';
-      var manager = it.manager || it['책임자'] || '-';
-      var amt = getYearAmounts(it, year);
-      var amount = amt.support || it.supportYear || 0;
+    top5.forEach(function (entry) {
+      var it = entry.it;
+      var keyword = it.keywords || it.keyword || it['키워드'] || '-';
+      var name = it.projectName || it['과제명'] || '(제목 없음)';
+      var org = it.institution || it['기관명'] || '-';
 
       var tr = document.createElement('tr');
       tr.innerHTML =
-        '<td><span class="projects-badge projects-badge--ongoing">수행</span></td>' +
+        '<td><div class="recent-keyword" title="' + escapeHtml(keyword) + '">' + escapeHtml(keyword) + '</div></td>' +
         '<td><div class="recent-name" title="' + escapeHtml(name) + '">' + escapeHtml(name) + '</div></td>' +
-        '<td>' + escapeHtml(manager) + '</td>' +
-        '<td class="recent-amount">' + formatMoneyShort(amount) + '</td>';
+        '<td><div class="recent-org" title="' + escapeHtml(org) + '">' + escapeHtml(org) + '</div></td>' +
+        '<td class="recent-amount">' + formatMoneyShort(entry.amount) + '</td>';
       tr.addEventListener('click', function () {
         window.location.href = 'projects.html';
       });
@@ -483,11 +637,11 @@
       } catch (e) {}
     }
 
-    // 지원 현황 pill 클릭 → projects.html 로 필터 이동
-    document.querySelectorAll('.pill-stat').forEach(function (pill) {
-      pill.addEventListener('click', function () {
-        var status = pill.getAttribute('data-status') || '';
-        var url = status ? 'projects.html?status=' + encodeURIComponent(status) : 'projects.html';
+    // {연도}년 현황 카드 클릭 → projects.html 카드 필터로 이동
+    document.querySelectorAll('.status-card').forEach(function (card) {
+      card.addEventListener('click', function () {
+        var filter = card.getAttribute('data-filter') || '';
+        var url = filter ? 'projects.html?filter=' + encodeURIComponent(filter) : 'projects.html';
         window.location.href = url;
       });
     });
@@ -496,7 +650,7 @@
     var latestItems = [];
     var currentYear = DEFAULT_YEAR;
 
-    // 월별 신규 제안 차트 (총 신규 제안 카드 + 분류 pill + 스택 막대 + 누적 라인)
+    // 월별 신규 제안 차트 (총 신규 제안 카드 + 분류 pill + 스택 막대 + 월별 총합 라인)
     var monthlyChart = null;
     var datalabelsRegistered = false;
 
@@ -545,11 +699,10 @@
         if (byType.hasOwnProperty(d)) byType[d][mo - 1] += 1;
       });
 
-      var cumulative = new Array(12).fill(0);
-      var cum = 0;
+      // 월별 총합 (유형별 막대 합계)
+      var monthlyTotal = new Array(12).fill(0);
       for (var i = 0; i < 12; i++) {
-        cum += byType['과제'][i] + byType['지원사업'][i] + byType['용역'][i] + byType['기타'][i];
-        cumulative[i] = cum;
+        monthlyTotal[i] = byType['과제'][i] + byType['지원사업'][i] + byType['용역'][i] + byType['기타'][i];
       }
 
       if (monthlyChart) {
@@ -567,25 +720,20 @@
         data: {
           labels: ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'],
           datasets: [
-            { label: '과제',     data: byType['과제'],     backgroundColor: '#93c5fd', borderColor: '#60a5fa', borderWidth: 1, stack: 'monthly', order: 2, datalabels: barDatalabels },
-            { label: '지원사업', data: byType['지원사업'], backgroundColor: '#6ee7b7', borderColor: '#34d399', borderWidth: 1, stack: 'monthly', order: 2, datalabels: barDatalabels },
-            { label: '용역',     data: byType['용역'],     backgroundColor: '#fdba74', borderColor: '#fb923c', borderWidth: 1, stack: 'monthly', order: 2, datalabels: barDatalabels },
-            { label: '기타',     data: byType['기타'],     backgroundColor: '#cbd5e1', borderColor: '#94a3b8', borderWidth: 1, stack: 'monthly', order: 2, datalabels: barDatalabels },
+            { label: '과제',     data: byType['과제'],     backgroundColor: '#dbeafe', borderColor: '#bfdbfe', borderWidth: 1, stack: 'monthly', order: 2, datalabels: barDatalabels },
+            { label: '지원사업', data: byType['지원사업'], backgroundColor: '#d1fae5', borderColor: '#a7f3d0', borderWidth: 1, stack: 'monthly', order: 2, datalabels: barDatalabels },
+            { label: '용역',     data: byType['용역'],     backgroundColor: '#ffedd5', borderColor: '#fed7aa', borderWidth: 1, stack: 'monthly', order: 2, datalabels: barDatalabels },
+            { label: '기타',     data: byType['기타'],     backgroundColor: '#f3f4f6', borderColor: '#e5e7eb', borderWidth: 1, stack: 'monthly', order: 2, datalabels: barDatalabels },
             {
-              type: 'line', label: '누적', data: cumulative,
+              type: 'line', label: '월별 총합', data: monthlyTotal,
               borderColor: '#1d4ed8', backgroundColor: 'rgba(29, 78, 216, 0.08)',
-              tension: 0.25, pointBackgroundColor: '#1d4ed8',
-              pointRadius: 4, pointHoverRadius: 6, borderWidth: 2.5,
-              fill: false, order: 1,
+              tension: 0, pointBackgroundColor: '#1d4ed8',
+              pointRadius: 3, pointHoverRadius: 5, borderWidth: 1.8,
+              fill: false, order: 0,
               datalabels: {
                 anchor: 'end', align: 'top', offset: 4,
                 color: '#1d4ed8', font: { weight: '700', size: 11 },
-                formatter: function (v, ctx) {
-                  var idx = ctx.dataIndex;
-                  if (idx === 0) return v;
-                  var prev = ctx.dataset.data[idx - 1];
-                  return v !== prev ? v : '';
-                }
+                formatter: function (v) { return v > 0 ? v : ''; }
               }
             }
           ]
@@ -593,7 +741,7 @@
         options: {
           responsive: true, maintainAspectRatio: false,
           interaction: { mode: 'index', intersect: false },
-          layout: { padding: { top: 16 } },
+          layout: { padding: { top: 28 } },
           scales: {
             x: { stacked: true, grid: { display: false } },
             y: { stacked: true, beginAtZero: true, ticks: { precision: 0, stepSize: 1 }, grid: { color: '#f3f4f6' } }
