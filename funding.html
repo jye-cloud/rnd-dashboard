@@ -72,400 +72,23 @@
       margin-top: 0.25rem;
     }
 
-    /* 카드 클릭 시 표 위에 보이는 요약 한 줄 (미선정/수행 카드용) */
-    .filter-summary-row {
-      background: #eff6ff;
-      border: 1px solid #bfdbfe;
-      border-radius: 0.5rem;
-      padding: 0.65rem 1rem;
-      margin-bottom: 1rem;
-      font-size: 0.9rem;
-      color: #4b5563;
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 0.4rem;
+    /* 자금 관리 페이지 — 카드 그룹 타이틀 */
+    .funding-cards-block {
+      margin-bottom: 1.25rem;
     }
-    .filter-summary-row strong { color: #111827; }
-    .filter-summary-title {
-      font-weight: 600;
-      color: #1e40af;
-      margin-right: 0.4rem;
-    }
-    .filter-summary-label { color: #6b7280; }
-    .filter-summary-pill {
-      padding: 0.15rem 0.55rem;
-      background: #fff;
-      border: 1px solid #dbeafe;
-      border-radius: 999px;
-      font-size: 0.85rem;
-    }
-    .filter-summary-pill strong { margin-left: 0.25rem; }
-    .filter-summary-pill--zero { color: #9ca3af; }
-    .filter-summary-rd {
-      color: #1d4ed8;
-      font-size: 0.78rem;
-      margin-left: 0.3rem;
-      font-weight: 500;
-    }
-    .projects-table-wrap {
-      background: var(--card-bg);
-      border-radius: 0.75rem;
-      box-shadow: var(--shadow-md);
-      overflow: auto;
-      border: 1px solid var(--border-color);
-    }
-    .projects-table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 0.9rem;
-    }
-    .projects-table th,
-    .projects-table td {
-      padding: 0.65rem 0.85rem;
-      border-bottom: 1px solid var(--border-color);
-      text-align: left;
-    }
-    .projects-table thead th {
-      background: #f5f5f5;
-      font-weight: 600;
-      color: var(--text-primary);
-      white-space: nowrap;
-    }
-    .projects-table tbody tr {
-      cursor: default;
-      transition: background 0.15s;
-    }
-    .projects-table tbody tr:hover {
-      background: #f8fafc;
-    }
-    .projects-table .project-edit-btn {
-      font-size: 0.75rem;
-      padding: 0.25rem 0.5rem;
-      cursor: pointer;
-    }
-    .projects-badge { display: inline-block; padding: 0.2rem 0.5rem; border-radius: 0.35rem; font-size: 0.75rem; font-weight: 600; }
-    .projects-badge--rd { background: #dbeafe; color: #1d4ed8; margin-right: 0.25rem; }
-    .projects-badge--end { background: #e5e7eb; color: #4b5563; }
-    .projects-badge--ongoing { background: #d1fae5; color: #047857; }              /* 수행 (계속) — 진한 초록 */
-    .projects-badge--ongoing-new { background: #ccfbf1; color: #0d9488; }          /* 수행 (신규) — 청록 */
-    .projects-badge--scheduled { background: #dbeafe; color: #1d4ed8; }
-    .projects-badge--waiting { background: #fef3c7; color: #b45309; }
-    .projects-badge--unselected { background: #fef2f2; color: #b91c1c; }           /* 미선정 — 톤다운 분홍 */
-    .projects-badge--unsubmitted { background: #f3f4f6; color: #6b7280; }          /* 미제출 — 라이트 회색 */
-    .projects-badge--other { background: #ecfccb; color: #65a30d; }                /* 선정(기타) — 라임 */
-
-    /* "수행" 카드 안의 계속/신규 sub-section */
-    .ongoing-sub {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      margin-top: 0.75rem;
-      padding-top: 0.75rem;
-      border-top: 1px solid #e5e7eb;
-      font-size: 0.85rem;
-      color: var(--text-secondary, #6b7280);
-    }
-    .ongoing-sub-item {
-      flex: 1;
-      padding: 0.25rem 0.5rem;
-      border-radius: 0.35rem;
-      transition: background 0.15s;
-    }
-    .ongoing-sub-item:hover {
-      background: #f3f4f6;
-    }
-    .ongoing-sub-item.active {
-      background: #d1fae5;
-      color: #047857;
-    }
-    .ongoing-sub-item strong {
-      color: #047857;
-      font-size: 1rem;
-      margin-left: 0.25rem;
-    }
-    /* 두 줄 레이아웃 (라벨 위, 큰 값 아래) — 수주/입금 카드용 */
-    .ongoing-sub--stack {
-      display: flex;
-      gap: 1.2rem;
-      align-items: stretch;
-    }
-    .ongoing-sub--stack .ongoing-sub-item {
-      display: flex;
-      flex-direction: column;
-      align-items: flex-start;
-      gap: 0.15rem;
-      flex: 1;
-    }
-    .ongoing-sub--stack .ongoing-sub-label {
-      font-size: 0.75rem;
-      color: #6b7280;
-    }
-    .ongoing-sub--stack .ongoing-sub-item strong {
-      margin-left: 0;
-      font-size: 1.05rem;
+    .funding-cards-title {
+      font-size: 0.95rem;
       font-weight: 700;
+      color: #475569;
+      margin: 0 0 0.6rem 0;
+      letter-spacing: -0.01em;
     }
-    /* 입금 카드는 파란 톤 */
-    .ongoing-sub--blue .ongoing-sub-item strong { color: #1d4ed8; }
-    /* 종료 sub-item: 회색 톤 (수행과 구분) */
-    .ongoing-sub-item--ended strong { color: #4b5563; }
-    .ongoing-sub-item--ended.active {
-      background: #e5e7eb;
-      color: #1f2937;
-    }
-    .ongoing-sub-item--ended.active strong { color: #1f2937; }
-    .ongoing-sub-divider {
-      color: #d1d5db;
-    }
-    .projects-col-toggle {
-      display: flex;
-      justify-content: flex-end;
-      margin-bottom: 0.75rem;
-    }
-    .projects-col-dropdown {
-      position: relative;
-    }
-    .projects-col-panel {
-      display: none;
-      position: absolute;
-      top: 100%;
-      right: 0;
-      margin-top: 4px;
-      background: var(--card-bg);
-      border: 1px solid var(--border-color);
-      border-radius: 0.5rem;
-      box-shadow: var(--shadow-lg);
-      padding: 0.75rem 1rem;
-      z-index: 100;
-      min-width: 180px;
-    }
-    .projects-col-panel.open { display: block; }
-    .projects-col-panel label { display: flex; align-items: center; gap: 0.5rem; padding: 0.35rem 0; cursor: pointer; font-size: 0.875rem; }
-    .projects-table .col-opt { display: none; }
-
-    /* 클릭 가능한 통계 카드 */
-    .projects-stat-card.clickable {
-      cursor: pointer;
-      transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
-      user-select: none;
-    }
-    .projects-stat-card.clickable:hover {
-      transform: translateY(-2px);
-      box-shadow: var(--shadow-md);
-      border-color: var(--primary-color);
-    }
-    .projects-stat-card.is-active {
-      border-color: var(--primary-color);
-      border-width: 2px;
-      padding: calc(1rem - 1px) calc(1.25rem - 1px);
-      background: linear-gradient(135deg, rgba(37, 99, 235, 0.04), rgba(37, 99, 235, 0.09));
-    }
-    .projects-stat-card.is-active .projects-stat-label {
-      color: var(--primary-color);
-      font-weight: 600;
+    .funding-cards-title--service { color: #c2410c; }
+    .funding-cards-block .projects-stats-grid {
+      margin-bottom: 0;
     }
 
-    /* 활성 필터 chip */
-    .projects-active-filters {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      flex-wrap: wrap;
-    }
-    .projects-active-filters:empty { display: none; }
-    .projects-filter-chip {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.45rem;
-      padding: 0.35rem 0.6rem 0.35rem 0.75rem;
-      background: #dbeafe;
-      color: #1d4ed8;
-      border-radius: 999px;
-      font-size: 0.8rem;
-      font-weight: 600;
-      border: 1px solid rgba(37, 99, 235, 0.2);
-    }
-    .projects-filter-chip-clear {
-      background: rgba(255, 255, 255, 0.7);
-      border: none;
-      cursor: pointer;
-      color: inherit;
-      font-size: 0.95rem;
-      width: 18px;
-      height: 18px;
-      border-radius: 50%;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      line-height: 1;
-      padding: 0;
-      transition: background 0.15s;
-    }
-    .projects-filter-chip-clear:hover { background: #fff; }
-
-    /* 검색 + 액션 행 (테이블 위) */
-    .projects-actions-row {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      margin-bottom: 0.75rem;
-      flex-wrap: wrap;
-    }
-    .projects-search-input {
-      flex: 1;
-      min-width: 240px;
-      max-width: 480px;
-      padding: 0.55rem 0.85rem 0.55rem 2.2rem;
-      border: 1px solid var(--border-color);
-      border-radius: 0.5rem;
-      font-size: 0.9rem;
-      background: var(--card-bg);
-      color: var(--text-primary);
-      font-family: inherit;
-      transition: border-color 0.15s, box-shadow 0.15s;
-      box-sizing: border-box;
-    }
-    .projects-search-input:focus {
-      outline: none;
-      border-color: var(--primary-color);
-      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
-    }
-    .projects-search-wrap {
-      position: relative;
-      flex: 1;
-      min-width: 240px;
-      max-width: 480px;
-      display: inline-flex;
-    }
-    .projects-search-icon {
-      position: absolute;
-      left: 0.7rem;
-      top: 50%;
-      transform: translateY(-50%);
-      color: var(--text-secondary);
-      pointer-events: none;
-      font-size: 0.95rem;
-    }
-    .projects-search-clear {
-      position: absolute;
-      right: 0.4rem;
-      top: 50%;
-      transform: translateY(-50%);
-      background: transparent;
-      border: none;
-      color: var(--text-secondary);
-      cursor: pointer;
-      width: 24px;
-      height: 24px;
-      border-radius: 50%;
-      display: none;
-      align-items: center;
-      justify-content: center;
-      font-size: 1.1rem;
-      line-height: 1;
-      padding: 0;
-      transition: background 0.15s, color 0.15s;
-    }
-    .projects-search-clear:hover {
-      background: #f1f5f9;
-      color: var(--text-primary);
-    }
-    .projects-search-wrap.has-value .projects-search-clear {
-      display: inline-flex;
-    }
-    .projects-actions-spacer { flex: 1; }
-    .projects-actions-buttons {
-      display: flex;
-      gap: 0.5rem;
-      flex-wrap: wrap;
-    }
-
-    /* 총 제안 + 분류 카드 (상단 통합) */
-    .division-card {
-      background: var(--card-bg);
-      border: 1px solid var(--border-color);
-      border-radius: 0.75rem;
-      padding: 1.25rem 1.5rem;
-      box-shadow: var(--shadow-sm);
-      margin-bottom: 1rem;
-    }
-    .division-card-header {
-      display: flex;
-      align-items: baseline;
-      gap: 0.6rem;
-      cursor: pointer;
-      user-select: none;
-      padding: 0.2rem 0.4rem;
-      margin: -0.2rem -0.4rem 0.6rem;
-      border-radius: 0.4rem;
-      transition: background 0.15s;
-      width: fit-content;
-    }
-    .division-card-header:hover {
-      background: #f1f5f9;
-    }
-    .division-card-label {
-      font-size: 0.85rem;
-      color: var(--text-secondary);
-      font-weight: 500;
-    }
-    .division-card-value {
-      font-size: 1.85rem;
-      font-weight: 800;
-      color: var(--primary-color);
-      line-height: 1;
-      letter-spacing: -0.02em;
-    }
-    .division-card-unit {
-      font-size: 0.95rem;
-      font-weight: 500;
-      color: var(--text-secondary);
-    }
-    .division-card-divider {
-      height: 1px;
-      background: var(--border-color);
-      margin: 0.5rem 0 0.85rem;
-    }
-    .division-pills {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.5rem;
-    }
-    .division-pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.4rem;
-      padding: 0.45rem 0.85rem;
-      background: #f8fafc;
-      border: 1px solid var(--border-color);
-      border-radius: 999px;
-      font-size: 0.85rem;
-      color: var(--text-primary);
-      cursor: pointer;
-      font-family: inherit;
-      font-weight: 600;
-      transition: all 0.15s ease;
-    }
-    .division-pill:hover {
-      background: #fff;
-      border-color: var(--primary-color);
-      transform: translateY(-1px);
-      box-shadow: 0 2px 6px rgba(37, 99, 235, 0.1);
-    }
-    .division-pill.is-active {
-      background: var(--primary-color);
-      border-color: var(--primary-color);
-      color: #fff;
-    }
-    .division-pill-count {
-      color: var(--text-secondary);
-      font-weight: 500;
-    }
-    .division-pill.is-active .division-pill-count {
-      color: rgba(255, 255, 255, 0.85);
-    }
-      /* 사이드바 그룹 구분선 */
+    /* 사이드바 그룹 구분선 */
     .sidebar-divider {
       height: 1px;
       background: #e5e7eb;
@@ -531,9 +154,8 @@
       color: #6b7280;
     }
     .period-card-diff--ok { color: #15803d; }
-    .period-card-diff--warn { color: #b91c1c; }       /* 미수 — 빨강 */
-    .period-card-diff--over { color: #9333ea; }       /* 초과 — 보라 */
-    /* 미수가 후속 분기로 해결된 경우 — 회색 + 취소선 */
+    .period-card-diff--warn { color: #b91c1c; }
+    .period-card-diff--over { color: #9333ea; }
     .period-card-diff--resolved { color: #9ca3af; }
     .period-card-diff--resolved s { text-decoration: line-through; text-decoration-thickness: 1.5px; }
     .period-card-diff--resolved .period-remain { color: #b91c1c; font-weight: 500; }
@@ -573,7 +195,6 @@
     .funding-table .f-status-paid { background: #d1fae5; color: #047857; }
     .funding-table .f-status-unpaid { background: #fef3c7; color: #92400e; }
     .funding-table .f-status-overdue { background: #fee2e2; color: #b91c1c; }
-    /* 안내문구 */
     .funding-table-info {
       font-size: 0.83rem;
       color: #6b7280;
@@ -583,14 +204,11 @@
       border-left: 3px solid #93c5fd;
       border-radius: 0.25rem;
     }
-
-    /* 표 wrap (가로 스크롤) */
     .funding-table-wrap {
       overflow-x: auto;
       -webkit-overflow-scrolling: touch;
     }
 
-    /* 매트릭스 표 */
     .funding-matrix th, .funding-matrix td {
       text-align: center;
       vertical-align: middle;
@@ -598,10 +216,7 @@
     .funding-matrix th:first-child, .funding-matrix td.f-name {
       text-align: left;
     }
-    /* 월별 모드 — 컬럼 많아서 콤팩트 */
-    .funding-matrix--month {
-      min-width: 1400px;
-    }
+    .funding-matrix--month { min-width: 1400px; }
     .funding-matrix--month .f-cell {
       padding: 0.4rem 0.4rem !important;
       font-size: 0.78rem !important;
@@ -620,7 +235,6 @@
     .funding-matrix .f-name { font-weight: 500; padding-left: 0.85rem; color: #111827; }
     .funding-matrix .f-cha { font-size: 0.78rem; color: #9ca3af; margin-left: 0.25rem; }
 
-    /* 구분 컬럼 (예정 / 입금) — 부드러운 톤 */
     .funding-matrix .f-kind {
       font-size: 0.78rem;
       font-weight: 600;
@@ -636,27 +250,19 @@
       color: #4d8a6a;
     }
 
-    /* 행 묶음 — 부드럽게 */
     .funding-matrix .f-row-pair-top td { border-bottom: none; }
     .funding-matrix .f-row-pair-bot td { border-bottom: 1px solid #f3f4f6; }
-    /* 마지막 데이터 행은 합계 위 선 우선 — 자체 border-bottom 제거 */
     .funding-matrix tbody tr.f-row-pair-bot:nth-last-of-type(3) td { border-bottom: none; }
 
-    /* 셀 */
     .funding-matrix .f-cell { padding: 0.5rem 0.6rem; font-size: 0.88rem; color: #111827; }
     .funding-matrix .f-cell small { color: #9ca3af; font-weight: 400; font-size: 0.78rem; }
     .funding-matrix .f-cell-empty { color: #d1d5db; }
     .funding-matrix .f-cell-unpaid { color: #cbd5e1; }
-    /* 정상 수령 — 초록 */
     .funding-matrix .f-cell-paid { color: #15803d; font-weight: 600; }
-    /* 미해결 미수 — 빨강 */
     .funding-matrix .f-cell-overdue { color: #b91c1c; font-weight: 600; background: #fef2f2; }
-    /* 해결된 미수 — 회색 + 취소선 */
     .funding-matrix .f-cell-resolved { color: #9ca3af; }
     .funding-matrix .f-cell-resolved s { text-decoration: line-through; text-decoration-thickness: 1.5px; }
-    /* 초과 (실제 > 예정) — 보라 */
     .funding-matrix .f-cell-over { color: #9333ea; font-weight: 600; }
-    /* 부분 해결 시 잔여 표시 — 마지막 보충 분기 입금 셀에 */
     .funding-matrix .f-cell-remaining {
       display: block;
       font-size: 0.72rem;
@@ -680,7 +286,6 @@
     .funding-matrix .f-balance-warn { color: #b91c1c; }
     .funding-matrix .f-balance-ok { color: #9ca3af; }
 
-    /* 합계 행 — 부드러운 회색 */
     .funding-matrix .f-row-total td {
       padding-top: 0.7rem;
       padding-bottom: 0.7rem;
@@ -702,7 +307,7 @@
       font-size: 0.9rem;
     }
 
-    /* 페이지 전체 너비 고정 — 화면 크기와 무관 */
+    /* 페이지 전체 너비 고정 */
     .container {
       width: 1400px;
       margin: 0 auto;
@@ -738,7 +343,7 @@
           <h1 class="header-title">[R&DM] 자금 관리</h1>
         </header>
 
-        <div class="projects-filter-bar" style="display:flex; align-items:center; gap:1rem; margin-bottom:1rem;">
+        <div class="projects-filter-bar" style="display:flex; align-items:center; gap:1rem; margin-bottom:1.5rem;">
           <label for="funding-year-filter" style="font-size:0.9rem; color:#4b5563;">연도 필터:</label>
           <select id="funding-year-filter" class="ui-select" style="min-width:120px;padding:0.5rem 0.75rem;border-radius:0.5rem;border:1px solid var(--border-color)">
             <option value="2026" selected>2026년</option>
@@ -754,41 +359,72 @@
           </div>
         </div>
 
-        <!-- 카드: 당해 수주 / 당해 입금 -->
-        <section class="projects-stats-grid" aria-label="자금 요약">
-          <div class="projects-stat-card projects-stat-card--ongoing">
-            <div class="projects-stat-label">당해 수주 총 지원금</div>
-            <div class="projects-stat-value projects-stat--success" id="funding-suju-total">0</div>
-            <div class="projects-stat-sub-hint">그 해 시작된 연차의 지원금</div>
-          </div>
-          <div class="projects-stat-card projects-stat-card--ongoing">
-            <div class="projects-stat-label">당해에 입금되는 총 지원금</div>
-            <div class="projects-stat-value" id="funding-ipgm-total">0</div>
-            <div class="projects-stat-sub-hint">회계연도 분배 기준</div>
-          </div>
-          <div class="projects-stat-card projects-stat-card--ongoing">
-            <div class="projects-stat-label">실제 수령 합계</div>
-            <div class="projects-stat-value" id="funding-actual-total" style="color:#15803d">0</div>
-            <div class="projects-stat-sub-hint">입금 일정의 실제 금액 합</div>
-          </div>
-          <div class="projects-stat-card projects-stat-card--ongoing">
-            <div class="projects-stat-label">미수 (예정 - 실제)</div>
-            <div class="projects-stat-value" id="funding-unpaid-total" style="color:#b91c1c">0</div>
-            <div class="projects-stat-sub-hint">예정 금액 대비 미수령</div>
-          </div>
-        </section>
+        <!-- 카드 그룹 1: 과제 -->
+        <div class="funding-cards-block">
+          <h2 class="funding-cards-title">과제</h2>
+          <section class="projects-stats-grid" aria-label="과제 자금 요약">
+            <div class="projects-stat-card projects-stat-card--ongoing">
+              <div class="projects-stat-label">당해 수주 총 지원금</div>
+              <div class="projects-stat-value projects-stat--success" id="funding-suju-total">0</div>
+              <div class="projects-stat-sub-hint">그 해 시작된 연차의 지원금</div>
+            </div>
+            <div class="projects-stat-card projects-stat-card--ongoing">
+              <div class="projects-stat-label">당해에 입금되는 총 지원금</div>
+              <div class="projects-stat-value" id="funding-ipgm-total">0</div>
+              <div class="projects-stat-sub-hint">회계연도 분배 기준</div>
+            </div>
+            <div class="projects-stat-card projects-stat-card--ongoing">
+              <div class="projects-stat-label">실제 수령 합계</div>
+              <div class="projects-stat-value" id="funding-actual-total" style="color:#15803d">0</div>
+              <div class="projects-stat-sub-hint">입금 일정의 실제 금액 합</div>
+            </div>
+            <div class="projects-stat-card projects-stat-card--ongoing">
+              <div class="projects-stat-label">미수 (예정 - 실제)</div>
+              <div class="projects-stat-value" id="funding-unpaid-total" style="color:#b91c1c">0</div>
+              <div class="projects-stat-sub-hint">예정 금액 대비 미수령</div>
+            </div>
+          </section>
+        </div>
 
-        <!-- 분기별/월별 cash flow -->
+        <!-- 카드 그룹 2: 용역 -->
+        <div class="funding-cards-block">
+          <h2 class="funding-cards-title funding-cards-title--service">용역</h2>
+          <section class="projects-stats-grid" aria-label="용역 자금 요약">
+            <div class="projects-stat-card projects-stat-card--ongoing">
+              <div class="projects-stat-label">당해 수주 총 용역 금액</div>
+              <div class="projects-stat-value projects-stat--success" id="funding-service-suju-total">0</div>
+              <div class="projects-stat-sub-hint">그 해 시작된 연차의 공급가</div>
+            </div>
+            <div class="projects-stat-card projects-stat-card--ongoing">
+              <div class="projects-stat-label">당해에 입금되는 총 용역 금액</div>
+              <div class="projects-stat-value" id="funding-service-ipgm-total">0</div>
+              <div class="projects-stat-sub-hint">회계연도 분배 기준 (공급가)</div>
+            </div>
+            <div class="projects-stat-card projects-stat-card--ongoing">
+              <div class="projects-stat-label">실제 수령 합계</div>
+              <div class="projects-stat-value" id="funding-service-actual-total" style="color:#15803d">0</div>
+              <div class="projects-stat-sub-hint">입금 일정의 실제 금액 합</div>
+            </div>
+            <div class="projects-stat-card projects-stat-card--ongoing">
+              <div class="projects-stat-label">미수 (예정 - 실제)</div>
+              <div class="projects-stat-value" id="funding-service-unpaid-total" style="color:#b91c1c">0</div>
+              <div class="projects-stat-sub-hint">예정 금액 대비 미수령</div>
+            </div>
+          </section>
+        </div>
+
+        <!-- 분기별/월별 cash flow (지원금 과제만) -->
         <section style="margin-top:1.5rem;">
           <h2 style="font-size:1.1rem; margin:0 0 0.75rem 0; color:#111827;">시기별 입금 현황</h2>
           <div id="funding-period-bar"></div>
         </section>
 
-        <!-- 과제별 입금 일정 표 -->
+        <!-- 과제별 입금 일정 표 (지원금 과제만) -->
         <section style="margin-top:1.5rem;">
           <h2 style="font-size:1.1rem; margin:0 0 0.75rem 0; color:#111827;">과제별 입금 일정</h2>
           <div id="funding-project-table"></div>
         </section>
+
       </div>
     </main>
   </div>

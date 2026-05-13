@@ -266,9 +266,11 @@
       if (status === '미선정' && submitYear === yearStr) unselectedCnt++;
 
       // ── 수주 지원금 ── status='수행/종료/선정기타' AND yearBudget.startDate==year
+      // (용역은 별도 트랙이므로 지원금 합산에서 제외)
+      var isService = (it.division1 === '용역');
       var isSelected = (status === '수행' || status === '종료' ||
                         status === '선정(기타)' || status === '선정 (기타)');
-      if (isSelected) {
+      if (isSelected && !isService) {
         if (Array.isArray(it.yearBudgets) && it.yearBudgets.length > 0) {
           it.yearBudgets.forEach(function (yb, ybIdx) {
             var ybStartRaw = yb.startDate || (ybIdx === 0 ? it.startDate : '');
@@ -288,13 +290,15 @@
         }
       }
 
-      // ── 입금 지원금 (그 해 실제 입금되는 금액) ──
-      var amt = getYearAmounts(it, year);
-      yearSupport += amt.support;
-      yearCash    += amt.cash;
-      yearInKind  += amt.inKind;
-      // ── 입금 완료 — actualPayments 합 ──
-      yearActual += getYearActualPayments(it, year);
+      // ── 입금 지원금 (그 해 실제 입금되는 금액) ── 용역 제외
+      if (!isService) {
+        var amt = getYearAmounts(it, year);
+        yearSupport += amt.support;
+        yearCash    += amt.cash;
+        yearInKind  += amt.inKind;
+        // ── 입금 완료 — actualPayments 합 ──
+        yearActual += getYearActualPayments(it, year);
+      }
     });
 
     var totalForDonut = waitingCnt + continueCnt + newCnt + endedCnt + selectedOtherCnt + unselectedCnt;
@@ -356,71 +360,86 @@
 
     setText('funding-subtitle', year + '년 수주 / 입금');
 
-    var support = kpis.yearSupport;
-    var cash    = kpis.yearCash;
-    var inKind  = kpis.yearInKind;
-    var max = Math.max(support, cash, inKind, 1);
+    // 자금 구성 (당해) — 가로 누적 막대그래프
+    var support = Number(kpis.yearSupport) || 0;
+    var cash    = Number(kpis.yearCash)    || 0;
+    var inKind  = Number(kpis.yearInKind)  || 0;
+    var totalFunds = support + cash + inKind;
 
-    var bs = document.getElementById('mini-bar-support');
-    var bc = document.getElementById('mini-bar-cash');
-    var bi = document.getElementById('mini-bar-inkind');
-    if (bs) bs.style.width = ((support / max) * 100).toFixed(1) + '%';
-    if (bc) bc.style.width = ((cash    / max) * 100).toFixed(1) + '%';
-    if (bi) bi.style.width = ((inKind  / max) * 100).toFixed(1) + '%';
+    setText('stacked-total', (totalFunds / 100000000).toFixed(1) + '억');
 
-    setText('mini-val-support', formatMoneyShort(support));
-    setText('mini-val-cash',    formatMoneyShort(cash));
-    setText('mini-val-inkind',  formatMoneyShort(inKind));
+    var pSupport = totalFunds > 0 ? (support / totalFunds) * 100 : 0;
+    var pCash    = totalFunds > 0 ? (cash    / totalFunds) * 100 : 0;
+    var pInkind  = totalFunds > 0 ? (inKind  / totalFunds) * 100 : 0;
+
+    var segS = document.getElementById('seg-support');
+    var segC = document.getElementById('seg-cash');
+    var segI = document.getElementById('seg-inkind');
+    if (segS) segS.style.width = pSupport.toFixed(1) + '%';
+    if (segC) segC.style.width = pCash.toFixed(1) + '%';
+    if (segI) segI.style.width = pInkind.toFixed(1) + '%';
+
+    setText('legend-val-support', (support / 100000000).toFixed(1) + '억');
+    setText('legend-val-cash',    (cash    / 100000000).toFixed(1) + '억');
+    setText('legend-val-inkind',  (inKind  / 100000000).toFixed(1) + '억');
+    setText('legend-pct-support', pSupport.toFixed(0) + '%');
+    setText('legend-pct-cash',    pCash.toFixed(0) + '%');
+    setText('legend-pct-inkind',  pInkind.toFixed(0) + '%');
   }
 
-  // Panel 3: 알림 / 임박
+  // Panel 3: 임박 알림 — D-7/D-3/D-day (제출 임박) + 종료 예정
   function renderAlerts(items, year, kpis) {
     var listEl = document.getElementById('alert-list');
     if (!listEl) return;
     listEl.innerHTML = '';
 
     var today = new Date();
+    today.setHours(0, 0, 0, 0);
     var todayStr = today.toISOString().slice(0, 10);
 
-    // 이번 달 마지막 날 (오늘 ~ 이번 달 말일까지의 종료를 "이번 달 종료" 로 본다)
+    // 이번 달 마지막 날 (종료 예정 기간)
     var monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0);
     var monthEndStr = monthEnd.toISOString().slice(0, 10);
 
-    // D+7 (오늘 포함 7일 이내 제출일)
-    var d7 = new Date();
-    d7.setDate(d7.getDate() + 7);
-    var d7Str = d7.toISOString().slice(0, 10);
-
-    // 1. 이번 달 종료 예정 — status='수행' AND endDate가 오늘 ~ 이번 달 말일 사이
-    var endingThisMonth = [];
-    // 2. D-7 이내 제출 — submitDate가 오늘 ~ 오늘+7일 사이 (상태 무관, 보통 '대기'가 해당)
-    var submitSoon = [];
+    var d7Count = 0, d3Count = 0, ddayCount = 0;
+    var endingCount = 0;
+    var endingList = [];
+    var submitList = [];
 
     items.forEach(function (it) {
       var name = it.projectName || it.keywords || '(제목 없음)';
 
-      // 이번 달 종료
-      if (normalizeStatus(it) === '수행') {
-        var end = (it.endDate || it.end || '').toString().slice(0, 10);
-        if (end && end >= todayStr && end <= monthEndStr) {
-          var diffE = Math.ceil((new Date(end) - today) / (1000 * 60 * 60 * 24));
-          endingThisMonth.push({ name: name, date: end, dDay: Math.max(0, diffE), type: 'end' });
+      // 제출 임박 (상태 무관, D-day 단계별 카운트 — 서로 겹치지 않음)
+      var submit = (it.submitDate || it['제출일'] || '').toString().slice(0, 10);
+      if (submit && submit >= todayStr) {
+        var diffS = Math.round((new Date(submit) - today) / (1000 * 60 * 60 * 24));
+        if (diffS === 0) ddayCount++;
+        else if (diffS >= 1 && diffS <= 3) d3Count++;
+        else if (diffS >= 4 && diffS <= 7) d7Count++;
+
+        if (diffS >= 0 && diffS <= 7) {
+          submitList.push({ name: name, date: submit, dDay: diffS, type: 'submit' });
         }
       }
 
-      // D-7 이내 제출
-      var submit = (it.submitDate || it['제출일'] || '').toString().slice(0, 10);
-      if (submit && submit >= todayStr && submit <= d7Str) {
-        var diffS = Math.ceil((new Date(submit) - today) / (1000 * 60 * 60 * 24));
-        submitSoon.push({ name: name, date: submit, dDay: Math.max(0, diffS), type: 'submit' });
+      // 종료 예정 (수행 상태, 이번 달 안에 종료)
+      if (normalizeStatus(it) === '수행') {
+        var end = (it.endDate || it.end || '').toString().slice(0, 10);
+        if (end && end >= todayStr && end <= monthEndStr) {
+          endingCount++;
+          var diffE = Math.round((new Date(end) - today) / (1000 * 60 * 60 * 24));
+          endingList.push({ name: name, date: end, dDay: Math.max(0, diffE), type: 'end' });
+        }
       }
     });
 
-    setText('alert-due-count', endingThisMonth.length);
-    setText('alert-submit-count', submitSoon.length);
+    setText('alert-d7', d7Count);
+    setText('alert-d3', d3Count);
+    setText('alert-dday', ddayCount);
+    setText('alert-ending', endingCount);
 
-    // 통합 알림 리스트 (가까운 순)
-    var allAlerts = endingThisMonth.concat(submitSoon);
+    // 통합 알림 리스트 — D-day 가까운 순
+    var allAlerts = submitList.concat(endingList);
     allAlerts.sort(function (a, b) { return a.dDay - b.dDay; });
 
     if (allAlerts.length === 0) {
@@ -479,8 +498,8 @@
     var rInner = r - sw / 2;
     var COuter = 2 * Math.PI * rOuter;
     var CInner = 2 * Math.PI * rInner;
-    var ringStroke = '#e2e8f0';   // 안/밖 동그라미 — 살짝
-    var sliceStroke = '#cbd5e1';  // 조각 사이 직선 — 좀 더 명확
+    var ringStroke = '#e2e8f0';   // 안/밖 동그라미
+    var sliceStroke = '#e2e8f0';  // 조각 사이 직선 (동일 톤)
 
     if (total > 0) {
       var offset = 0;
@@ -577,8 +596,9 @@
     if (!table || !tbody || !empty) return;
 
     var asOfDate = yearEndDate(year);
-    // 수행 과제만 + 그 해 당해 지원금 사전 계산
+    // 수행 과제만 + 그 해 당해 지원금 사전 계산 (용역은 별도 트랙이므로 제외)
     var ongoing = items.filter(function (it) {
+      if (it.division1 === '용역') return false;
       return statusAsOf(it, asOfDate) === '수행' && projectOverlapsYear(it, year);
     }).map(function (it) {
       var amt = getYearAmounts(it, year);

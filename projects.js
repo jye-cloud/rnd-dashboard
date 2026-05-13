@@ -313,13 +313,16 @@
         ongoingAll++;
       }
 
+      // 용역은 별도 트랙 — 카드 카운트에는 포함, 자금 합산에는 제외
+      var isService = (it.division1 === '용역');
+
       // ── 당해 수주 총 지원금 ──
       // 조건: status가 수주(수행/종료/선정기타) AND yearBudget.startDate가 statsYear
       // 합산: 그 연차의 support (정부지원금)
       // 분류: 그 yearBudget이 1차(index 0) → 신규, 2차 이상 → 계속
       var isSelected = (status === '수행' || status === '종료' ||
                         status === '선정(기타)' || status === '선정 (기타)');
-      if (isSelected) {
+      if (isSelected && !isService) {
         if (Array.isArray(it.yearBudgets) && it.yearBudgets.length > 0) {
           it.yearBudgets.forEach(function (yb, ybIdx) {
             // yb.startDate 없으면 1차(ybIdx=0)일 때 it.startDate 폴백
@@ -368,14 +371,17 @@
       }
 
       // ── 당해에 입금되는 총 지원금 ── 각 yearBudget의 calendarBreakdown 우선, 없으면 자동 비례
+      // 용역은 별도 트랙이므로 제외
       var sy = 0;
-      if (it.yearBudgets && Array.isArray(it.yearBudgets)) {
-        it.yearBudgets.forEach(function (y) {
-          sy += supportInYear(y, statsYear);
-        });
-      } else if (it.supportYear != null && !isNaN(Number(it.supportYear)) && Number(statsYear) === STAT_YEAR) {
-        // 옛 데이터 폴백
-        sy = Number(it.supportYear);
+      if (!isService) {
+        if (it.yearBudgets && Array.isArray(it.yearBudgets)) {
+          it.yearBudgets.forEach(function (y) {
+            sy += supportInYear(y, statsYear);
+          });
+        } else if (it.supportYear != null && !isNaN(Number(it.supportYear)) && Number(statsYear) === STAT_YEAR) {
+          // 옛 데이터 폴백
+          sy = Number(it.supportYear);
+        }
       }
       yearSum += sy;
 
@@ -392,7 +398,8 @@
 
       // 당해 입금 완료 — actualPayments 우선, 없을 때만 옛 payments 폴백 (중복 방지)
       // 한 yb 내 같은 (date+amount) 항목은 중복 카운트하지 않음 (옛 마이그레이션 잔재)
-      if (Array.isArray(it.yearBudgets)) {
+      // 용역은 별도 트랙이므로 제외
+      if (Array.isArray(it.yearBudgets) && !isService) {
         it.yearBudgets.forEach(function (yb) {
           // 새 구조 actualPayments 있으면 그것만 사용
           if (Array.isArray(yb.actualPayments) && yb.actualPayments.length > 0) {

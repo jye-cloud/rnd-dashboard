@@ -317,6 +317,103 @@
     .mini-bar-fill--support { background: #10b981; }
     .mini-bar-fill--cash    { background: #3b82f6; }
     .mini-bar-fill--inkind  { background: #94a3b8; }
+
+    /* Stacked bar (자금 구성 가로 누적) */
+    .stacked-section-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin: 0 0 0.6rem;
+    }
+    .stacked-section-header .panel-section-title { margin: 0; }
+    .stacked-total {
+      display: flex;
+      align-items: baseline;
+      gap: 0.35rem;
+    }
+    .stacked-total-label {
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+    }
+    .stacked-total-value {
+      font-size: 1.05rem;
+      font-weight: 800;
+      color: #475569;
+      letter-spacing: -0.02em;
+    }
+    .stacked-bar-track {
+      display: flex;
+      height: 12px;
+      border-radius: 6px;
+      overflow: hidden;
+      background: #f1f5f9;
+      margin-bottom: 0.85rem;
+    }
+    .stacked-bar-segment {
+      height: 100%;
+      transition: width 0.3s ease;
+    }
+    .stacked-bar-segment--support { background: #60a5fa; }
+    .stacked-bar-segment--cash    { background: #34d399; }
+    .stacked-bar-segment--inkind  { background: #94a3b8; }
+    /* 지원금 구성 — 별도 팔레트 (자금 구성과 시각적 구분) */
+    .stacked-bar-segment--personnel { background: #14b8a6; }
+    .stacked-bar-segment--service   { background: #f97316; }
+    .stacked-bar-segment--etc       { background: #94a3b8; }
+    .stacked-legend {
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+    .stacked-legend--inline {
+      flex-direction: row;
+      flex-wrap: nowrap;
+      gap: 0.5rem;
+      justify-content: space-between;
+    }
+    .stacked-legend-item {
+      display: grid;
+      grid-template-columns: auto 1fr auto auto;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.85rem;
+    }
+    .stacked-legend--inline .stacked-legend-item {
+      display: inline-flex;
+      grid-template-columns: none;
+      gap: 0.2rem;
+      font-size: 0.78rem;
+      white-space: nowrap;
+    }
+    .stacked-legend-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+    }
+    .stacked-legend-label {
+      color: #475569;
+    }
+    .stacked-legend-value {
+      font-weight: 700;
+      color: #475569;
+      min-width: 4em;
+      text-align: right;
+    }
+    .stacked-legend--inline .stacked-legend-value {
+      min-width: 0;
+      text-align: left;
+    }
+    .stacked-legend-pct {
+      color: #94a3b8;
+      font-size: 0.78rem;
+      min-width: 3.5em;
+      text-align: right;
+    }
+    .stacked-legend--inline .stacked-legend-pct {
+      min-width: 0;
+      text-align: left;
+      font-size: 0.7rem;
+    }
     .mini-bar-value {
       font-weight: 700;
       color: var(--text-primary);
@@ -346,6 +443,51 @@
       color: var(--text-secondary);
       font-weight: 500;
     }
+    /* Deadline stats (D-7/D-3/D-day | 종료 예정) */
+    .deadline-stats {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr auto 1fr;
+      gap: 0.35rem;
+      align-items: stretch;
+      margin-bottom: 0.5rem;
+    }
+    .deadline-cell {
+      text-align: center;
+      padding: 0.55rem 0.25rem;
+      border-radius: 0.5rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 0.25rem;
+    }
+    .deadline-num {
+      font-size: 1.55rem;
+      font-weight: 800;
+      line-height: 1;
+      letter-spacing: -0.02em;
+    }
+    .deadline-label {
+      font-size: 0.7rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      letter-spacing: 0.02em;
+    }
+    .deadline-divider {
+      width: 1px;
+      background: rgba(148, 163, 184, 0.4);
+      margin: 0.3rem 0.05rem;
+    }
+    /* 빨간색 그라데이션 — D-7 → D-day 로 갈수록 진해짐 */
+    .deadline-cell--d7   { background: #fef2f2; }
+    .deadline-cell--d7   .deadline-num { color: #f87171; }
+    .deadline-cell--d3   { background: #fee2e2; }
+    .deadline-cell--d3   .deadline-num { color: #ef4444; }
+    .deadline-cell--dday { background: #fecaca; }
+    .deadline-cell--dday .deadline-num { color: #b91c1c; }
+    /* 종료 예정 — 주황 (제출과 시각적 구분) */
+    .deadline-cell--ending { background: #fff7ed; }
+    .deadline-cell--ending .deadline-num { color: #ea580c; }
     .alert-mini-list {
       display: flex;
       flex-direction: column;
@@ -786,39 +928,96 @@
                 </div>
               </div>
               <div class="panel-divider"></div>
-              <h3 class="panel-section-title">자금 구성 (당해)</h3>
-              <div class="mini-bars">
-                <div class="mini-bar-row">
-                  <span class="mini-bar-label">정부지원금</span>
-                  <div class="mini-bar-track"><div class="mini-bar-fill mini-bar-fill--support" id="mini-bar-support" style="width:0%"></div></div>
-                  <span class="mini-bar-value" id="mini-val-support">0</span>
+              <div class="stacked-section-header">
+                <h3 class="panel-section-title">자금 구성 (당해)</h3>
+                <div class="stacked-total">
+                  <span class="stacked-total-label">합계</span>
+                  <span class="stacked-total-value" id="stacked-total">0</span>
                 </div>
-                <div class="mini-bar-row">
-                  <span class="mini-bar-label">자부담 현금</span>
-                  <div class="mini-bar-track"><div class="mini-bar-fill mini-bar-fill--cash" id="mini-bar-cash" style="width:0%"></div></div>
-                  <span class="mini-bar-value" id="mini-val-cash">0</span>
+              </div>
+              <div class="stacked-bar-track">
+                <div class="stacked-bar-segment stacked-bar-segment--support" id="seg-support" style="width:0%"></div>
+                <div class="stacked-bar-segment stacked-bar-segment--cash"    id="seg-cash"    style="width:0%"></div>
+                <div class="stacked-bar-segment stacked-bar-segment--inkind"  id="seg-inkind"  style="width:0%"></div>
+              </div>
+              <div class="stacked-legend stacked-legend--inline">
+                <span class="stacked-legend-item">
+                  <span class="stacked-legend-dot stacked-bar-segment--support"></span>
+                  <span class="stacked-legend-label">지원금</span>
+                  <span class="stacked-legend-value" id="legend-val-support">0</span>
+                  <span class="stacked-legend-pct"   id="legend-pct-support">0%</span>
+                </span>
+                <span class="stacked-legend-item">
+                  <span class="stacked-legend-dot stacked-bar-segment--cash"></span>
+                  <span class="stacked-legend-label">현금</span>
+                  <span class="stacked-legend-value" id="legend-val-cash">0</span>
+                  <span class="stacked-legend-pct"   id="legend-pct-cash">0%</span>
+                </span>
+                <span class="stacked-legend-item">
+                  <span class="stacked-legend-dot stacked-bar-segment--inkind"></span>
+                  <span class="stacked-legend-label">현물</span>
+                  <span class="stacked-legend-value" id="legend-val-inkind">0</span>
+                  <span class="stacked-legend-pct"   id="legend-pct-inkind">0%</span>
+                </span>
+              </div>
+
+              <div class="panel-divider"></div>
+              <div class="stacked-section-header">
+                <h3 class="panel-section-title">지원금 구성 (당해)</h3>
+                <div class="stacked-total">
+                  <span class="stacked-total-label">합계</span>
+                  <span class="stacked-total-value" id="stacked2-total">0</span>
                 </div>
-                <div class="mini-bar-row">
-                  <span class="mini-bar-label">자부담 현물</span>
-                  <div class="mini-bar-track"><div class="mini-bar-fill mini-bar-fill--inkind" id="mini-bar-inkind" style="width:0%"></div></div>
-                  <span class="mini-bar-value" id="mini-val-inkind">0</span>
-                </div>
+              </div>
+              <div class="stacked-bar-track">
+                <div class="stacked-bar-segment stacked-bar-segment--personnel" id="seg2-personnel" style="width:0%"></div>
+                <div class="stacked-bar-segment stacked-bar-segment--service"   id="seg2-service"   style="width:0%"></div>
+                <div class="stacked-bar-segment stacked-bar-segment--etc"       id="seg2-etc"       style="width:0%"></div>
+              </div>
+              <div class="stacked-legend stacked-legend--inline">
+                <span class="stacked-legend-item">
+                  <span class="stacked-legend-dot stacked-bar-segment--personnel"></span>
+                  <span class="stacked-legend-label">인건비</span>
+                  <span class="stacked-legend-value" id="legend2-val-personnel">0</span>
+                  <span class="stacked-legend-pct"   id="legend2-pct-personnel">0%</span>
+                </span>
+                <span class="stacked-legend-item">
+                  <span class="stacked-legend-dot stacked-bar-segment--service"></span>
+                  <span class="stacked-legend-label">용역비</span>
+                  <span class="stacked-legend-value" id="legend2-val-service">0</span>
+                  <span class="stacked-legend-pct"   id="legend2-pct-service">0%</span>
+                </span>
+                <span class="stacked-legend-item">
+                  <span class="stacked-legend-dot stacked-bar-segment--etc"></span>
+                  <span class="stacked-legend-label">기타</span>
+                  <span class="stacked-legend-value" id="legend2-val-etc">0</span>
+                  <span class="stacked-legend-pct"   id="legend2-pct-etc">0%</span>
+                </span>
               </div>
               <p class="hero-panel-footnote">* yearBudgets 기준 합산</p>
             </div>
 
             <!-- Panel 3: 알림 (orange) -->
             <div class="hero-panel hero-panel--orange">
-              <h2 class="hero-panel-title">알림 / 임박 <span aria-hidden="true">⏰</span></h2>
-              <p class="hero-panel-subtitle">이번 달 종료 · D-7 제출 임박</p>
-              <div class="alert-stats">
-                <div>
-                  <div class="alert-stat-num alert-stat-num--warning" id="alert-due-count">0</div>
-                  <div class="alert-stat-label">이번 달 종료 예정</div>
+              <h2 class="hero-panel-title">일정 알림 <span aria-hidden="true">⏰</span></h2>
+              <p class="hero-panel-subtitle">제출 임박 · 종료 예정</p>
+              <div class="deadline-stats">
+                <div class="deadline-cell deadline-cell--d7">
+                  <div class="deadline-num" id="alert-d7">0</div>
+                  <div class="deadline-label">D-7</div>
                 </div>
-                <div>
-                  <div class="alert-stat-num alert-stat-num--danger" id="alert-submit-count">0</div>
-                  <div class="alert-stat-label">D-7 이내 제출</div>
+                <div class="deadline-cell deadline-cell--d3">
+                  <div class="deadline-num" id="alert-d3">0</div>
+                  <div class="deadline-label">D-3</div>
+                </div>
+                <div class="deadline-cell deadline-cell--dday">
+                  <div class="deadline-num" id="alert-dday">0</div>
+                  <div class="deadline-label">D-day</div>
+                </div>
+                <div class="deadline-divider"></div>
+                <div class="deadline-cell deadline-cell--ending">
+                  <div class="deadline-num" id="alert-ending">0</div>
+                  <div class="deadline-label">종료 예정</div>
                 </div>
               </div>
               <div class="panel-divider"></div>

@@ -3,6 +3,7 @@
  * - 카드: 당해 수주 / 당해 입금 / 실제 수령 / 미수
  * - 시기별 cash flow (분기/월 토글)
  * - 과제별 입금 일정 표
+ * - "지원금" 섹션(division1 !== '용역')과 "용역" 섹션(division1 === '용역')을 각각 별도로 렌더
  */
 (function () {
   'use strict';
@@ -24,7 +25,7 @@
     if (el) el.textContent = val;
   }
 
-  // normalizeStatus — 자동 전환 포함 (projects.js와 동일)
+  // normalizeStatus — projects.js와 동일
   function normalizeStatus(it) {
     var raw = (it.status || it['진행 여부'] || '').toString().trim();
     var n = raw.replace(/\s/g, '');
@@ -74,41 +75,23 @@
     return Math.round(support * ovDays / totalDays);
   }
 
-  // ===== 메인 렌더 =====
-
-  var allProjects = [];
-  var currentYear = '2026';
-  var currentView = 'quarter';  // 'quarter' | 'month'
-
-  /**
-   * yearBudget에서 plannedPayments + actualPayments를 가져옴
-   * 옛 payments 형식도 자동 변환
-   */
   function getPaymentsFromYb(yb) {
     var planned = Array.isArray(yb.plannedPayments) ? yb.plannedPayments.slice() : [];
     var actual = Array.isArray(yb.actualPayments) ? yb.actualPayments.slice() : [];
     if (Array.isArray(yb.payments)) {
       yb.payments.forEach(function (p) {
         if (p.plannedDate || (p.plannedAmount && p.plannedAmount > 0)) {
-          planned.push({
-            date: p.plannedDate || '',
-            amount: Number(p.plannedAmount || 0)
-          });
+          planned.push({ date: p.plannedDate || '', amount: Number(p.plannedAmount || 0) });
         }
         if (p.actualDate || (p.actualAmount && p.actualAmount > 0)) {
-          actual.push({
-            date: p.actualDate || '',
-            amount: Number(p.actualAmount || 0)
-          });
+          actual.push({ date: p.actualDate || '', amount: Number(p.actualAmount || 0) });
         }
       });
     }
     return { planned: planned, actual: actual };
   }
 
-  function getYearFromDate(s) {
-    return (s || '').toString().slice(0, 4);
-  }
+  function getYearFromDate(s) { return (s || '').toString().slice(0, 4); }
   function getMonthFromDate(s) {
     var v = (s || '').toString().slice(5, 7);
     return v ? parseInt(v, 10) : 0;
@@ -121,54 +104,49 @@
     return 0;
   }
 
-  function updateCards() {
-    // 카드 4종: 수주 / 입금 / 실제 / 미수
+  // ===== 메인 상태 =====
+  var allProjects = [];
+  var currentYear = '2026';
+  var currentView = 'quarter';
+
+  // ===== 카드 업데이트 (한 카테고리분) =====
+  function updateCards(items, ids) {
     var sujuTotal = 0;
     var ipgmTotal = 0;
     var actualTotal = 0;
 
-    allProjects.forEach(function (it) {
+    items.forEach(function (it) {
       var status = normalizeStatus(it);
       var isSelected = (status === '수행' || status === '종료' ||
                         status === '선정(기타)' || status === '선정 (기타)');
-
       if (!Array.isArray(it.yearBudgets)) return;
-
       it.yearBudgets.forEach(function (yb) {
-        // 수주: 그 해에 시작된 연차의 support (status 조건)
         if (isSelected) {
           var ybStartYear = getYearFromDate(yb.startDate);
-          if (ybStartYear === currentYear) {
-            sujuTotal += Number(yb.support || 0);
-          }
+          if (ybStartYear === currentYear) sujuTotal += Number(yb.support || 0);
         }
-        // 입금: 그 해 입금분 (calendarBreakdown 우선)
         ipgmTotal += supportInYear(yb, currentYear);
-
-        // 실제 수령: actualPayments의 그 해 받은 것 (옛 payments도 호환)
         var pays = getPaymentsFromYb(yb);
         pays.actual.forEach(function (p) {
           var actualY = getYearFromDate(p.date);
-          if (actualY === currentYear && p.amount) {
-            actualTotal += Number(p.amount) || 0;
-          }
+          if (actualY === currentYear && p.amount) actualTotal += Number(p.amount) || 0;
         });
       });
     });
 
     var unpaid = ipgmTotal - actualTotal;
-
-    setEl('funding-suju-total', formatNum(sujuTotal));
-    setEl('funding-ipgm-total', formatNum(ipgmTotal));
-    setEl('funding-actual-total', formatNum(actualTotal));
-    setEl('funding-unpaid-total', formatNum(unpaid));
+    setEl(ids.suju, formatNum(sujuTotal));
+    setEl(ids.ipgm, formatNum(ipgmTotal));
+    setEl(ids.actual, formatNum(actualTotal));
+    setEl(ids.unpaid, formatNum(unpaid));
   }
 
-  function renderPeriodBar() {
-    var container = document.getElementById('funding-period-bar');
+  // ===== 시기별 입금 현황 (한 카테고리분) =====
+  function renderPeriodBar(items, containerId) {
+    var container = document.getElementById(containerId);
     if (!container) return;
 
-    var bins;  // 분기 또는 월별 bin
+    var bins;
     if (currentView === 'quarter') {
       bins = [
         { label: '1분기 (1-3월)', planned: 0, actual: 0 },
@@ -178,39 +156,30 @@
       ];
     } else {
       bins = [];
-      for (var m = 1; m <= 12; m++) {
-        bins.push({ label: m + '월', planned: 0, actual: 0 });
-      }
+      for (var m = 1; m <= 12; m++) bins.push({ label: m + '월', planned: 0, actual: 0 });
     }
 
-    // 모든 payment 순회 (옛 payments 자동 마이그레이션)
-    allProjects.forEach(function (it) {
+    items.forEach(function (it) {
       if (!Array.isArray(it.yearBudgets)) return;
       it.yearBudgets.forEach(function (yb) {
         var pays = getPaymentsFromYb(yb);
-        // 예정 — date가 currentYear인 경우
         pays.planned.forEach(function (p) {
           var pY = getYearFromDate(p.date);
           if (pY === currentYear) {
             var pM = getMonthFromDate(p.date);
             if (pM > 0) {
               var binIdx = currentView === 'quarter' ? (monthToQuarter(pM) - 1) : (pM - 1);
-              if (binIdx >= 0 && binIdx < bins.length) {
-                bins[binIdx].planned += Number(p.amount || 0);
-              }
+              if (binIdx >= 0 && binIdx < bins.length) bins[binIdx].planned += Number(p.amount || 0);
             }
           }
         });
-        // 실제 — date 기준
         pays.actual.forEach(function (p) {
           var aY = getYearFromDate(p.date);
           if (aY === currentYear && p.amount) {
             var aM = getMonthFromDate(p.date);
             if (aM > 0) {
               var binIdx2 = currentView === 'quarter' ? (monthToQuarter(aM) - 1) : (aM - 1);
-              if (binIdx2 >= 0 && binIdx2 < bins.length) {
-                bins[binIdx2].actual += Number(p.amount || 0);
-              }
+              if (binIdx2 >= 0 && binIdx2 < bins.length) bins[binIdx2].actual += Number(p.amount || 0);
             }
           }
         });
@@ -229,11 +198,11 @@
       }).join('') + '</div>';
   }
 
-  function renderProjectTable() {
-    var container = document.getElementById('funding-project-table');
+  // ===== 과제별 입금 일정 표 (한 카테고리분) =====
+  function renderProjectTable(items, containerId, emptyHint) {
+    var container = document.getElementById(containerId);
     if (!container) return;
 
-    // 현재 뷰에 따라 bin 수 (분기=4, 월=12)
     var isMonth = (currentView === 'month');
     var numBins = isMonth ? 12 : 4;
     var binLabels = isMonth
@@ -247,7 +216,7 @@
 
     var rows = [];
 
-    allProjects.forEach(function (it) {
+    items.forEach(function (it) {
       if (!Array.isArray(it.yearBudgets)) return;
       it.yearBudgets.forEach(function (yb, ybIdx) {
         var pays = getPaymentsFromYb(yb);
@@ -286,7 +255,6 @@
           }
         });
 
-        // 누적 잔액 계산 (왼쪽부터)
         var balances = [];
         var cumBal = 0;
         for (var bii = 0; bii < numBins; bii++) {
@@ -294,36 +262,20 @@
           balances.push(cumBal);
         }
 
-        // 상태 판정
         for (var qi = 0; qi < numBins; qi++) {
           var diff = bins[qi].p - bins[qi].a;
           if (diff > 0) {
-            // 미수
-            // (1) 이전 선입금으로 보충됐는지 — balances[qi] < diff 이면 이전 음수 누적 있음
             if (balances[qi] < diff) {
               bins[qi].status = 'resolved';
-              if (balances[qi] > 0) {
-                // 부분 보충 — 잔여 표시
-                bins[qi].remainingMiss = balances[qi];
-              }
-              // balances[qi] <= 0 → 완전 보충, 잔여 없음
+              if (balances[qi] > 0) bins[qi].remainingMiss = balances[qi];
             } else {
-              // (2) 후속 초과로 보충
               var afterExcess = 0;
-              for (var qj = qi + 1; qj < numBins; qj++) {
-                afterExcess += Math.max(0, bins[qj].a - bins[qj].p);
-              }
-              if (afterExcess >= diff) {
-                bins[qi].status = 'resolved';
-              } else if (afterExcess > 0) {
-                bins[qi].status = 'resolved';
-                bins[qi].remainingMiss = diff - afterExcess;
-              } else {
-                bins[qi].status = 'overdue';
-              }
+              for (var qj = qi + 1; qj < numBins; qj++) afterExcess += Math.max(0, bins[qj].a - bins[qj].p);
+              if (afterExcess >= diff) bins[qi].status = 'resolved';
+              else if (afterExcess > 0) { bins[qi].status = 'resolved'; bins[qi].remainingMiss = diff - afterExcess; }
+              else bins[qi].status = 'overdue';
             }
           } else if (diff < 0) {
-            // 초과 — 다른 분기 미수 있으면 보충 중 (paid-fill), 없으면 진짜 초과 (over)
             var hasOtherMiss = false;
             for (var qk = 0; qk < numBins; qk++) {
               if (qk === qi) continue;
@@ -357,7 +309,7 @@
 
     if (!rows.length) {
       container.innerHTML = '<div class="funding-table" style="padding:0;"><div class="funding-empty">' +
-        currentYear + '년 입금 일정이 없습니다.<br>' +
+        currentYear + '년 ' + (emptyHint || '입금 일정') + '이 없습니다.<br>' +
         '<span style="font-size:0.82rem;">과제 등록/수정 페이지에서 입금 일정을 입력하세요.</span>' +
         '</div></div>';
       return;
@@ -365,11 +317,8 @@
 
     rows.sort(function (a, b) { return b.balance - a.balance; });
 
-    // 합계 bin
     var totalBins = [];
-    for (var ti = 0; ti < numBins; ti++) {
-      totalBins.push({ p: 0, a: 0, pc: 0, ac: 0, status: 'normal' });
-    }
+    for (var ti = 0; ti < numBins; ti++) totalBins.push({ p: 0, a: 0, pc: 0, ac: 0, status: 'normal' });
     var totalTotalP = 0, totalTotalA = 0;
     rows.forEach(function (r) {
       for (var i = 0; i < numBins; i++) {
@@ -465,14 +414,34 @@
       '</div>';
   }
 
+  // ===== 전체 렌더 (카드만 과제/용역 분리, 시기별/과제별은 지원금 과제만) =====
   function renderAll() {
-    updateCards();
-    renderPeriodBar();
-    renderProjectTable();
+    // 지원금(과제) = division1이 '용역'이 아닌 것 (빈 값 포함)
+    var supportItems = allProjects.filter(function (it) { return it.division1 !== '용역'; });
+    // 용역
+    var serviceItems = allProjects.filter(function (it) { return it.division1 === '용역'; });
+
+    // 카드: 과제
+    updateCards(supportItems, {
+      suju: 'funding-suju-total',
+      ipgm: 'funding-ipgm-total',
+      actual: 'funding-actual-total',
+      unpaid: 'funding-unpaid-total'
+    });
+    // 카드: 용역
+    updateCards(serviceItems, {
+      suju: 'funding-service-suju-total',
+      ipgm: 'funding-service-ipgm-total',
+      actual: 'funding-service-actual-total',
+      unpaid: 'funding-service-unpaid-total'
+    });
+
+    // 시기별 / 과제별 — 지원금 과제만 표시 (용역 제외)
+    renderPeriodBar(supportItems, 'funding-period-bar');
+    renderProjectTable(supportItems, 'funding-project-table', '입금 일정');
   }
 
   // ===== 초기화 =====
-
   function init() {
     var yearFilter = document.getElementById('funding-year-filter');
     if (yearFilter) {
@@ -488,27 +457,21 @@
         document.querySelectorAll('.view-toggle-btn').forEach(function (b) { b.classList.remove('active'); });
         btn.classList.add('active');
         currentView = btn.getAttribute('data-view');
-        renderPeriodBar();
-        renderProjectTable();
+        renderAll();
       });
     });
 
-    // Firestore 구독
     if (typeof window.firestoreService === 'object' && typeof window.firestoreService.subscribeProjects === 'function') {
       window.firestoreService.subscribeProjects(function (projects) {
         allProjects = projects || [];
         renderAll();
       });
     } else {
-      // firestoreService 없는 경우 — 빈 데이터
       allProjects = [];
       renderAll();
     }
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
-  } else {
-    init();
-  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
 })();
