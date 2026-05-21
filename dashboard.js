@@ -43,14 +43,26 @@
   function formatMoneyParts(n) {
     var num = Number(n) || 0;
     if (num >= 100000000) {
-      var eok = num / 100000000;
-      return { value: eok.toFixed(eok >= 100 ? 0 : 1).replace(/\.0$/, ''), unit: '억' };
+      // 0.1억(천만원) 단위로 내림 — 반올림 없음 (27.96억 → 27.9억)
+      var eok = Math.floor(num / 10000000) / 10;
+      if (eok >= 100) {
+        // 100억 이상은 정수 단위로 (1억 단위 내림)
+        return { value: formatNum(Math.floor(num / 100000000)), unit: '억' };
+      }
+      return { value: eok.toFixed(1).replace(/\.0$/, ''), unit: '억' };
     }
     if (num >= 10000) {
       var man = Math.round(num / 10000);
       return { value: formatNum(man), unit: '만' };
     }
     return { value: formatNum(num), unit: '원' };
+  }
+
+  // 억 단위 — 0.1억(천만원) 단위로 내림하여 X.X 형식으로 반환 (반올림 없음)
+  // 예: 2,796,000,000원 → "27.9" (28.0 아님)
+  function eokFloor(amount) {
+    var n = Number(amount) || 0;
+    return (Math.floor(n / 10000000) / 10).toFixed(1);
   }
 
   function formatMoneyShort(n) {
@@ -242,7 +254,9 @@
 
     // 자금
     var sujuTotal = 0;       // 수주 지원금 — 그 해 시작 yearBudget.support 합 (status 수행/종료/선정기타)
-    var yearSupport = 0;     // 입금 예정 지원금 — 그 해 입금 예정 금액
+    var yearSupport = 0;     // 입금 예정 지원금 — 그 해 입금 예정 금액 (총합)
+    var yearSupportTask = 0; // 입금 예정 지원금 — 과제 분류만
+    var yearSupportOther = 0;// 입금 예정 지원금 — 지원사업 + 기타 (용역 제외)
     var yearActual = 0;      // 입금 완료 — 그 해 actualPayments 합
     var yearCash = 0;
     var yearInKind = 0;
@@ -290,12 +304,18 @@
         }
       }
 
-      // ── 입금 지원금 (그 해 실제 입금되는 금액) ── 용역 제외
+      // ── 입금 지원금 (그 해 실제 입금되는 금액) ── 용역 제외, 분류별로 분리
       if (!isService) {
         var amt = getYearAmounts(it, year);
         yearSupport += amt.support;
         yearCash    += amt.cash;
         yearInKind  += amt.inKind;
+        // 유형별 — 과제 vs 기타(지원사업 + 기타 + 빈 값)
+        if (it.division1 === '과제') {
+          yearSupportTask += amt.support;
+        } else {
+          yearSupportOther += amt.support;
+        }
         // ── 입금 완료 — actualPayments 합 ──
         yearActual += getYearActualPayments(it, year);
       }
@@ -315,6 +335,8 @@
       // 자금
       sujuTotal: sujuTotal,
       yearSupport: yearSupport,
+      yearSupportTask: yearSupportTask,
+      yearSupportOther: yearSupportOther,
       yearActual: yearActual,
       yearCash: yearCash,
       yearInKind: yearInKind,
@@ -340,25 +362,30 @@
     if (titleEl) titleEl.innerHTML = year + '년 현황 <span aria-hidden="true">📋</span>';
   }
 
-  // Panel 2: 자금 현황 — 수주 지원금 + 입금 지원금
+  // Panel 2: 지원금 현황 — 입금 예정(과제) + 전체/기타 + 입금 완료율
   function renderFunding(kpis, year) {
-    // 수주 지원금 (왼쪽, 파랑 강조) — 항상 0.0억 형식 (소수점 1자리, 반올림 없음)
-    var sujuEok = (Number(kpis.sujuTotal) || 0) / 100000000;
-    setText('hero-year-sum', sujuEok.toFixed(1));
-    setText('hero-year-unit', ' 억');
+    // 카드 1: 입금 예정 (과제) — 메인, 파란색 강조
+    setText('hero-task-sum', eokFloor(kpis.yearSupportTask));
 
-    // 입금 예정 지원금 (가운데, neutral) — 그 해 실제 입금 예정 금액
-    var ip = formatMoneyParts(kpis.yearSupport);
-    setText('hero-total-sum', ip.value);
-    setText('hero-total-unit', ' ' + ip.unit);
+    // 카드 2: 전체 / 기타
+    setText('hero-total-sum', eokFloor(kpis.yearSupport));
+    setText('hero-other-sum', eokFloor(kpis.yearSupportOther));
 
-    // 입금 완료율 (오른쪽, neutral) — actualPayments / yearSupport * 100
+    // 카드 3: 입금 완료율 — actualPayments / yearSupport * 100
     var planned = Number(kpis.yearSupport) || 0;
     var actual = Number(kpis.yearActual) || 0;
     var rate = planned > 0 ? (actual / planned * 100) : 0;
     setText('hero-payment-rate', rate.toFixed(1));
+    // 50% 이상 → D-3 톤, 100% 이상 → D-day 톤
+    var paymentRateEl = document.getElementById('hero-payment-rate');
+    var paymentParent = paymentRateEl ? paymentRateEl.parentElement : null;
+    if (paymentParent) {
+      paymentParent.classList.remove('payment-rate--mid', 'payment-rate--full');
+      if (rate >= 100) paymentParent.classList.add('payment-rate--full');
+      else if (rate >= 50) paymentParent.classList.add('payment-rate--mid');
+    }
 
-    setText('funding-subtitle', year + '년 수주 / 입금');
+    setText('funding-subtitle', year + '년 입금 예정');
 
     // 자금 구성 (당해) — 가로 누적 막대그래프
     var support = Number(kpis.yearSupport) || 0;
@@ -366,7 +393,7 @@
     var inKind  = Number(kpis.yearInKind)  || 0;
     var totalFunds = support + cash + inKind;
 
-    setText('stacked-total', (totalFunds / 100000000).toFixed(1) + '억');
+    setText('stacked-total', eokFloor(totalFunds) + '억');
 
     var pSupport = totalFunds > 0 ? (support / totalFunds) * 100 : 0;
     var pCash    = totalFunds > 0 ? (cash    / totalFunds) * 100 : 0;
@@ -379,9 +406,9 @@
     if (segC) segC.style.width = pCash.toFixed(1) + '%';
     if (segI) segI.style.width = pInkind.toFixed(1) + '%';
 
-    setText('legend-val-support', (support / 100000000).toFixed(1) + '억');
-    setText('legend-val-cash',    (cash    / 100000000).toFixed(1) + '억');
-    setText('legend-val-inkind',  (inKind  / 100000000).toFixed(1) + '억');
+    setText('legend-val-support', eokFloor(support) + '억');
+    setText('legend-val-cash',    eokFloor(cash)    + '억');
+    setText('legend-val-inkind',  eokFloor(inKind)  + '억');
     setText('legend-pct-support', pSupport.toFixed(0) + '%');
     setText('legend-pct-cash',    pCash.toFixed(0) + '%');
     setText('legend-pct-inkind',  pInkind.toFixed(0) + '%');
@@ -520,6 +547,11 @@
         arc.setAttribute('stroke-dasharray', len + ' ' + (C - len));
         arc.setAttribute('stroke-dashoffset', String(-offset));
         arc.setAttribute('transform', 'rotate(-90 ' + cx + ' ' + cy + ')');
+        arc.setAttribute('data-filter', d.filter);  // 카드 호버 매칭용
+        // 호버 툴팁 — 브라우저 기본 native tooltip (마우스 가져가면 표시)
+        var arcTitle = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+        arcTitle.textContent = d.key + ': ' + d.value + '건';
+        arc.appendChild(arcTitle);
         svg.appendChild(arc);
 
         // 도넛 바깥 동그라미 — 옅은 회색
@@ -664,6 +696,18 @@
         var url = filter ? 'projects.html?filter=' + encodeURIComponent(filter) : 'projects.html';
         window.location.href = url;
       });
+      // 카드 호버 시 도넛의 해당 조각 강조
+      var filter = card.getAttribute('data-filter');
+      if (filter) {
+        card.addEventListener('mouseenter', function () {
+          var arc = document.querySelector('#donut-svg circle[data-filter="' + filter + '"]');
+          if (arc) arc.classList.add('donut-slice-highlight');
+        });
+        card.addEventListener('mouseleave', function () {
+          var arc = document.querySelector('#donut-svg circle[data-filter="' + filter + '"]');
+          if (arc) arc.classList.remove('donut-slice-highlight');
+        });
+      }
     });
 
     var yearSelect = document.getElementById('dash-year');

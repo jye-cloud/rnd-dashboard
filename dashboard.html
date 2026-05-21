@@ -202,17 +202,23 @@
       font-weight: 600;
       line-height: 1.3;
       word-break: keep-all;
-      display: block;
+      display: flex;
+      align-items: flex-start;  /* 위쪽 정렬 — 한 줄/두 줄 라벨 모두 첫 줄 위치 통일 */
+      justify-content: center;
+      gap: 0.2rem;
       /* 두 줄 분량 공간 강제 — 한 줄 라벨도 두 줄 자리 차지, 숫자 높이 일치 */
       min-height: calc(0.72rem * 1.3 * 2);
     }
+    .status-card-text {
+      text-align: left;  /* 두 줄 라벨일 때 둘째 줄도 첫 줄 시작 위치에 정렬 */
+    }
     .status-card-dot {
       display: inline-block;
-      width: 6px;
-      height: 6px;
+      width: 7px;
+      height: 7px;
       border-radius: 50%;
-      margin-right: 0.25rem;
-      vertical-align: middle;
+      flex-shrink: 0;
+      margin-top: 0.25rem;  /* 첫 줄 글자 중앙에 align되도록 미세 조정 (7px dot 기준) */
     }
     .status-card-dot--waiting    { background: #f59e0b; }
     .status-card-dot--continue   { background: #10b981; }
@@ -228,6 +234,62 @@
       letter-spacing: -0.02em;
     }
 
+    /* 2026년 현황 패널 — 도넛 (큰 숫자 영역을 대체) */
+    .status-donut-wrap {
+      position: relative;
+      width: 100%;
+      /* 키를 명시 — panel-divider 위치 통일 */
+      height: 11.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0;
+    }
+    .status-donut-wrap svg {
+      width: 180px;
+      height: 180px;
+      display: block;
+      overflow: visible;
+    }
+    .status-donut-wrap svg circle {
+      transition: stroke-width 0.15s ease;
+    }
+    .status-donut-wrap svg circle:hover {
+      stroke-width: 26;  /* 호버 시 약간 굵어짐 */
+      cursor: default;
+    }
+    /* 카드 호버 시 해당 도넛 조각 강조 — 더 굵게 + 진하게 */
+    .status-donut-wrap svg circle.donut-slice-highlight {
+      stroke-width: 32;
+      filter: brightness(0.88) saturate(1.3);
+    }
+    .status-donut-center {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      text-align: center;
+      pointer-events: none;
+    }
+    .status-donut-num {
+      font-size: 2.1rem;
+      font-weight: 800;
+      color: #475569;
+      line-height: 1;
+      letter-spacing: -0.025em;
+      margin-bottom: 0.3rem;
+    }
+    .status-donut-num small {
+      font-size: 0.95rem;
+      font-weight: 600;
+      margin-left: 0.15rem;
+    }
+    .status-donut-label {
+      font-size: 0.8rem;
+      color: #94a3b8;
+      font-weight: 500;
+    }
+
     /* Big stats (panel 2) */
     .big-stats {
       display: grid;
@@ -238,14 +300,83 @@
     }
     .big-stats--single { grid-template-columns: 1fr; }
     .big-stats--triple {
-      grid-template-columns: 1fr 1fr 1fr;
+      grid-template-columns: 1fr 1fr auto 1fr;
       gap: 0.5rem;  /* 3칸은 더 좁아서 gap 줄임 */
+    }
+    /* 카드 사이 세로 구분선 — 일정 알림 divider와 동일 색/스타일 */
+    .big-stats-divider {
+      width: 1px;
+      background: #cbd5e1;
+      margin: 0.3rem 0.05rem;
     }
     .big-stats--triple .big-stat-num {
       font-size: 1.9rem;  /* 3칸은 폰트 약간 줄임 */
     }
     .big-stats--triple .big-stat-label {
       word-break: keep-all;  /* "입금 예정 지원금" 등 wrap 허용 */
+    }
+    /* 모든 triple 카드 컨텐츠를 바닥에 정렬 — 라벨 위치 항상 통일 */
+    .big-stats--triple > div {
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+    }
+    /* 카드 안 컨텐츠 가로 가운데 정렬 — divider 양쪽 시각 균형 */
+    .big-stats--triple .big-stat-num,
+    .big-stats--triple .big-stat-label {
+      text-align: center;
+    }
+    /* 유형별 입금 예정 — 카드 2 안의 미니 두 줄 표시 */
+    .type-mini {
+      display: flex;
+      flex-direction: column;
+      gap: 0.15rem;
+      margin-bottom: 0.35rem;
+      padding: 0 0.5rem;  /* 좌우 안쪽으로 — divider/카드 사이 시각 균형 */
+      box-sizing: border-box;
+    }
+    .type-mini-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 0.5rem;
+      line-height: 1;
+    }
+    .type-mini-label {
+      font-size: 0.78rem;
+      color: #94a3b8;
+      font-weight: 500;
+    }
+    .type-mini-value {
+      color: #475569;
+      font-weight: 800;
+      font-size: 1.2rem;
+      letter-spacing: -0.015em;
+      line-height: 1;
+    }
+    .type-mini-value small {
+      font-size: 0.75rem;
+      color: #94a3b8;
+      font-weight: 500;
+      margin-left: 0.15rem;
+    }
+
+    /* 입금 완료율 — rate에 따라 색상 변경 (D-3/D-day 카드 배경의 시각적 강도와 매칭) */
+    /* 글자색은 안티앨리어싱 때문에 같은 코드면 한 단계 옅게 보이므로 한 단계 진한 톤 사용 */
+    .big-stat-num.payment-rate--mid,
+    .big-stat-num.payment-rate--mid small {
+      color: #fca5a5;  /* red-300 — D-3 배경(red-100) 시각적 매칭 */
+    }
+    .big-stat-num.payment-rate--full,
+    .big-stat-num.payment-rate--full small {
+      color: #f87171;  /* red-400 — D-day 배경(red-200) 시각적 매칭 */
+    }
+
+    /* 세 패널의 panel-divider 위 컨텐츠 영역 키 통일 — 지원금 현황(big-stats--triple) 기준 */
+    .hero-panel > .big-stats,
+    .hero-panel > .status-cards-row,
+    .hero-panel > .deadline-stats {
+      min-height: 4.2rem;
     }
     .big-stat-num {
       font-size: 2.1rem;
@@ -270,7 +401,7 @@
 
     .panel-divider {
       height: 1px;
-      background: rgba(148, 163, 184, 0.3);
+      background: #cbd5e1;  /* 반투명 → solid: 배경에 따라 색이 달라 보이지 않도록 */
       margin: 1rem 0 0.85rem;
     }
     .panel-section-title {
@@ -475,7 +606,7 @@
     }
     .deadline-divider {
       width: 1px;
-      background: rgba(148, 163, 184, 0.4);
+      background: #cbd5e1;  /* panel-divider와 동일 색 — 모든 구분선 통일 */
       margin: 0.3rem 0.05rem;
     }
     /* 빨간색 그라데이션 — D-7 → D-day 로 갈수록 진해짐 */
@@ -526,7 +657,7 @@
     /* Charts row */
     .dash-row {
       display: grid;
-      grid-template-columns: 1fr 1.4fr;
+      grid-template-columns: 1fr;
       gap: 1.25rem;
       margin-bottom: 1.5rem;
     }
@@ -870,11 +1001,12 @@
             <div class="hero-panel hero-panel--blue">
               <h2 class="hero-panel-title" id="status-panel-title">2026년 현황 <span aria-hidden="true">📋</span></h2>
               <p class="hero-panel-subtitle">올해 진행 상태</p>
-              <!-- 큰 숫자 (자금현황 big-stats와 동일 스타일, 1칸) -->
-              <div class="big-stats big-stats--single">
-                <div>
-                  <div class="big-stat-num big-stat-num--neutral"><span id="status-total-num">0</span><small> 건</small></div>
-                  <div class="big-stat-label">총 과제</div>
+              <!-- 도넛 (가운데 텍스트: 17 건 / 총 과제) — 큰 숫자 영역을 대체 -->
+              <div class="status-donut-wrap">
+                <svg id="donut-svg" viewBox="0 0 200 200" aria-label="지원 현황 도넛 차트"></svg>
+                <div class="status-donut-center">
+                  <div class="status-donut-num"><span id="donut-total">0</span><small> 건</small></div>
+                  <div class="status-donut-label">총 과제</div>
                 </div>
               </div>
               <div class="panel-divider"></div>
@@ -882,46 +1014,56 @@
               <!-- 6개 카드 한 줄 -->
               <div class="status-cards-row">
                 <button type="button" class="status-card" data-filter="waiting">
-                  <span class="status-card-header"><span class="status-card-dot status-card-dot--waiting"></span>대기</span>
+                  <span class="status-card-header"><span class="status-card-dot status-card-dot--waiting"></span><span class="status-card-text">대기</span></span>
                   <span class="status-card-value" id="pill-waiting">0</span>
                 </button>
                 <button type="button" class="status-card" data-filter="continue">
-                  <span class="status-card-header"><span class="status-card-dot status-card-dot--continue"></span>계속</span>
+                  <span class="status-card-header"><span class="status-card-dot status-card-dot--continue"></span><span class="status-card-text">수행 (계속)</span></span>
                   <span class="status-card-value" id="pill-continue">0</span>
                 </button>
                 <button type="button" class="status-card" data-filter="new">
-                  <span class="status-card-header"><span class="status-card-dot status-card-dot--new"></span>신규</span>
+                  <span class="status-card-header"><span class="status-card-dot status-card-dot--new"></span><span class="status-card-text">수행 (신규)</span></span>
                   <span class="status-card-value" id="pill-new">0</span>
                 </button>
                 <button type="button" class="status-card" data-filter="ended">
-                  <span class="status-card-header"><span class="status-card-dot status-card-dot--ended"></span>종료</span>
+                  <span class="status-card-header"><span class="status-card-dot status-card-dot--ended"></span><span class="status-card-text">종료</span></span>
                   <span class="status-card-value" id="pill-ended">0</span>
                 </button>
                 <button type="button" class="status-card" data-filter="selected-other">
-                  <span class="status-card-header"><span class="status-card-dot status-card-dot--other"></span>선정 (기타)</span>
+                  <span class="status-card-header"><span class="status-card-dot status-card-dot--other"></span><span class="status-card-text">선정 (기타)</span></span>
                   <span class="status-card-value" id="pill-selected-other">0</span>
                 </button>
                 <button type="button" class="status-card" data-filter="unselected">
-                  <span class="status-card-header"><span class="status-card-dot status-card-dot--unselected"></span>미선정</span>
+                  <span class="status-card-header"><span class="status-card-dot status-card-dot--unselected"></span><span class="status-card-text">미선정</span></span>
                   <span class="status-card-value" id="pill-unselected">0</span>
                 </button>
               </div>
               <p class="hero-panel-footnote">* 클릭 시 해당 상태로 필터링</p>
             </div>
 
-            <!-- Panel 2: 자금 현황 (green) -->
+            <!-- Panel 2: 지원금 현황 (green) -->
             <div class="hero-panel hero-panel--green">
-              <h2 class="hero-panel-title">자금 현황 <span aria-hidden="true">💰</span></h2>
-              <p class="hero-panel-subtitle" id="funding-subtitle">2026년 수주 / 입금</p>
+              <h2 class="hero-panel-title">지원금 현황 <span aria-hidden="true">💰</span></h2>
+              <p class="hero-panel-subtitle" id="funding-subtitle">2026년 입금 예정</p>
               <div class="big-stats big-stats--triple">
                 <div>
-                  <div class="big-stat-num"><span id="hero-year-sum">0</span><small id="hero-year-unit">원</small></div>
-                  <div class="big-stat-label">수주 지원금</div>
+                  <div class="big-stat-num"><span id="hero-task-sum">0</span><small>억</small></div>
+                  <div class="big-stat-label">입금 예정 (과제)</div>
                 </div>
                 <div>
-                  <div class="big-stat-num big-stat-num--neutral"><span id="hero-total-sum">0</span><small id="hero-total-unit">원</small></div>
-                  <div class="big-stat-label">입금 예정 지원금</div>
+                  <div class="type-mini">
+                    <div class="type-mini-row">
+                      <span class="type-mini-label">전체</span>
+                      <span class="type-mini-value"><span id="hero-total-sum">0</span><small>억</small></span>
+                    </div>
+                    <div class="type-mini-row">
+                      <span class="type-mini-label">기타</span>
+                      <span class="type-mini-value"><span id="hero-other-sum">0</span><small>억</small></span>
+                    </div>
+                  </div>
+                  <div class="big-stat-label">전체 / 기타</div>
                 </div>
+                <div class="big-stats-divider" aria-hidden="true"></div>
                 <div>
                   <div class="big-stat-num big-stat-num--soft"><span id="hero-payment-rate">0</span><small> %</small></div>
                   <div class="big-stat-label">입금 완료율</div>
@@ -1068,23 +1210,6 @@
 
         <!-- Charts row -->
         <div class="dash-row">
-          <div class="dash-card">
-            <div class="dash-card-header">
-              <h2 class="dash-card-title">지원 현황 분포</h2>
-              <span class="dash-card-meta" id="donut-meta">기준 연도: 2026</span>
-            </div>
-            <div class="donut-container">
-              <div class="donut-wrap">
-                <svg id="donut-svg" viewBox="0 0 200 200" aria-label="지원 현황 도넛 차트"></svg>
-                <div class="donut-center">
-                  <div class="donut-center-num" id="donut-total">0</div>
-                  <div class="donut-center-label">총 과제</div>
-                </div>
-              </div>
-              <div class="donut-legend" id="donut-legend"></div>
-            </div>
-          </div>
-
           <div class="dash-card">
             <div class="dash-card-header">
               <h2 class="dash-card-title">수행 과제 <span class="dash-card-subtitle">(당해 지원금 Top 5)</span></h2>

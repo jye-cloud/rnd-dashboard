@@ -125,7 +125,7 @@
     .projects-table td {
       padding: 0.65rem 0.85rem;
       border-bottom: 1px solid var(--border-color);
-      text-align: left;
+      text-align: center;
     }
     .projects-table thead th {
       background: #f5f5f5;
@@ -161,6 +161,24 @@
       padding-left: 0.35rem !important;
       padding-right: 0.35rem !important;
       text-align: center !important;
+    }
+    /* 숫자 컬럼 — 우측 정렬 (금액 비교 편리). 헤더는 영향 안 받도록 tbody td만 */
+    .projects-table tbody td.col-num {
+      text-align: right;
+    }
+    /* 수정 버튼 — SVG 아이콘 가운데 정렬 */
+    .projects-table .project-edit-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0.35rem 0.5rem;
+      color: #64748b;
+    }
+    .projects-table .project-edit-btn:hover {
+      color: #2563eb;
+    }
+    .projects-table .project-edit-btn svg {
+      display: block;
     }
     .projects-badge { display: inline-block; padding: 0.2rem 0.5rem; border-radius: 0.35rem; font-size: 0.75rem; font-weight: 600; }
     .projects-badge--rd { background: #dbeafe; color: #1d4ed8; margin-right: 0.25rem; }
@@ -822,11 +840,9 @@
               <button type="button" class="ui-btn ui-btn--ghost" id="col-toggle-btn">열 선택</button>
               <div class="projects-col-panel" id="col-panel">
                 <label><input type="checkbox" data-col="부처"> 부처</label>
-                <label><input type="checkbox" data-col="예산"> 예산</label>
                 <label><input type="checkbox" data-col="과제명"> 과제명</label>
-                <label><input type="checkbox" data-col="기관명"> 기관명</label>
-                <label><input type="checkbox" data-col="연구기간"> 연구기간</label>
-                <label><input type="checkbox" data-col="지원금당해"> 당해 입금</label>
+                <label><input type="checkbox" data-col="시작일"> 시작일</label>
+                <label><input type="checkbox" data-col="종료일"> 종료일</label>
                 <label><input type="checkbox" data-col="지원금총"> 당해 수주</label>
                 <label><input type="checkbox" data-col="비고"> 비고</label>
               </div>
@@ -847,15 +863,15 @@
                 <th>제출일</th>
                 <th>키워드</th>
                 <th>책임자</th>
-                <th>시작일</th>
-                <th>종료일</th>
+                <th>연구기간</th>
+                <th>기관명</th>
+                <th class="col-num">당해 입금</th>
+                <th class="col-num">총 지원금</th>
                 <th class="col-opt" data-col="부처">부처</th>
-                <th class="col-opt" data-col="예산">예산</th>
                 <th class="col-opt" data-col="과제명">과제명</th>
-                <th class="col-opt" data-col="기관명">기관명</th>
-                <th class="col-opt" data-col="연구기간">연구기간</th>
-                <th class="col-opt" data-col="지원금당해">당해 입금</th>
-                <th class="col-opt" data-col="지원금총">당해 수주</th>
+                <th class="col-opt" data-col="시작일">시작일</th>
+                <th class="col-opt" data-col="종료일">종료일</th>
+                <th class="col-opt col-num" data-col="지원금총">당해 수주</th>
                 <th class="col-opt" data-col="비고">비고</th>
                 <th style="width:40px">수정</th>
               </tr>

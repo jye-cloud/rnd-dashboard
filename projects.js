@@ -6,7 +6,7 @@
 
   var CUTOFF = '2026-01-01';
   var STAT_YEAR = 2026;
-  var COL_KEYS = ['부처', '예산', '과제명', '기관명', '연구기간', '지원금당해', '지원금총', '비고'];
+  var COL_KEYS = ['부처', '과제명', '시작일', '종료일', '지원금총', '비고'];
 
   function projectOverlapsYear(it, year) {
     var y = String(year);
@@ -24,7 +24,7 @@
     if (end && end < yearStart) return false;
     return true;
   }
-  var COL_FIELDS = { '부처': 'department', '예산': 'budget', '과제명': 'projectName', '기관명': 'institution', '연구기간': 'researchPeriod', '지원금당해': 'supportYear', '지원금총': 'supportTotal', '비고': 'note' };
+  var COL_FIELDS = { '부처': 'department', '과제명': 'projectName', '시작일': 'startDate', '종료일': 'endDate', '지원금총': 'supportTotal', '비고': 'note' };
 
   function getVal(item, key) {
     var f = COL_FIELDS[key];
@@ -558,6 +558,36 @@
 
       var no = (it.no != null && it.no !== '') ? String(it.no) : (idx + 1);
       var submitDate = (it.submitDate || it['제출일'] || '').toString().slice(0, 10);
+
+      // 기본 표출 컬럼 — 사전 계산
+      var researchPeriod = getResearchPeriodDisplay(it, filterYear);
+      var institution = it.institution || it['기관명'] || '-';
+
+      // 당해 입금: 필터연도 있으면 그 해 입금분, 없으면 supportTotal
+      var num1 = 0;
+      if (filterYear) {
+        if (Array.isArray(it.yearBudgets)) {
+          it.yearBudgets.forEach(function (yb) { num1 += supportInYear(yb, filterYear); });
+        } else if (it.supportYear != null && !isNaN(Number(it.supportYear))) {
+          num1 = Number(it.supportYear);
+        }
+      } else {
+        num1 = Number(it.supportTotal != null ? it.supportTotal : (it.budget || 0));
+      }
+      var thisYearIncome = num1 > 0 ? formatNum(num1) : (filterYear ? '0' : '-');
+
+      // 총 지원금 — 연차별 yearBudgets[].support 의 합
+      var sumSupport = 0;
+      if (Array.isArray(it.yearBudgets) && it.yearBudgets.length > 0) {
+        it.yearBudgets.forEach(function (yb) {
+          sumSupport += Number(yb.support || 0);
+        });
+      }
+      if (sumSupport === 0) {
+        sumSupport = Number(it.supportTotal != null ? it.supportTotal : (it.budget || 0));
+      }
+      var totalSupport = sumSupport > 0 ? formatNum(sumSupport) : '-';
+
       var cells = [
         '<td>' + escapeHtml(no) + '</td>',
         '<td>' + typeCellHtml + '</td>',
@@ -565,27 +595,18 @@
         '<td>' + escapeHtml(submitDate || '-') + '</td>',
         '<td>' + getKeywordHtml(it) + '</td>',
         '<td>' + escapeHtml(it.manager || it.책임자 || '-') + '</td>',
-        '<td>' + escapeHtml(start || '-') + '</td>',
-        '<td>' + escapeHtml(end || '-') + '</td>'
+        '<td>' + escapeHtml(researchPeriod) + '</td>',
+        '<td>' + escapeHtml(institution) + '</td>',
+        '<td class="col-num">' + escapeHtml(thisYearIncome) + '</td>',
+        '<td class="col-num">' + escapeHtml(totalSupport) + '</td>'
       ];
 
       COL_KEYS.forEach(function (k) {
         var val;
-        if (k === '연구기간') {
-          val = getResearchPeriodDisplay(it, filterYear);
-        } else if (k === '지원금당해') {
-          // 당해 입금: 필터연도 있으면 그 해 입금분(calendarBreakdown 우선), 없으면 supportTotal
-          var num1 = 0;
-          if (filterYear) {
-            if (Array.isArray(it.yearBudgets)) {
-              it.yearBudgets.forEach(function (yb) { num1 += supportInYear(yb, filterYear); });
-            } else if (it.supportYear != null && !isNaN(Number(it.supportYear))) {
-              num1 = Number(it.supportYear);
-            }
-          } else {
-            num1 = Number(it.supportTotal != null ? it.supportTotal : (it.budget || 0));
-          }
-          val = num1 > 0 ? formatNum(num1) : (filterYear ? '0' : '-');
+        if (k === '시작일') {
+          val = start || '-';
+        } else if (k === '종료일') {
+          val = end || '-';
         } else if (k === '지원금총') {
           // 당해 수주: 필터연도 있으면 그 해 시작 yearBudget.support 합, 없으면 supportTotal
           var num2 = 0;
@@ -612,18 +633,14 @@
             num2 = Number(it.supportTotal != null ? it.supportTotal : (it.budget || 0));
           }
           val = num2 > 0 ? formatNum(num2) : (filterYear ? '0' : '-');
-        } else if (k === '예산') {
-          // 숫자 컬럼 — 단순 필드 + 콤마
-          var raw = getVal(it, k);
-          var num3 = Number(raw);
-          val = (raw && !isNaN(num3)) ? formatNum(num3) : (raw || '-');
         } else {
           val = getVal(it, k) || '-';
         }
-        cells.push('<td class="col-opt" data-col="' + k + '">' + escapeHtml(val) + '</td>');
+        var classes = 'col-opt' + (k === '지원금총' ? ' col-num' : '');
+        cells.push('<td class="' + classes + '" data-col="' + k + '">' + escapeHtml(val) + '</td>');
       });
 
-      cells.push('<td style="text-align:center"><button type="button" class="ui-btn ui-btn--ghost project-edit-btn" data-id="' + escapeHtml(id) + '">수정</button></td>');
+      cells.push('<td style="text-align:center"><button type="button" class="ui-btn ui-btn--ghost project-edit-btn" data-id="' + escapeHtml(id) + '" title="수정" aria-label="수정"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></button></td>');
       tr.innerHTML = cells.join('');
 
       var editBtn = tr.querySelector('.project-edit-btn');
