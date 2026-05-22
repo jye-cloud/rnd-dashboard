@@ -302,7 +302,9 @@
           bins: bins,
           totalP: totalP, totalA: totalA,
           totalPc: totalPc, totalAc: totalAc,
-          balance: totalP - totalA
+          balance: totalP - totalA,
+          sortDate: (it.startDate || yb.startDate || ''),  // 정렬용 — 과제 시작일 우선
+          ybIdx: ybIdx
         });
       });
     });
@@ -315,7 +317,16 @@
       return;
     }
 
-    rows.sort(function (a, b) { return b.balance - a.balance; });
+    // 연차 시작일 오름차순 정렬 (오래된 → 신규, 신규가 아래)
+    rows.sort(function (a, b) {
+      var ad = a.sortDate, bd = b.sortDate;
+      if (!ad && !bd) return a.ybIdx - b.ybIdx;
+      if (!ad) return 1;  // 시작일 없는 행은 뒤로
+      if (!bd) return -1;
+      var cmp = ad.localeCompare(bd);
+      if (cmp !== 0) return cmp;
+      return a.ybIdx - b.ybIdx;  // 같은 날짜면 차수 순
+    });
 
     var totalBins = [];
     for (var ti = 0; ti < numBins; ti++) totalBins.push({ p: 0, a: 0, pc: 0, ac: 0, status: 'normal' });

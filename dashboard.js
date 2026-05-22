@@ -100,6 +100,8 @@
    */
   function statusAsOf(it, asOfDate) {
     var raw = (it.status || it['진행 여부'] || '').toString().trim();
+    // "선정" 입력값을 "선정(기타)"로 정규화 (옛 데이터 호환)
+    if (raw === '선정') raw = '선정(기타)';
     var n = raw.replace(/\s/g, '');
 
     if (!asOfDate) {
@@ -124,6 +126,21 @@
     }
 
     if (raw === '대기' || raw === '종료' || raw === '미선정' || raw === '미제출') return raw;
+
+    // status 비어있을 때 — 시작일/종료일/제출일 기반 자동 판정
+    if (!raw) {
+      var startD  = (it.startDate || it.start || it['시작일'] || '').toString().slice(0, 10);
+      var endD    = (it.endDate || it.end || it['종료일'] || '').toString().slice(0, 10);
+      var submitD = (it.submitDate || it['제출일'] || '').toString().slice(0, 10);
+      if (endD && asOfDate > endD) return '종료';
+      if (startD && asOfDate >= startD) {
+        if (!endD || asOfDate <= endD) return '수행';
+      }
+      if (startD && asOfDate < startD) return '예정';
+      if (submitD && asOfDate < submitD) return '예정';
+      if (submitD && asOfDate > submitD) return '대기';
+    }
+
     return raw || '미정';
   }
 
@@ -414,8 +431,8 @@
     setText('legend-pct-inkind',  pInkind.toFixed(0) + '%');
   }
 
-  // Panel 3: 임박 알림 — D-7/D-3/D-day (제출 임박) + 종료 예정
-  function renderAlerts(items, year, kpis) {
+  // Panel 3: 임박 알림 — D-7/D-3/D-day (제출 임박 + 마일스톤) + 종료 예정
+  function renderAlerts(items, year, kpis, calendarEvents) {
     var listEl = document.getElementById('alert-list');
     if (!listEl) return;
     listEl.innerHTML = '';
@@ -460,13 +477,29 @@
       }
     });
 
+    // 마일스톤 임박 추가 (caleandarEvents 의 type='milestone' + 미완료 + D-7 이내)
+    var milestoneList = [];
+    (calendarEvents || []).forEach(function (ev) {
+      if (ev.type !== 'milestone') return;
+      if (ev.done) return;
+      var date = (ev.date || '').toString().slice(0, 10);
+      if (!date || date < todayStr) return;
+      var diffM = Math.round((new Date(date) - today) / (1000 * 60 * 60 * 24));
+      if (diffM > 7) return;
+      var label = (ev.projectTitle || '') + (ev.item ? ' · ' + ev.item : '');
+      if (diffM === 0) ddayCount++;
+      else if (diffM >= 1 && diffM <= 3) d3Count++;
+      else if (diffM >= 4 && diffM <= 7) d7Count++;
+      milestoneList.push({ name: label, date: date, dDay: diffM, type: 'milestone' });
+    });
+
     setText('alert-d7', d7Count);
     setText('alert-d3', d3Count);
     setText('alert-dday', ddayCount);
     setText('alert-ending', endingCount);
 
     // 통합 알림 리스트 — D-day 가까운 순
-    var allAlerts = submitList.concat(endingList);
+    var allAlerts = submitList.concat(milestoneList).concat(endingList);
     allAlerts.sort(function (a, b) { return a.dDay - b.dDay; });
 
     if (allAlerts.length === 0) {
@@ -477,8 +510,10 @@
     allAlerts.slice(0, 4).forEach(function (a) {
       var div = document.createElement('div');
       div.className = 'alert-mini-item';
-      var icon = a.type === 'end' ? '⏰' : '📝';
-      var label = a.type === 'end' ? '종료' : '제출';
+      var icon, label;
+      if (a.type === 'end') { icon = '⏰'; label = '종료'; }
+      else if (a.type === 'milestone') { icon = '🚩'; label = '마일스톤'; }
+      else { icon = '📝'; label = '제출'; }
       div.innerHTML =
         '<span class="alert-mini-icon">' + icon + '</span>' +
         '<div class="alert-mini-text">' +
@@ -671,6 +706,60 @@
     });
   }
 
+  // 수행 용역 (table) — 키워드 / 용역명 / 기관명 / 종료일, 종료일 가까운 순 (오름차순)
+  function renderRecentServices(items, year) {
+    var table = document.getElementById('recent-service-table');
+    var tbody = document.getElementById('recent-service-tbody');
+    var empty = document.getElementById('recent-service-empty');
+    if (!table || !tbody || !empty) return;
+
+    var asOfDate = yearEndDate(year);
+    // division1 === '용역' AND 수행 중 AND 그 해와 겹치는 것
+    var ongoing = items.filter(function (it) {
+      if (it.division1 !== '용역') return false;
+      return statusAsOf(it, asOfDate) === '수행' && projectOverlapsYear(it, year);
+    });
+    // 종료일 가까운 순 (오름차순). 종료일 없는 건 가장 아래
+    ongoing.sort(function (a, b) {
+      var ae = (a.endDate || '').toString();
+      var be = (b.endDate || '').toString();
+      if (!ae && !be) return 0;
+      if (!ae) return 1;
+      if (!be) return -1;
+      return ae.localeCompare(be);
+    });
+    var top5 = ongoing.slice(0, 5);
+
+    tbody.innerHTML = '';
+
+    if (top5.length === 0) {
+      table.style.display = 'none';
+      empty.style.display = 'block';
+      return;
+    }
+
+    table.style.display = 'table';
+    empty.style.display = 'none';
+
+    top5.forEach(function (it) {
+      var keyword = it.keywords || it.keyword || it['키워드'] || '-';
+      var name = it.projectName || it['과제명'] || '(제목 없음)';
+      var org = it.institution || it['기관명'] || '-';
+      var endDate = it.endDate || it['종료일'] || '-';
+
+      var tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td><div class="recent-keyword" title="' + escapeHtml(keyword) + '">' + escapeHtml(keyword) + '</div></td>' +
+        '<td><div class="recent-name" title="' + escapeHtml(name) + '">' + escapeHtml(name) + '</div></td>' +
+        '<td><div class="recent-org" title="' + escapeHtml(org) + '">' + escapeHtml(org) + '</div></td>' +
+        '<td class="recent-amount">' + escapeHtml(endDate) + '</td>';
+      tr.addEventListener('click', function () {
+        window.location.href = 'projects.html';
+      });
+      tbody.appendChild(tr);
+    });
+  }
+
   // ===== Init =====
 
   function init() {
@@ -712,6 +801,7 @@
 
     var yearSelect = document.getElementById('dash-year');
     var latestItems = [];
+    var latestCalendarEvents = [];
     var currentYear = DEFAULT_YEAR;
 
     // 월별 신규 제안 차트 (총 신규 제안 카드 + 분류 pill + 스택 막대 + 월별 총합 라인)
@@ -827,13 +917,50 @@
       var kpis = computeKPIs(latestItems, currentYear);
       renderPills(kpis, currentYear);
       renderFunding(kpis, currentYear);
-      renderAlerts(latestItems, currentYear, kpis);
+      renderAlerts(latestItems, currentYear, kpis, latestCalendarEvents);
       renderDonut(kpis, currentYear);
       renderRecent(latestItems, currentYear);
+      renderRecentServices(latestItems, currentYear);
       renderMonthlyProposalCard(latestItems, currentYear);
 
-      var meta = document.getElementById('dash-meta');
-      if (meta) meta.textContent = currentYear + '년 R&D 과제 통합 현황';
+      // 동적 링크 갱신 — 현재 연도 인계
+      var recentLink = document.getElementById('recent-link');
+      if (recentLink) {
+        // 수행 과제 전체 보기 = 수행 중 + 용역 제외 + 그 해
+        recentLink.href = 'projects.html?filter=ongoing&excludeDivision=' + encodeURIComponent('용역') + '&year=' + currentYear;
+      }
+      var recentServiceLink = document.getElementById('recent-service-link');
+      if (recentServiceLink) {
+        // 수행 용역 전체 보기 = 수행 중 + 용역만 + 그 해
+        recentServiceLink.href = 'projects.html?filter=ongoing&division=' + encodeURIComponent('용역') + '&year=' + currentYear;
+      }
+    }
+
+    // 카테고리 pill 클릭 → projects.html?newProposal=1&division=X&year=Y
+    document.querySelectorAll('.division-pill[data-division]').forEach(function (pill) {
+      pill.addEventListener('click', function () {
+        var division = pill.getAttribute('data-division');
+        if (!division) return;
+        var url = 'projects.html?newProposal=1&division=' + encodeURIComponent(division) + '&year=' + currentYear;
+        window.location.href = url;
+      });
+    });
+
+    // PDF 저장 버튼 — 현재 대시보드 화면을 PDF로
+    var pdfBtn = document.getElementById('dash-pdf-btn');
+    if (pdfBtn) {
+      pdfBtn.addEventListener('click', function () {
+        // 푸터에 오늘 날짜 채우기 (YYYY. MM. DD. 형식)
+        var footer = document.getElementById('print-footer');
+        if (footer) {
+          var d = new Date();
+          var pad = function (n) { return n < 10 ? '0' + n : String(n); };
+          var dateText = d.getFullYear() + '. ' + pad(d.getMonth() + 1) + '. ' + pad(d.getDate()) + '.';
+          footer.textContent = '작성일: ' + dateText;
+        }
+        alert('인쇄 대화상자가 열립니다.\n\n저장 방법:\n1. "프린터" 또는 "대상"에서\n2. "PDF로 저장" 선택\n3. "배경 그래픽" 옵션 활성화 권장 (색상 유지)\n4. 저장 위치 지정 후 저장');
+        setTimeout(function () { window.print(); }, 100);
+      });
     }
 
     if (yearSelect) {
@@ -852,6 +979,14 @@
       });
     } else {
       rerender();
+    }
+
+    // 캘린더 이벤트 구독 — 마일스톤이 일정 알림 카드에 반영되게
+    if (svc && typeof svc.subscribeCalendar === 'function') {
+      svc.subscribeCalendar(function (events) {
+        latestCalendarEvents = Array.isArray(events) ? events : [];
+        rerender();
+      });
     }
   }
 

@@ -815,6 +815,97 @@
       border-radius: 0.4rem;
     }
 
+    /* 마일스톤 섹션 */
+    .milestone-wrap {
+      overflow-x: auto;
+    }
+    .milestone-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.88rem;
+    }
+    .milestone-table thead th {
+      background: #fef3c7;
+      color: #92400e;
+      font-weight: 700;
+      text-align: left;
+      padding: 0.55rem 0.7rem;
+      border-bottom: 1px solid #fde68a;
+      font-size: 0.8rem;
+    }
+    .milestone-table tbody td {
+      padding: 0.45rem 0.55rem;
+      border-bottom: 1px solid #f3f4f6;
+      vertical-align: top;
+    }
+    .milestone-table tbody tr:last-child td { border-bottom: none; }
+    .milestone-table tbody tr.ms-done-row { background: #f9fafb; }
+    .milestone-table tbody tr.ms-done-row input[type="text"] {
+      color: #9ca3af;
+      text-decoration: line-through;
+    }
+    .milestone-table input[type="text"],
+    .milestone-table select {
+      width: 100%;
+      padding: 0.4rem 0.55rem;
+      border: 1px solid #d1d5db;
+      border-radius: 0.35rem;
+      font-size: 0.86rem;
+      box-sizing: border-box;
+      font-family: inherit;
+      background: #fff;
+    }
+    .milestone-table input[type="text"]:focus,
+    .milestone-table select:focus {
+      outline: none;
+      border-color: #f59e0b;
+      box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.18);
+    }
+    .milestone-table .ms-done-cell {
+      text-align: center;
+      vertical-align: middle;
+    }
+    .milestone-table .ms-done {
+      width: 18px;
+      height: 18px;
+      accent-color: #10b981;
+      cursor: pointer;
+    }
+    .milestone-table .ms-del-cell {
+      text-align: center;
+      vertical-align: middle;
+    }
+    .milestone-table .ms-del-btn {
+      width: 26px;
+      height: 26px;
+      border: none;
+      background: #fee2e2;
+      color: #b91c1c;
+      border-radius: 0.3rem;
+      cursor: pointer;
+      font-size: 0.95rem;
+      line-height: 1;
+    }
+    .milestone-table .ms-del-btn:hover { background: #fecaca; }
+    .milestone-empty {
+      text-align: center;
+      padding: 1.5rem 1rem;
+      color: #94a3b8;
+      font-size: 0.88rem;
+      background: #f9fafb;
+      border: 1px dashed #e5e7eb;
+      border-radius: 0.5rem;
+    }
+    .milestone-sync-note {
+      margin-top: 0.6rem;
+      padding: 0.45rem 0.7rem;
+      background: #eff6ff;
+      border-left: 3px solid #93c5fd;
+      border-radius: 0.3rem;
+      font-size: 0.78rem;
+      color: #1e40af;
+    }
+
     /* 페이지 전체 너비 고정 — 화면 크기와 무관 */
     .container {
       width: 1400px;
@@ -833,8 +924,8 @@
         <h1 class="sidebar-title">CI_R&DM</h1>
       </div>
             <nav class="sidebar-nav">
-        <a href="projects-history.html" class="sidebar-link" id="nav-history"><span class="sidebar-link-icon" aria-hidden="true">📜</span><span class="sidebar-link-text">과제 수행 현황</span></a>
-        <a href="index.html#/calendar" class="sidebar-link" id="nav-calendar"><span class="sidebar-link-icon" aria-hidden="true">📅</span><span class="sidebar-link-text">제출 일정 관리</span></a>
+        <a href="projects-history.html" class="sidebar-link" id="nav-history"><span class="sidebar-link-icon" aria-hidden="true">📜</span><span class="sidebar-link-text">수행 현황</span></a>
+        <a href="index.html#/calendar" class="sidebar-link" id="nav-calendar"><span class="sidebar-link-icon" aria-hidden="true">📅</span><span class="sidebar-link-text">일정 관리</span></a>
         <div class="sidebar-divider" aria-hidden="true"></div>
         <a href="dashboard.html" class="sidebar-link" id="nav-dashboard"><span class="sidebar-link-icon" aria-hidden="true">🏠</span><span class="sidebar-link-text">대시보드</span></a>
         <a href="funding.html" class="sidebar-link" id="nav-funding"><span class="sidebar-link-icon" aria-hidden="true">💵</span><span class="sidebar-link-text">자금 관리</span></a>
@@ -1086,6 +1177,39 @@
               실제 수령 정보(연두색 칸)는 받았을 때 입력하세요.
             </p>
             <div id="payment-groups"></div>
+          </section>
+
+          <!-- 5. 마일스톤 -->
+          <section class="detail-section">
+            <div class="detail-section-header">
+              <div>
+                <h2 class="detail-section-title">마일스톤 <span aria-hidden="true">🚩</span></h2>
+                <p class="detail-section-desc">협약/중간보고/최종보고 등 주요 일정을 등록합니다. 등록된 일정은 캘린더에 자동 표시됩니다.</p>
+              </div>
+              <button type="button" class="ui-btn ui-btn--ghost" id="add-milestone-btn">+ 마일스톤 추가</button>
+            </div>
+
+            <div class="milestone-wrap">
+              <table class="milestone-table" id="milestone-table" style="display:none;">
+                <thead>
+                  <tr>
+                    <th style="min-width:160px">항목</th>
+                    <th style="min-width:130px">날짜</th>
+                    <th style="min-width:120px">담당자</th>
+                    <th style="width:60px;text-align:center">완료</th>
+                    <th>메모</th>
+                    <th style="width:50px"></th>
+                  </tr>
+                </thead>
+                <tbody id="milestone-tbody"></tbody>
+              </table>
+              <div class="milestone-empty" id="milestone-empty">
+                등록된 마일스톤이 없습니다. "+ 마일스톤 추가" 버튼을 눌러 추가하세요.
+              </div>
+            </div>
+            <div class="milestone-sync-note">
+              💡 마일스톤은 "일정 관리" 캘린더와 자동 동기화됩니다. 다가오는 마일스톤은 대시보드 "일정 알림" 카드에 표시됩니다.
+            </div>
           </section>
 
           <div class="detail-bottom-actions">

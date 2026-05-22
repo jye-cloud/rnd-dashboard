@@ -168,6 +168,13 @@
       white-space: nowrap;
       text-align: center;
     }
+    /* 사이드바 그룹 구분선 */
+    .sidebar-divider {
+      height: 1px;
+      background: #e5e7eb;
+      margin: 0.75rem 1rem;
+      opacity: 0.7;
+    }
   </style>
 </head>
 <body>
@@ -178,13 +185,16 @@
         <h1 class="sidebar-title">CI_R&DM</h1>
       </div>
       <nav class="sidebar-nav">
+        <a href="projects-history.html" class="sidebar-link" id="nav-history"><span class="sidebar-link-icon" aria-hidden="true">📜</span><span class="sidebar-link-text">수행 현황</span></a>
+        <a href="#/calendar" class="sidebar-link" data-page="calendar" id="nav-calendar"><span class="sidebar-link-icon" aria-hidden="true">📅</span><span class="sidebar-link-text">일정 관리</span></a>
+        <div class="sidebar-divider" aria-hidden="true"></div>
         <a href="dashboard.html" class="sidebar-link" id="nav-dashboard"><span class="sidebar-link-icon" aria-hidden="true">🏠</span><span class="sidebar-link-text">대시보드</span></a>
-        <a href="#/hr" class="sidebar-link active" data-page="hr" id="nav-hr"><span class="sidebar-link-icon" aria-hidden="true">👤</span><span class="sidebar-link-text">인력 정보 관리</span></a>
-        <a href="#/participation" class="sidebar-link" data-page="participation" id="nav-participation"><span class="sidebar-link-icon" aria-hidden="true">📊</span><span class="sidebar-link-text">참여율 관리</span></a>
-        <a href="#/payroll" class="sidebar-link" data-page="payroll" id="nav-payroll"><span class="sidebar-link-icon" aria-hidden="true">💰</span><span class="sidebar-link-text">인건비 관리</span></a>
-        <a href="#/calendar" class="sidebar-link" data-page="calendar" id="nav-calendar"><span class="sidebar-link-icon" aria-hidden="true">📅</span><span class="sidebar-link-text">제출 일정 관리</span></a>
-        <a href="projects-history.html" class="sidebar-link" id="nav-history"><span class="sidebar-link-icon" aria-hidden="true">📜</span><span class="sidebar-link-text">과제 수행 현황</span></a>
+        <a href="funding.html" class="sidebar-link" id="nav-funding"><span class="sidebar-link-icon" aria-hidden="true">💵</span><span class="sidebar-link-text">자금 관리</span></a>
         <a href="projects.html" class="sidebar-link" id="nav-projects"><span class="sidebar-link-icon" aria-hidden="true">📋</span><span class="sidebar-link-text">과제 관리</span></a>
+        <a href="projects-summary.html" class="sidebar-link" id="nav-projects-summary"><span class="sidebar-link-icon" aria-hidden="true">📑</span><span class="sidebar-link-text">과제별 상세</span></a>
+        <a href="#/hr" class="sidebar-link active" data-page="hr" id="nav-hr"><span class="sidebar-link-icon" aria-hidden="true">👤</span><span class="sidebar-link-text">인력 정보 관리</span></a>
+        <a href="#/payroll" class="sidebar-link" data-page="payroll" id="nav-payroll"><span class="sidebar-link-icon" aria-hidden="true">💰</span><span class="sidebar-link-text">인건비 관리</span></a>
+        <a href="#/participation" class="sidebar-link" data-page="participation" id="nav-participation"><span class="sidebar-link-icon" aria-hidden="true">📊</span><span class="sidebar-link-text">참여율 관리</span></a>
       </nav>
     </aside>
 
@@ -499,7 +509,7 @@
       <div id="page-calendar" class="page" hidden>
         <div class="container">
           <header class="header">
-            <h1 class="header-title">[R&DM] 제출 일정 관리</h1>
+            <h1 class="header-title">[60hz] 제출 및 수행 일정 관리</h1>
           </header>
           <div id="calendar-wrap" class="calendar-wrap"></div>
         </div>

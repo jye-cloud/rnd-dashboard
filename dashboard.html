@@ -657,9 +657,84 @@
     /* Charts row */
     .dash-row {
       display: grid;
-      grid-template-columns: 1fr;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
       gap: 1.25rem;
       margin-bottom: 1.5rem;
+    }
+
+    /* 인쇄 전용 푸터 — 평소엔 숨김, @media print에서 표시 */
+    .print-footer {
+      display: none;
+    }
+
+    /* ===== 인쇄 / PDF 저장 ===== */
+    /* A4 세로 방향, 1400px 콘텐츠를 인쇄 영역(약 794px)에 맞춰 축소 */
+    @page {
+      size: A4 portrait;
+      margin: 8mm;
+    }
+    @media print {
+      html, body {
+        background: #fff !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        overflow: hidden !important;  /* 스크롤바 숨김 */
+      }
+      .sidebar, .header, #dash-pdf-btn { display: none !important; }
+      /* 플로팅 버튼 (floating-buttons.js가 생성하는 .fab-buttons) 숨김 */
+      .fab-buttons,
+      .fab-btn {
+        display: none !important;
+      }
+      .main-area {
+        padding: 0 !important;
+        margin: 0 !important;
+        margin-left: 0 !important;
+      }
+      /* 컨테이너는 1400px 유지하고, 인쇄 영역(약 794px - 여백 16mm) 에 맞게 축소 */
+      .container {
+        width: 1400px !important;
+        margin: 0 !important;
+        transform: scale(0.55);
+        transform-origin: top left;
+        overflow: hidden !important;
+      }
+      .dash-toolbar { padding: 0 0 0.5rem 0 !important; }
+      .dash-hero, .dash-card {
+        box-shadow: none !important;
+        page-break-inside: avoid;
+      }
+      .dash-hero {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+      }
+      .hero-panel,
+      .alert-mini-item,
+      .division-pill {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+      }
+      .proposal-summary-row, .dash-row {
+        page-break-inside: avoid;
+      }
+      /* 인쇄 시 작성일 표시 (우측 하단) */
+      .print-footer {
+        display: block !important;
+        text-align: right;
+        font-size: 0.85rem;
+        color: #6b7280;
+        margin-top: 1rem;
+        padding-top: 0.5rem;
+        border-top: 1px solid #e5e7eb;
+      }
+      /* 인쇄 시 모든 스크롤바 숨김 (Webkit 기반 브라우저) */
+      *::-webkit-scrollbar {
+        display: none !important;
+      }
+      * {
+        scrollbar-width: none !important;  /* Firefox */
+        -ms-overflow-style: none !important;  /* IE/Edge */
+      }
     }
     .dash-card {
       background: var(--card-bg);
@@ -775,6 +850,7 @@
       width: 100%;
       border-collapse: collapse;
       font-size: 0.875rem;
+      table-layout: fixed;
     }
     .recent-table thead th {
       text-align: left;
@@ -918,6 +994,12 @@
       border-radius: 999px;
       font-size: 0.85rem;
       color: #374151;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .proposal-summary-row .division-pill:hover {
+      background: #eff6ff;
+      border-color: #2563eb;
     }
     .proposal-summary-row .division-pill-count {
       font-weight: 700;
@@ -968,6 +1050,7 @@
         <a href="dashboard.html" class="sidebar-link active" id="nav-dashboard"><span class="sidebar-link-icon" aria-hidden="true">🏠</span><span class="sidebar-link-text">대시보드</span></a>
         <a href="funding.html" class="sidebar-link" id="nav-funding"><span class="sidebar-link-icon" aria-hidden="true">💵</span><span class="sidebar-link-text">자금 관리</span></a>
         <a href="projects.html" class="sidebar-link" id="nav-projects"><span class="sidebar-link-icon" aria-hidden="true">📋</span><span class="sidebar-link-text">과제 관리</span></a>
+        <a href="projects-summary.html" class="sidebar-link" id="nav-projects-summary"><span class="sidebar-link-icon" aria-hidden="true">📑</span><span class="sidebar-link-text">과제별 상세</span></a>
         <a href="index.html" class="sidebar-link" id="nav-hr"><span class="sidebar-link-icon" aria-hidden="true">👤</span><span class="sidebar-link-text">인력 정보 관리</span></a>
         <a href="index.html#/payroll" class="sidebar-link" id="nav-payroll"><span class="sidebar-link-icon" aria-hidden="true">💰</span><span class="sidebar-link-text">인건비 관리</span></a>
         <a href="index.html#/participation" class="sidebar-link" id="nav-participation"><span class="sidebar-link-icon" aria-hidden="true">📊</span><span class="sidebar-link-text">참여율 관리</span></a>
@@ -990,7 +1073,7 @@
             <option value="2022">2022년</option>
             <option value="2021">2021년</option>
           </select>
-          <span class="toolbar-meta" id="dash-meta">전체 R&D 과제 통합 현황</span>
+          <button type="button" class="ui-btn ui-btn--ghost" id="dash-pdf-btn" style="margin-left:auto;">📥 PDF 저장</button>
         </div>
 
         <!-- Hero: 3 pastel panels -->
@@ -1213,7 +1296,7 @@
           <div class="dash-card">
             <div class="dash-card-header">
               <h2 class="dash-card-title">수행 과제 <span class="dash-card-subtitle">(당해 지원금 Top 5)</span></h2>
-              <a href="projects.html" class="dash-card-link">전체 보기 →</a>
+              <a href="projects.html" class="dash-card-link" id="recent-link">전체 보기 →</a>
             </div>
             <div id="recent-wrap">
               <table class="recent-table" id="recent-table" style="display:none">
@@ -1230,7 +1313,31 @@
               <div id="recent-empty" class="recent-empty">표시할 수행 과제가 없습니다.</div>
             </div>
           </div>
+
+          <div class="dash-card">
+            <div class="dash-card-header">
+              <h2 class="dash-card-title">수행 용역 <span class="dash-card-subtitle">(종료일 임박 순)</span></h2>
+              <a href="projects.html" class="dash-card-link" id="recent-service-link">전체 보기 →</a>
+            </div>
+            <div id="recent-service-wrap">
+              <table class="recent-table" id="recent-service-table" style="display:none">
+                <thead>
+                  <tr>
+                    <th style="width:120px">키워드</th>
+                    <th>용역명</th>
+                    <th style="width:110px">기관명</th>
+                    <th style="width:100px;text-align:right">종료일</th>
+                  </tr>
+                </thead>
+                <tbody id="recent-service-tbody"></tbody>
+              </table>
+              <div id="recent-service-empty" class="recent-empty">표시할 수행 용역이 없습니다.</div>
+            </div>
+          </div>
         </div>
+
+        <!-- 인쇄(PDF 저장) 전용 푸터: 우측 하단에 작성일 표시 -->
+        <div class="print-footer" id="print-footer" aria-hidden="true"></div>
 
       </div>
     </main>

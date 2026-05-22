@@ -6,7 +6,9 @@
 
   var CUTOFF = '2026-01-01';
   var STAT_YEAR = 2026;
-  var COL_KEYS = ['부처', '예산', '과제명', '기관명', '연구기간', '지원금당해', '지원금총', '비고'];
+  // 열 선택 옵션 (책임자 / 부처 / 사업명 / 키워드)
+  var COL_KEYS = ['책임자', '부처', '사업명', '키워드'];
+  var COL_FIELDS = { '책임자': 'manager', '부처': 'department', '사업명': 'business', '키워드': '__keywords' };
 
   function projectOverlapsYear(it, year) {
     var y = String(year);
@@ -24,7 +26,7 @@
     if (end && end < yearStart) return false;
     return true;
   }
-  var COL_FIELDS = { '부처': 'department', '예산': 'budget', '과제명': 'projectName', '기관명': 'institution', '연구기간': 'researchPeriod', '지원금당해': 'supportYear', '지원금총': 'supportTotal', '비고': 'note' };
+  var COL_KEYS_OLD_REMOVED = null; // (이전 중복 선언 제거됨 - 위쪽 정의 사용)
 
   function getVal(item, key) {
     var f = COL_FIELDS[key];
@@ -50,6 +52,15 @@
     }
     if (fallbackStart || fallbackEnd) return (fallbackStart || '-') + ' ~ ' + (fallbackEnd || '-');
     return '-';
+  }
+
+  function getTypeBadgeClass(type) {
+    var s = (type || '').trim();
+    if (s === '과제') return 'projects-badge--type-task';
+    if (s === '지원사업') return 'projects-badge--type-grant';
+    if (s === '용역') return 'projects-badge--type-service';
+    if (s === '기타') return 'projects-badge--type-other';
+    return '';
   }
 
   function getDivision2Class(status) {
@@ -83,6 +94,8 @@
    */
   function statusAsOf(it, asOfDate) {
     var raw = (it.status || it['진행 여부'] || '').toString().trim();
+    // "선정" 입력값을 "선정(기타)"로 정규화 (옛 데이터 호환)
+    if (raw === '선정') raw = '선정(기타)';
     var n = raw.replace(/\s/g, '');
 
     // asOfDate 기본값 — 오늘
@@ -93,8 +106,9 @@
         String(today.getDate()).padStart(2, '0');
     }
 
-    // "수행" + 종료일이 asOfDate 이전 → "종료"
-    if (n === '수행중' || n === '수행') {
+    // "수행" 또는 "종료" + 종료일이 asOfDate 이전 → "종료", 이후 → "수행"
+    // (raw가 '종료'여도 asOfDate가 종료일 이전이면 그 시점에는 아직 '수행')
+    if (n === '수행중' || n === '수행' || raw === '종료') {
       var endDate = (it.endDate || it.end || it['종료일'] || '').toString().slice(0, 10);
       if (endDate && asOfDate > endDate) return '종료';
       return '수행';
@@ -108,6 +122,22 @@
     }
 
     if (raw === '대기' || raw === '종료' || raw === '미선정' || raw === '미제출') return raw;
+
+    // status 비어있을 때 — 시작일/종료일/제출일 기반 자동 판정
+    if (!raw) {
+      var startD  = (it.startDate || it.start || it['시작일'] || '').toString().slice(0, 10);
+      var endD    = (it.endDate || it.end || it['종료일'] || '').toString().slice(0, 10);
+      var submitD = (it.submitDate || it['제출일'] || '').toString().slice(0, 10);
+      // 우선순위: 종료일 지남 → 종료 / 시작 ≤ 오늘 ≤ 종료 → 수행 / 시작 미래 → 예정 / 제출 미래 → 예정 / 제출 과거 → 대기
+      if (endD && asOfDate > endD) return '종료';
+      if (startD && asOfDate >= startD) {
+        if (!endD || asOfDate <= endD) return '수행';
+      }
+      if (startD && asOfDate < startD) return '예정';
+      if (submitD && asOfDate < submitD) return '예정';
+      if (submitD && asOfDate > submitD) return '대기';
+    }
+
     return raw || '미정';
   }
 
@@ -386,11 +416,43 @@
       totalCount = items.filter(function (it) { return projectOverlapsYear(it, statsYear); }).length;
     }
 
+    // ===== 새 HTML 통계 카드 id (단순화된 5개) =====
+    setEl('stat-history-total', totalCount);
+    setEl('stat-ongoing', ongoingAll);
+    setEl('stat-ended', endedCnt);
+    // 예정: statsYear 시점 기준 status='예정' 또는 '대기' 또는 '선정(기타)' (=결과 대기/선정 중)
+    var scheduledCnt = 0;
+    items.forEach(function (it) {
+      var st = statusAsOf(it, yearEndDate(statsYear));
+      var sd = (it.submitDate || it['제출일'] || '').toString().slice(0, 10);
+      var sy = sd ? sd.slice(0, 4) : '';
+      if ((st === '예정' || st === '대기' || st === '선정(기타)') && sy === yearStr) {
+        scheduledCnt++;
+      }
+    });
+    setEl('stat-scheduled', scheduledCnt);
+
+    // 총 지원금: yearSum (그 해 입금분) — 자동 단위 (억/만/원)
+    var totalSumEl = document.getElementById('stat-total-sum');
+    var totalSumUnitEl = document.getElementById('stat-total-sum-unit');
+    if (totalSumEl) {
+      if (yearSum >= 1e8) {
+        totalSumEl.textContent = (yearSum / 1e8).toFixed(1);
+        if (totalSumUnitEl) totalSumUnitEl.textContent = '억';
+      } else if (yearSum >= 1e4) {
+        totalSumEl.textContent = Math.round(yearSum / 1e4).toLocaleString('ko-KR');
+        if (totalSumUnitEl) totalSumUnitEl.textContent = '만';
+      } else {
+        totalSumEl.textContent = formatNum(yearSum);
+        if (totalSumUnitEl) totalSumUnitEl.textContent = '원';
+      }
+    }
+
+    // ===== 옛 통계 카드 id (현재 HTML에는 없음 — 호환용 try) =====
     setEl('stat-total', totalCount);
     setEl('stat-ongoing-all', ongoingAll);
     setEl('stat-continue', continueCnt);
     setEl('stat-new', newCnt);
-    setEl('stat-ended', endedCnt);
     setEl('stat-waiting', waitingCnt);
     setEl('stat-selected-other', selectedOtherCnt);
     setEl('stat-unselected', unselectedCnt);
@@ -455,8 +517,8 @@
   }
 
   function applyColVisibility(vis) {
-    var ths = document.querySelectorAll('#projects-table thead th.col-opt');
-    var rows = document.querySelectorAll('#projects-table tbody tr');
+    var ths = document.querySelectorAll('#history-table thead th.col-opt');
+    var rows = document.querySelectorAll('#history-table tbody tr');
     var showVal = 'table-cell';
     ths.forEach(function (th) {
       var col = th.getAttribute('data-col');
@@ -473,9 +535,22 @@
     });
   }
 
-  function renderTable(items, colVis, filterYear, onEdit) {
+  function renderTable(items, colVis, filterYear, currentTab) {
     var tbody = document.getElementById('projects-tbody');
     if (!tbody) return;
+
+    // thead 전환 (R&D / 용역)
+    var theadRd = document.getElementById('thead-rd');
+    var theadService = document.getElementById('thead-service');
+    var isService = (currentTab === 'service');
+    if (theadRd) theadRd.style.display = isService ? 'none' : '';
+    if (theadService) theadService.style.display = isService ? '' : 'none';
+    // 테이블에 용역 모드 클래스 토글 (CSS에서 컬럼 너비 분기)
+    var tableEl = document.getElementById('history-table');
+    if (tableEl) tableEl.classList.toggle('is-service', isService);
+    // 열 선택 버튼 — 용역 탭에서는 숨김 (옵션 컬럼 없음)
+    var colToggleBtn = document.getElementById('col-toggle-btn');
+    if (colToggleBtn) colToggleBtn.style.display = isService ? 'none' : '';
 
     tbody.innerHTML = '';
     items.forEach(function (it, idx) {
@@ -483,12 +558,8 @@
       var start = (it.startDate || it.start || '').toString().slice(0, 10);
       var end = (it.endDate || it.end || '').toString().slice(0, 10);
 
-      // 유형: division1 (과제/지원사업/용역/기타) — 입력값 그대로
-      var typeText = (it.division1 || it['구분1'] || '').toString() || '-';
-
-      // 진행 여부: filterYear 시점 status (선택 연도 시점 기준), 전체 모드면 오늘 기준
-      var statusAsOfDate = filterYear ? yearEndDate(filterYear) : null;
-      var status = statusAsOf(it, statusAsOfDate);
+      // 진행 여부 — 항상 오늘 시점 기준 (과제 관리 페이지와 일관성)
+      var status = statusAsOf(it, null);
       var statusDisplay = status;
       var badgeClass = getDivision2Class(status);
       if (status === '수행' && filterYear) {
@@ -504,76 +575,104 @@
       var tr = document.createElement('tr');
       tr.setAttribute('data-id', id);
 
-      var no = (it.no != null && it.no !== '') ? String(it.no) : (idx + 1);
-      var submitDate = (it.submitDate || it['제출일'] || '').toString().slice(0, 10);
-      var cells = [
-        '<td>' + escapeHtml(no) + '</td>',
-        '<td>' + escapeHtml(typeText) + '</td>',
-        '<td><span class="projects-badge ' + badgeClass + '">' + escapeHtml(statusDisplay) + '</span></td>',
-        '<td>' + escapeHtml(submitDate || '-') + '</td>',
-        '<td>' + getKeywordHtml(it) + '</td>',
-        '<td>' + escapeHtml(it.manager || it.책임자 || '-') + '</td>',
-        '<td>' + escapeHtml(start || '-') + '</td>',
-        '<td>' + escapeHtml(end || '-') + '</td>'
-      ];
+      var no = idx + 1;
+      var projectName = it.projectName || it['과제명'] || '-';
+      var institution = it.institution || it['기관명'] || '-';
+      var researchPeriod = getResearchPeriodDisplay(it, filterYear);
 
-      COL_KEYS.forEach(function (k) {
-        var val;
-        if (k === '연구기간') {
-          val = getResearchPeriodDisplay(it, filterYear);
-        } else if (k === '지원금당해') {
-          // 당해 입금: 필터연도 있으면 그 해 입금분(calendarBreakdown 우선), 없으면 supportTotal
-          var num1 = 0;
-          if (filterYear) {
-            if (Array.isArray(it.yearBudgets)) {
-              it.yearBudgets.forEach(function (yb) { num1 += supportInYear(yb, filterYear); });
-            } else if (it.supportYear != null && !isNaN(Number(it.supportYear))) {
-              num1 = Number(it.supportYear);
-            }
-          } else {
-            num1 = Number(it.supportTotal != null ? it.supportTotal : (it.budget || 0));
-          }
-          val = num1 > 0 ? formatNum(num1) : (filterYear ? '0' : '-');
-        } else if (k === '지원금총') {
-          // 당해 수주: 필터연도 있으면 그 해 시작 yearBudget.support 합, 없으면 supportTotal
-          var num2 = 0;
-          if (filterYear) {
-            if (Array.isArray(it.yearBudgets)) {
-              it.yearBudgets.forEach(function (yb) {
-                var ybs = (yb.startDate || '').toString().slice(0, 4);
-                if (ybs === filterYear) num2 += Number(yb.support || 0);
-              });
-            }
-          } else {
-            num2 = Number(it.supportTotal != null ? it.supportTotal : (it.budget || 0));
-          }
-          val = num2 > 0 ? formatNum(num2) : (filterYear ? '0' : '-');
-        } else if (k === '예산') {
-          // 숫자 컬럼 — 단순 필드 + 콤마
-          var raw = getVal(it, k);
-          var num3 = Number(raw);
-          val = (raw && !isNaN(num3)) ? formatNum(num3) : (raw || '-');
-        } else {
-          val = getVal(it, k) || '-';
+      var cells;
+
+      if (isService) {
+        // ===== 용역 탭 =====
+        // 사업비 총액(VAT 포함) = yearBudgets[].totalIncludingVat 합
+        // 공급가(VAT 제외) = yearBudgets[].support 합 (= total/1.1 자동계산)
+        var totalVat = 0, supplySum = 0;
+        if (Array.isArray(it.yearBudgets) && it.yearBudgets.length > 0) {
+          it.yearBudgets.forEach(function (yb) {
+            var t = Number(yb.totalIncludingVat || 0);
+            var s = Number(yb.support || 0);
+            // 옛 데이터(totalIncludingVat 없음) 호환: support×1.1 추정
+            if (!t && s) t = Math.round(s * 1.1);
+            // 옛 데이터(support 없음) 호환: total/1.1
+            if (!s && t) s = Math.round(t / 1.1);
+            totalVat += t;
+            supplySum += s;
+          });
         }
-        cells.push('<td class="col-opt" data-col="' + k + '">' + escapeHtml(val) + '</td>');
-      });
+        var totalVatDisplay = totalVat > 0 ? formatNum(totalVat) : '-';
+        var supplyDisplay = supplySum > 0 ? formatNum(supplySum) : '-';
 
-      cells.push('<td style="text-align:center"><button type="button" class="ui-btn ui-btn--ghost project-edit-btn" data-id="' + escapeHtml(id) + '">수정</button></td>');
-      tr.innerHTML = cells.join('');
+        // 코드 (아직 미구현 — 추후 추가 예정)
+        var code = it.code || it['코드'] || '-';
 
-      var editBtn = tr.querySelector('.project-edit-btn');
-      if (editBtn && typeof onEdit === 'function') {
-        editBtn.addEventListener('click', function (e) {
-          e.stopPropagation();
-          onEdit(it);
+        cells = [
+          '<td>' + escapeHtml(no) + '</td>',
+          '<td><span class="projects-badge ' + badgeClass + '">' + escapeHtml(statusDisplay) + '</span></td>',
+          '<td class="col-projectname"><div class="cell-projectname" title="' + escapeHtml(projectName) + '">' + escapeHtml(projectName) + '</div></td>',
+          '<td class="col-institution" title="' + escapeHtml(institution) + '">' + escapeHtml(institution) + '</td>',
+          '<td class="col-period">' + escapeHtml(researchPeriod) + '</td>',
+          '<td class="col-num">' + escapeHtml(totalVatDisplay) + '</td>',
+          '<td class="col-num">' + escapeHtml(supplyDisplay) + '</td>',
+          '<td>' + escapeHtml(code) + '</td>'
+        ];
+      } else {
+        // ===== R&D 탭 =====
+        var manager = it.manager || it.책임자 || '-';
+
+        // 사업비 총액 = 정부지원금 + 자부담현금 + 자부담현물 (yearBudgets 누적)
+        var totalBudget = 0;
+        var govSum = 0;
+        if (Array.isArray(it.yearBudgets) && it.yearBudgets.length > 0) {
+          it.yearBudgets.forEach(function (yb) {
+            var s = Number(yb.support || 0);
+            var c = Number(yb.cash || 0);
+            var k = Number(yb.inKind || 0);
+            govSum += s;
+            totalBudget += s + c + k;
+          });
+        }
+        if (govSum === 0) govSum = Number(it.supportTotal != null ? it.supportTotal : (it.budget || 0));
+        if (totalBudget === 0) totalBudget = govSum; // 자부담 없으면 정부지원금만
+        var totalBudgetDisplay = totalBudget > 0 ? formatNum(totalBudget) : '-';
+        var govDisplay = govSum > 0 ? formatNum(govSum) : '-';
+
+        // 코드 (아직 미구현 — 추후 추가 예정, 용역과 동일하게 처리)
+        var rdCode = it.code || it['코드'] || '-';
+
+        cells = [
+          '<td>' + escapeHtml(no) + '</td>',
+          '<td><span class="projects-badge ' + badgeClass + '">' + escapeHtml(statusDisplay) + '</span></td>',
+          '<td class="col-projectname"><div class="cell-projectname" title="' + escapeHtml(projectName) + '">' + escapeHtml(projectName) + '</div></td>',
+          '<td class="col-institution" title="' + escapeHtml(institution) + '">' + escapeHtml(institution) + '</td>',
+          '<td class="col-period">' + escapeHtml(researchPeriod) + '</td>',
+          '<td class="col-num">' + escapeHtml(govDisplay) + '</td>',
+          '<td class="col-num">' + escapeHtml(totalBudgetDisplay) + '</td>',
+          '<td>' + escapeHtml(rdCode) + '</td>'
+        ];
+
+        COL_KEYS.forEach(function (k) {
+          var val;
+          if (k === '키워드') {
+            // 키워드는 escape 없이 (HTML 포함)
+            cells.push('<td class="col-opt" data-col="' + k + '">' + getKeywordHtml(it) + '</td>');
+            return;
+          } else if (k === '책임자') {
+            val = manager;
+          } else {
+            val = getVal(it, k) || '-';
+          }
+          cells.push('<td class="col-opt" data-col="' + k + '">' + escapeHtml(val) + '</td>');
         });
       }
 
+      tr.innerHTML = cells.join('');
       tbody.appendChild(tr);
     });
 
-    applyColVisibility(colVis || getColVisibility());
+    // R&D 탭에서만 열 토글 적용
+    if (!isService) {
+      applyColVisibility(colVis || getColVisibility());
+    }
   }
 
   function init() {
@@ -613,9 +712,9 @@
 
     var svc = window.firestoreService;
     var latestItems = [];
-    var yearFilter = document.getElementById('project-year-filter');
-    var filterHint = document.getElementById('project-filter-hint');
-    var activeFiltersWrap = document.getElementById('project-active-filters');
+    var yearFilter = document.getElementById('history-year-filter');
+    var filterHint = document.getElementById('history-meta');
+    var activeFiltersWrap = document.getElementById('history-active-filters');
 
     // ----- 활성 필터 상태 -----
     // activeCardFilter: 'continue' | 'new' | 'unselected' (카드 클릭으로 활성화)
@@ -627,6 +726,10 @@
     var activeDivisionFilter = null;
     var activeSearchQuery = '';
     var lastFilteredItems = []; // 엑셀 내보내기용 — 현재 화면에 보이는 아이템들
+    var currentTab = 'rd';      // 'rd' (R&D 활동) | 'service' (용역)
+    var rdOnly = false;         // R&D 활동 탭 안의 NTIS 토글
+    // 엑셀/클립보드 함수에서 현재 탭을 알 수 있도록 노출
+    window.__currentTabRef = function () { return currentTab; };
 
     // 페이지 로드 시 URL 파라미터에서 초기 필터 읽기
     (function readInitialFilter() {
@@ -736,14 +839,24 @@
       if (!query) return true;
       var q = String(query).toLowerCase().trim();
       if (!q) return true;
+      // 모든 표시 가능 필드 + 자동 판정 status까지 통합 검색
       var fields = [
         it.projectName, it['과제명'],
         it.manager, it['책임자'],
+        it.charge, it['담당자'],
         it.department, it['부처'],
         it.business, it['사업명'],
         it.institution, it['기관명'],
         it.keywords, it.keyword, it['키워드'],
-        it.no
+        it.no,
+        it.division1, it['구분1'],
+        it.division2, it['구분2'],
+        it.status, it['진행 여부'],
+        statusAsOf(it, null),  // 자동 판정 상태 ('수행' 검색 → status 비어있어도 잡힘)
+        it.startDate, it.start, it['시작일'],
+        it.endDate, it.end, it['종료일'],
+        it.submitDate, it['제출일'],
+        it.note, it['비고']
       ];
       for (var i = 0; i < fields.length; i++) {
         var f = fields[i];
@@ -939,12 +1052,155 @@
       });
     }
 
+    // ===== 연도별 트렌드 막대 차트 =====
+    function renderTrendChart(items, currentFilterYear) {
+      var chart = document.getElementById('trend-chart');
+      if (!chart) return;
+      // 최근 6년
+      var thisYear = new Date().getFullYear();
+      var years = [];
+      for (var y = thisYear - 5; y <= thisYear; y++) years.push(y);
+      // 각 연도 과제 수 계산 (그 연도와 겹치는 과제)
+      var counts = years.map(function (yr) {
+        return items.filter(function (it) { return projectOverlapsYear(it, yr); }).length;
+      });
+      var maxCount = Math.max.apply(null, counts.concat([1]));
+      var activeYear = currentFilterYear ? parseInt(currentFilterYear, 10) : null;
+
+      chart.innerHTML = '';
+      years.forEach(function (yr, idx) {
+        var count = counts[idx];
+        var heightPct = maxCount > 0 ? Math.round((count / maxCount) * 100) : 0;
+        var heightPx = Math.max(4, Math.round((heightPct / 100) * 95)); // 최대 95px
+        var isActive = activeYear === yr;
+        var wrap = document.createElement('div');
+        wrap.className = 'history-trend-bar-wrap' + (isActive ? ' is-active' : '');
+        wrap.setAttribute('data-year', yr);
+        wrap.innerHTML =
+          '<div class="history-trend-bar-num">' + count + '</div>' +
+          '<div class="history-trend-bar" style="height:' + heightPx + 'px"></div>' +
+          '<div class="history-trend-bar-label">' + yr + '</div>';
+        wrap.addEventListener('click', function () {
+          var sel = document.getElementById('history-year-filter');
+          if (sel) {
+            // 같은 연도 다시 클릭 시 해제
+            sel.value = isActive ? '' : String(yr);
+            sel.dispatchEvent(new Event('change'));
+          }
+        });
+        chart.appendChild(wrap);
+      });
+    }
+
+    // ===== 입금 예정 지원금 카드 (연도 필터 시만) =====
+    function renderFundingCard(items, filterYear) {
+      var card = document.getElementById('stat-funding-card');
+      if (!card) return;
+      if (!filterYear) {
+        card.style.display = 'none';
+        return;
+      }
+      card.style.display = 'block';  // 명시적으로 표시 (inline style 우선순위)
+      card.removeAttribute('hidden');
+      // 그 연도 입금 예정 = yearBudgets 중 그 해 입금분 합
+      var total = 0;
+      items.forEach(function (it) {
+        if (Array.isArray(it.yearBudgets)) {
+          it.yearBudgets.forEach(function (yb) { total += supportInYear(yb, filterYear); });
+        }
+      });
+      var labelEl = document.getElementById('stat-funding-label');
+      if (labelEl) labelEl.textContent = filterYear + '년 입금 예정 지원금';
+      var valueEl = document.getElementById('stat-funding-value');
+      var unitEl = document.getElementById('stat-funding-unit');
+      if (!valueEl) return;
+      if (total >= 1e8) {
+        valueEl.textContent = (total / 1e8).toFixed(1);
+        if (unitEl) unitEl.textContent = '억';
+      } else if (total >= 1e4) {
+        valueEl.textContent = Math.round(total / 1e4).toLocaleString('ko-KR');
+        if (unitEl) unitEl.textContent = '만';
+      } else {
+        valueEl.textContent = formatNum(total);
+        if (unitEl) unitEl.textContent = '원';
+      }
+    }
+
+    // ===== 통계 카드 계산 (예정/진행/종료) =====
+    function renderSimpleStats(items, statsYear, filterYear) {
+      var yearStr = String(statsYear);
+      var asOf = null;  // 오늘 기준 (표와 일관성)
+      var scheduled = 0, ongoing = 0, ended = 0;
+
+      items.forEach(function (it) {
+        var st = statusAsOf(it, asOf);
+        var endYear = (it.endDate || it.end || '').toString().slice(0, 4);
+        var sd = (it.submitDate || it['제출일'] || '').toString().slice(0, 10);
+        var submitYear = sd ? sd.slice(0, 4) : '';
+
+        if (st === '수행') {
+          // 진행: 오늘 기준 수행 AND 그 해 겹침
+          if (filterYear ? projectOverlapsYear(it, filterYear) : true) ongoing++;
+        } else if (st === '종료') {
+          // 종료: 종료일이 그 해 안 (연도 필터 시), 전체 모드는 모든 종료
+          if (filterYear ? endYear === yearStr : true) ended++;
+        } else if (st === '예정' || st === '대기') {
+          // 예정: 제출일이 그 해 안 (연도 필터 시), 전체 모드는 모든 예정/대기
+          if (filterYear ? submitYear === yearStr : true) scheduled++;
+        }
+      });
+
+      setEl('stat-scheduled', scheduled);
+      setEl('stat-ongoing', ongoing);
+      setEl('stat-ended', ended);
+      setEl('stat-history-total', scheduled + ongoing + ended);
+
+      // 입금 예정 지원금 카드 (제거됐지만 element 없으면 무시)
+      renderFundingCard(items, filterYear);
+    }
+
     function applyFilterAndRender(items) {
       items = Array.isArray(items) ? items : [];
       latestItems = items;
       var filterYear = getFilterYear();
       var statsYear = getStatsYear();
       var cutoff = statsYear + '-01-01';
+
+      // ===== 신규: 미선정/미제출/선정(기타) 제외 (전사 공개 페이지) =====
+      items = items.filter(function (it) {
+        var st = statusAsOf(it, null);
+        return st !== '미선정' && st !== '미제출' && st !== '선정(기타)';
+      });
+
+      // ===== 신규: 탭별 분리 (R&D / 용역) =====
+      // R&D 탭: 과제 + 지원사업만 (기타 제외)
+      var rdGroup = items.filter(function (it) {
+        var d = (it.division1 || it['구분1'] || '').toString();
+        return d === '과제' || d === '지원사업';
+      });
+      // 용역 탭: 용역만
+      var serviceGroup = items.filter(function (it) {
+        return (it.division1 || it['구분1'] || '') === '용역';
+      });
+
+      // 탭 카운트 (연도 필터 무관, 전체 합)
+      setEl('tab-count-rd', rdGroup.length);
+      setEl('tab-count-service', serviceGroup.length);
+
+      // 현재 탭의 items
+      var tabItems = currentTab === 'service' ? serviceGroup : rdGroup;
+
+      // R&D 토글 (R&D 활동 탭만)
+      if (currentTab === 'rd' && rdOnly) {
+        tabItems = tabItems.filter(function (it) {
+          return !!(it.isRd || it.rd || it['R&D 여부']);
+        });
+      }
+
+      // 연도별 트렌드 차트 — 제거됨 (사용자 요청)
+
+      // 이후 모든 처리는 탭 적용된 items 기반
+      items = tabItems;
 
       // 분류 pill 카운트용 풀 — 항상 "연도 필터까지만" 적용 (카드 클릭과 무관하게 의미 가짐)
       var yearFiltered = filterYear ? items.filter(function (it) { return projectOverlapsYear(it, filterYear); }) : items.slice();
@@ -1034,7 +1290,24 @@
       if (subNew)      subNew.classList.toggle('active', activeCardFilter === 'new');
       if (subEnded)    subEnded.classList.toggle('active', activeCardFilter === 'ended');
 
-      renderTable(listItems, colVis, filterYear, projectEditHandler);
+      // ===== 신규: 시작일 최신순 정렬 (시작일 없는 건 뒤로) =====
+      listItems.sort(function (a, b) {
+        var sa = (a.startDate || a.start || '').toString().slice(0, 10);
+        var sb = (b.startDate || b.start || '').toString().slice(0, 10);
+        if (!sa && !sb) return 0;
+        if (!sa) return 1;
+        if (!sb) return -1;
+        return sb.localeCompare(sa);
+      });
+
+      // ===== 신규: 통계 4개 카드 (예정/진행/완료/전체) + 입금 예정 지원금 =====
+      // listItems가 아닌 tabItems(연도+탭만 적용된 풀) 기반으로 통계 계산
+      renderSimpleStats(yearFiltered, statsYear, filterYear);
+
+      renderTable(listItems, colVis, filterYear, currentTab);
+      // 빈 상태 표시 토글
+      var emptyEl = document.getElementById('history-empty');
+      if (emptyEl) emptyEl.style.display = listItems.length === 0 ? 'block' : 'none';
       updateFilterSummary(listItems, activeCardFilter);
 
       if (filterHint) {
@@ -1129,9 +1402,9 @@
     };
 
     // 검색 입력 — 입력하는 즉시 필터 적용 (debounce 약간)
-    var searchInput = document.getElementById('project-search');
-    var searchClear = document.getElementById('search-clear');
-    var searchWrap  = document.getElementById('search-wrap');
+    var searchInput = document.getElementById('history-search');
+    var searchClear = document.getElementById('history-search-clear');
+    var searchWrap  = document.getElementById('history-search-wrap');
     var searchTimer = null;
     if (searchInput) {
       searchInput.addEventListener('input', function () {
@@ -1164,11 +1437,125 @@
       });
     }
 
-    // 엑셀 다운로드 버튼
+    // 엑셀 다운로드 버튼 — R&D 탭이면 컬럼 선택 모달, 용역 탭이면 바로 실행
     var exportBtn = document.getElementById('export-excel-btn');
     if (exportBtn) {
       exportBtn.addEventListener('click', function () {
-        exportToExcel(lastFilteredItems);
+        if (currentTab === 'rd') {
+          openDownloadModal('excel');
+        } else {
+          // 용역 탭: 추가 컬럼 없음 → 바로 실행
+          exportToExcel(lastFilteredItems, {});
+        }
+      });
+    }
+
+    // 클립보드 복사 버튼 — R&D 탭이면 컬럼 선택 모달, 용역 탭이면 바로 실행
+    var copyBtn = document.getElementById('copy-clipboard-btn');
+    if (copyBtn) {
+      copyBtn.addEventListener('click', function () {
+        if (currentTab === 'rd') {
+          openDownloadModal('copy');
+        } else {
+          copyToClipboard(lastFilteredItems, copyBtn, {});
+        }
+      });
+    }
+
+    // ===== 다운로드 컬럼 선택 모달 =====
+    // R&D 탭에서만 사용. 모달 표시 → 사용자가 옵션 컬럼 선택 → "실행" 클릭 시 엑셀/복사 실행
+    var dlModal = document.getElementById('dl-modal');
+    var dlModalClose = document.getElementById('dl-modal-close');
+    var dlModalCancel = document.getElementById('dl-modal-cancel');
+    var dlModalConfirm = document.getElementById('dl-modal-confirm');
+    var dlModalTitle = document.getElementById('dl-modal-title');
+    var pendingDlAction = null; // 'excel' 또는 'copy'
+
+    function openDownloadModal(action) {
+      pendingDlAction = action;
+      if (!dlModal) return;
+
+      // 모달 제목 + 확인 버튼 텍스트 갱신
+      if (dlModalTitle) {
+        dlModalTitle.textContent = action === 'excel' ? '엑셀 다운로드 - 컬럼 선택' : '시트로 복사 - 컬럼 선택';
+      }
+      if (dlModalConfirm) {
+        dlModalConfirm.textContent = action === 'excel' ? '📥 다운로드' : '📋 복사';
+      }
+
+      // 화면에서 켠 옵션을 초기값으로 (사용자의 화면 의도를 존중)
+      var screenVis = getColVisibility();
+      dlModal.querySelectorAll('#dl-modal-options input[type="checkbox"]').forEach(function (cb) {
+        var col = cb.getAttribute('data-col');
+        cb.checked = !!screenVis[col];
+      });
+
+      dlModal.style.display = 'flex';
+    }
+
+    function closeDownloadModal() {
+      pendingDlAction = null;
+      if (dlModal) dlModal.style.display = 'none';
+    }
+
+    function getDlModalSelectedCols() {
+      var sel = {};
+      if (!dlModal) return sel;
+      dlModal.querySelectorAll('#dl-modal-options input[type="checkbox"]').forEach(function (cb) {
+        sel[cb.getAttribute('data-col')] = cb.checked;
+      });
+      return sel;
+    }
+
+    if (dlModalClose) dlModalClose.addEventListener('click', closeDownloadModal);
+    if (dlModalCancel) dlModalCancel.addEventListener('click', closeDownloadModal);
+    // 오버레이 바깥 클릭 시 닫기
+    if (dlModal) {
+      dlModal.addEventListener('click', function (e) {
+        if (e.target === dlModal) closeDownloadModal();
+      });
+    }
+    // ESC로 닫기
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && dlModal && dlModal.style.display === 'flex') {
+        closeDownloadModal();
+      }
+    });
+    if (dlModalConfirm) {
+      dlModalConfirm.addEventListener('click', function () {
+        var override = getDlModalSelectedCols();
+        var action = pendingDlAction;
+        closeDownloadModal();
+        if (action === 'excel') {
+          exportToExcel(lastFilteredItems, override);
+        } else if (action === 'copy') {
+          copyToClipboard(lastFilteredItems, copyBtn, override);
+        }
+      });
+    }
+
+    // ===== 탭 클릭 핸들러 (R&D 활동 / 용역) =====
+    document.querySelectorAll('.history-tab').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        currentTab = btn.getAttribute('data-tab') || 'rd';
+        document.querySelectorAll('.history-tab').forEach(function (b) {
+          b.classList.toggle('is-active', b === btn);
+        });
+        // R&D 토글 영역 표시/숨김 (R&D 탭일 때만 보임)
+        var rdToggleWrap = document.getElementById('rd-toggle-wrap');
+        if (rdToggleWrap) rdToggleWrap.style.display = currentTab === 'rd' ? 'inline-flex' : 'none';
+        applyFilterAndRender(latestItems);
+      });
+    });
+
+    // ===== R&D 토글 (NTIS만 보기) =====
+    var rdToggleCb = document.getElementById('rd-only-toggle');
+    if (rdToggleCb) {
+      rdToggleCb.addEventListener('change', function () {
+        rdOnly = rdToggleCb.checked;
+        var wrap = document.getElementById('rd-toggle-wrap');
+        if (wrap) wrap.classList.toggle('is-active', rdOnly);
+        applyFilterAndRender(latestItems);
       });
     }
 
@@ -1183,7 +1570,90 @@
 
   // ===== 엑셀 내보내기 =====
 
-  function exportToExcel(items) {
+  // ===== 화면에 보이는 컬럼 데이터 추출 (엑셀/클립보드 공용) =====
+  // 현재 탭(R&D/용역)에 따라 컬럼 구성이 다르고, 옵션에서 켠 것까지 포함
+  // override: { '책임자': true, ... } 형태로 옵션 컬럼 강제 지정 (모달에서 사용). 미지정 시 화면 옵션 사용.
+  function getVisibleColumnsData(items, currentTab, override) {
+    var isService = (currentTab === 'service');
+    var rows = [];
+
+    items.forEach(function (it, idx) {
+      var no = idx + 1;
+      var projectName = it.projectName || it['과제명'] || '';
+      var institution = it.institution || it['기관명'] || '';
+      // 화면 표시와 동일한 진행 여부 (자동 판정)
+      var status = statusAsOf(it, null);
+      var researchPeriod = getResearchPeriodDisplay(it, null);
+      var code = it.code || it['코드'] || '';
+
+      var row;
+
+      if (isService) {
+        // ===== 용역 탭 =====
+        var totalVat = 0, supplySum = 0;
+        if (Array.isArray(it.yearBudgets) && it.yearBudgets.length > 0) {
+          it.yearBudgets.forEach(function (yb) {
+            var t = Number(yb.totalIncludingVat || 0);
+            var s = Number(yb.support || 0);
+            if (!t && s) t = Math.round(s * 1.1);
+            if (!s && t) s = Math.round(t / 1.1);
+            totalVat += t;
+            supplySum += s;
+          });
+        }
+        row = {
+          'No': no,
+          '진행 여부': status,
+          '용역명': projectName,
+          '발주처': institution,
+          '사업기간': researchPeriod,
+          '사업비 총액': totalVat || '',
+          '공급가': supplySum || '',
+          '코드': code
+        };
+      } else {
+        // ===== R&D 탭 =====
+        var totalBudget = 0, govSum = 0;
+        if (Array.isArray(it.yearBudgets) && it.yearBudgets.length > 0) {
+          it.yearBudgets.forEach(function (yb) {
+            var s = Number(yb.support || 0);
+            var c = Number(yb.cash || 0);
+            var k = Number(yb.inKind || 0);
+            govSum += s;
+            totalBudget += s + c + k;
+          });
+        }
+        if (govSum === 0) govSum = Number(it.supportTotal != null ? it.supportTotal : (it.budget || 0));
+        if (totalBudget === 0) totalBudget = govSum;
+
+        row = {
+          'No': no,
+          '진행 여부': status,
+          '과제명': projectName,
+          '기관명': institution,
+          '연구기간': researchPeriod,
+          '지원금 총액': govSum || '',
+          '사업비 총액': totalBudget || '',
+          '코드': code
+        };
+
+        // 옵션 컬럼: override가 주어졌으면 그걸 사용, 아니면 화면에서 켠 것
+        var colVis = (override && typeof override === 'object') ? override : getColVisibility();
+        if (colVis['책임자']) row['책임자'] = it.manager || it['책임자'] || '';
+        if (colVis['부처'])   row['부처']   = it.department || it['부처'] || '';
+        if (colVis['사업명']) row['사업명'] = it.business || it['사업명'] || '';
+        if (colVis['키워드']) row['키워드'] = it.keywords || it.keyword || it['키워드'] || '';
+      }
+
+      rows.push(row);
+    });
+
+    return rows;
+  }
+
+  // ===== 엑셀 다운로드 (화면에 보이는 컬럼만) =====
+  // override: 모달에서 선택한 옵션 컬럼 {'책임자': true, ...}. 미지정 시 화면 옵션 사용.
+  function exportToExcel(items, override) {
     if (typeof XLSX === 'undefined') {
       alert('엑셀 라이브러리(SheetJS)가 로드되지 않았습니다. 페이지를 새로고침해 주세요.');
       return;
@@ -1193,80 +1663,49 @@
       return;
     }
 
-    // 한글 헤더로 행 구성
-    var rows = items.map(function (it, idx) {
-      var no = (it.no != null && it.no !== '') ? String(it.no) : (idx + 1);
-      var start = (it.startDate || it.start || '').toString().slice(0, 10);
-      var end = (it.endDate || it.end || '').toString().slice(0, 10);
-      var status = normalizeStatus(it);  // 자동 전환 적용
-      var isRd = !!(it.isRd || it.rd || it['R&D 여부']);
-      var submitDate = (it.submitDate || it['제출일'] || '').toString().slice(0, 10);
-      var unsubReason = it.unsubmittedReason || it['미제출 사유'] || '';
-      return {
-        'No': no,
-        '구분 1': it.division1 || it['구분1'] || '',
-        '구분 2': it.division2 || it['구분2'] || '',
-        '진행 여부': status,
-        '제출일': submitDate,
-        '미제출 사유': unsubReason,
-        'R&D 여부': isRd ? 'Y' : 'N',
-        '키워드': it.keywords || it.keyword || it['키워드'] || '',
-        '과제명': it.projectName || it['과제명'] || '',
-        '책임자': it.manager || it['책임자'] || '',
-        '시작일': start,
-        '종료일': end,
-        '부처': it.department || it['부처'] || '',
-        '사업명': it.business || it['사업명'] || '',
-        '전문기관': it.institution || it['기관명'] || '',
-        '지원금 (당해)': Number(it.supportYear || 0),
-        '지원금 (총)': Number(it.supportTotal != null ? it.supportTotal : (it.budget || 0))
-      };
-    });
-
+    var rows = getVisibleColumnsData(items, currentTabRef(), override);
     var ws = XLSX.utils.json_to_sheet(rows);
 
-    // 열 너비 지정 (헤더 순서와 일치)
-    ws['!cols'] = [
-      { wch: 5 },   // No
-      { wch: 9 },   // 구분 1
-      { wch: 7 },   // 구분 2
-      { wch: 10 },  // 진행 여부
-      { wch: 12 },  // 제출일
-      { wch: 24 },  // 미제출 사유
-      { wch: 9 },   // R&D 여부
-      { wch: 22 },  // 키워드
-      { wch: 42 },  // 과제명
-      { wch: 10 },  // 책임자
-      { wch: 12 },  // 시작일
-      { wch: 12 },  // 종료일
-      { wch: 16 },  // 부처
-      { wch: 26 },  // 사업명
-      { wch: 18 },  // 전문기관
-      { wch: 16 },  // 지원금 (당해)
-      { wch: 16 }   // 지원금 (총)
-    ];
+    // 컬럼별 너비 (헤더 이름 기준 매핑)
+    var widthMap = {
+      'No': 5, '진행 여부': 11,
+      '과제명': 42, '용역명': 42,
+      '기관명': 22, '발주처': 22,
+      '연구기간': 24, '사업기간': 24,
+      '지원금 총액': 16, '사업비 총액': 16, '공급가': 16,
+      '코드': 12,
+      '책임자': 10, '부처': 16, '사업명': 26, '키워드': 22
+    };
+    if (rows.length > 0) {
+      var headers = Object.keys(rows[0]);
+      ws['!cols'] = headers.map(function (h) { return { wch: widthMap[h] || 14 }; });
 
-    // 지원금 열은 숫자 포맷 적용
-    var range = XLSX.utils.decode_range(ws['!ref']);
-    for (var R = range.s.r + 1; R <= range.e.r; R++) {
-      // P열(16)과 Q열(17)이 지원금 (제출일/미제출 사유 컬럼이 추가되어 N,O에서 P,Q로 이동)
-      ['P', 'Q'].forEach(function (col) {
-        var cellRef = col + (R + 1);
-        if (ws[cellRef]) {
-          ws[cellRef].t = 'n';
-          ws[cellRef].z = '#,##0';
+      // 숫자 포맷 (지원금/사업비/공급가)
+      var range = XLSX.utils.decode_range(ws['!ref']);
+      headers.forEach(function (h, colIdx) {
+        if (h === '지원금 총액' || h === '사업비 총액' || h === '공급가') {
+          var colLetter = XLSX.utils.encode_col(colIdx);
+          for (var R = range.s.r + 1; R <= range.e.r; R++) {
+            var cellRef = colLetter + (R + 1);
+            if (ws[cellRef] && ws[cellRef].v !== '' && ws[cellRef].v != null) {
+              ws[cellRef].t = 'n';
+              ws[cellRef].z = '#,##0';
+            }
+          }
         }
       });
     }
 
     var wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, '과제 목록');
+    var sheetName = (currentTabRef() === 'service') ? '용역 목록' : 'R&D 목록';
+    XLSX.utils.book_append_sheet(wb, ws, sheetName);
 
-    // 파일명: 과제목록_YYYY-MM-DD.xlsx
+    // 파일명: 수행현황_R&D_YYYY-MM-DD.xlsx
     var today = new Date();
     var pad = function (n) { return n < 10 ? '0' + n : String(n); };
     var dateStr = today.getFullYear() + '-' + pad(today.getMonth() + 1) + '-' + pad(today.getDate());
-    var filename = '과제목록_' + dateStr + '.xlsx';
+    var tabLabel = (currentTabRef() === 'service') ? '용역' : 'R&D';
+    var filename = '수행현황_' + tabLabel + '_' + dateStr + '.xlsx';
 
     try {
       XLSX.writeFile(wb, filename);
@@ -1275,6 +1714,77 @@
       alert('엑셀 내보내기에 실패했습니다. 다시 시도해 주세요.');
     }
   }
+
+  // ===== 클립보드 복사 (화면에 보이는 컬럼만, 탭 구분 TSV) =====
+  // 구글 시트/엑셀 빈 셀에 Ctrl+V 하면 그대로 표 형태로 붙여넣어짐
+  // override: 모달에서 선택한 옵션 컬럼 {'책임자': true, ...}. 미지정 시 화면 옵션 사용.
+  function copyToClipboard(items, btnEl, override) {
+    if (!items || items.length === 0) {
+      alert('복사할 데이터가 없습니다. 검색어나 필터를 확인해 주세요.');
+      return;
+    }
+
+    var rows = getVisibleColumnsData(items, currentTabRef(), override);
+    if (rows.length === 0) return;
+
+    var headers = Object.keys(rows[0]);
+    // TSV 형태로 직렬화 (탭 구분, 줄바꿈으로 행 분리)
+    // 값 안에 탭/줄바꿈이 있으면 공백으로 치환
+    function sanitize(v) {
+      if (v == null) return '';
+      return String(v).replace(/[\t\r\n]/g, ' ');
+    }
+
+    var lines = [headers.join('\t')];
+    rows.forEach(function (r) {
+      var cols = headers.map(function (h) { return sanitize(r[h]); });
+      lines.push(cols.join('\t'));
+    });
+    var tsv = lines.join('\n');
+
+    // 클립보드 API (보안 컨텍스트 필요 — https 또는 localhost)
+    var done = function () {
+      if (!btnEl) return;
+      var originalText = btnEl.dataset.originalText || btnEl.textContent;
+      btnEl.dataset.originalText = originalText;
+      btnEl.textContent = '✓ 복사됨 (' + rows.length + '건)';
+      btnEl.disabled = true;
+      setTimeout(function () {
+        btnEl.textContent = originalText;
+        btnEl.disabled = false;
+      }, 1500);
+    };
+    var fail = function (err) {
+      console.error('클립보드 복사 실패:', err);
+      alert('클립보드 복사에 실패했습니다.\n브라우저가 클립보드 접근을 허용하는지 확인해 주세요.');
+    };
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(tsv).then(done).catch(fail);
+    } else {
+      // 구형 브라우저 폴백: textarea + execCommand
+      try {
+        var ta = document.createElement('textarea');
+        ta.value = tsv;
+        ta.style.position = 'fixed';
+        ta.style.left = '-9999px';
+        document.body.appendChild(ta);
+        ta.select();
+        var ok = document.execCommand('copy');
+        document.body.removeChild(ta);
+        if (ok) done(); else fail(new Error('execCommand returned false'));
+      } catch (err) {
+        fail(err);
+      }
+    }
+  }
+
+  // currentTab 변수에 접근하기 위한 헬퍼 (init 내부의 closure 변수)
+  // init() 안에서 window.__currentTabRef 로 노출시킴
+  function currentTabRef() {
+    return (typeof window !== 'undefined' && window.__currentTabRef) ? window.__currentTabRef() : 'rd';
+  }
+
 
 
   if (document.readyState === 'loading') {

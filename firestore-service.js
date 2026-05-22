@@ -231,17 +231,97 @@
     }
   }
 
+  // ====================================================================
+  // 자동 백업 시스템 (projects 컬렉션 전용)
+  // ====================================================================
+  // - saveProjects 호출 시 저장 직전 현재 _projectsData를 backups/{ts} 에 보관
+  // - 빈 데이터(0건)일 때는 백업 안 함 (의미 없음 + 빈 데이터로 덮어씌우는 실수 방지)
+  // - 백업 30개 초과 시 가장 오래된 것 자동 삭제
+  // - 실패해도 메인 저장은 진행 (백업 실패가 저장 자체를 막지는 않음)
+  // ====================================================================
+
+  function makeBackupTimestampId() {
+    var d = new Date();
+    function p(n, l) { return String(n).padStart(l || 2, '0'); }
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) +
+           '_' + p(d.getHours()) + '-' + p(d.getMinutes()) + '-' + p(d.getSeconds()) +
+           '-' + p(d.getMilliseconds(), 3);
+  }
+
+  function getCurrentUserEmail() {
+    try {
+      if (window.firebase && firebase.auth && firebase.auth().currentUser) {
+        return firebase.auth().currentUser.email || 'unknown';
+      }
+    } catch (e) {}
+    return 'unknown';
+  }
+
+  function createProjectsBackup(reason) {
+    if (!configured) return Promise.resolve(null);
+    var current = Array.isArray(_projectsData) ? _projectsData : [];
+    if (current.length === 0) return Promise.resolve(null);  // 빈 데이터면 백업 안 함
+
+    var ts = makeBackupTimestampId();
+    return db.collection('backups').doc(ts).set({
+      timestamp: new Date().toISOString(),
+      reason: reason || 'auto',
+      itemCount: current.length,
+      items: current,
+      createdBy: getCurrentUserEmail()
+    }).then(function () { return ts; })
+      .catch(function (e) {
+        console.error('자동 백업 실패 (메인 저장은 진행):', e);
+        return null;
+      });
+  }
+
+  function cleanupOldBackups() {
+    if (!configured) return Promise.resolve();
+    return db.collection('backups')
+      .orderBy(firebase.firestore.FieldPath.documentId(), 'desc')
+      .get()
+      .then(function (snap) {
+        if (snap.size <= 30) return;
+        var docs = [];
+        snap.forEach(function (d) { docs.push(d); });
+        var toDelete = docs.slice(30);  // 31번째부터 (오래된 것들) 삭제
+        toDelete.forEach(function (d) {
+          d.ref.delete().catch(function () { /* 무시 */ });
+        });
+      })
+      .catch(function (e) { console.error('백업 정리 실패:', e); });
+  }
+
   /**
-   * 과제 (projects) 저장
+   * 과제 (projects) 저장 — 자동 백업 포함
    * 전체 배열을 단일 문서에 덮어쓰기 (다른 컬렉션과 동일한 패턴)
    */
-  function saveProjects(data) {
+  function saveProjects(data, options) {
     var items = Array.isArray(data) ? data : [];
+    options = options || {};
+
     if (configured) {
-      return db.collection(COLL.projects).doc(DOC_ID).set({ items: items }).catch(function (e) {
-        console.error('Firestore Projects 저장 실패:', e);
-        throw e;
-      });
+      // 1) 저장 직전 자동 백업 (현재 데이터 보관)
+      var reason = options.reason || (
+        items.length < _projectsData.length ? 'auto: count decreased (' + _projectsData.length + ' → ' + items.length + ')' :
+        items.length > _projectsData.length ? 'auto: count increased (' + _projectsData.length + ' → ' + items.length + ')' :
+        'auto: update (count same)'
+      );
+
+      return createProjectsBackup(reason)
+        .then(function () {
+          // 2) 메인 저장
+          return db.collection(COLL.projects).doc(DOC_ID).set({ items: items });
+        })
+        .then(function () {
+          // 3) 가끔(20% 확률) 오래된 백업 정리 — 매번 하면 비용
+          if (Math.random() < 0.2) cleanupOldBackups();
+        })
+        .catch(function (e) {
+          console.error('Firestore Projects 저장 실패:', e);
+          throw e;
+        });
     } else {
       try {
         localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(items));
@@ -346,6 +426,9 @@
     subscribeProjects: subscribeProjects,
     saveProjects: saveProjects,
     migrateFromLocalStorage: migrateFromLocalStorage,
-    uploadFromProjectJson: uploadFromProjectJson
+    uploadFromProjectJson: uploadFromProjectJson,
+    // 백업 관리 (필요 시 외부에서 호출)
+    createProjectsBackup: createProjectsBackup,
+    cleanupOldBackups: cleanupOldBackups
   };
 })();

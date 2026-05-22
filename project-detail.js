@@ -937,11 +937,32 @@
       };
     });
     container.querySelectorAll('input.pay-amount').forEach(function (inp) {
+      // = 로 시작하면 엑셀처럼 수식 계산 (예: =140000000*0.9 → 126000000)
+      function evalFormulaIfNeeded() {
+        var s = String(inp.value || '').trim();
+        if (!s.indexOf('=') === 0 || s.charAt(0) !== '=') return;
+        var expr = s.slice(1).trim().replace(/,/g, '');
+        if (!expr || !/^[0-9+\-*/().\s]+$/.test(expr)) return;
+        try {
+          var v = Function('"use strict";return (' + expr + ')')();
+          if (typeof v === 'number' && isFinite(v)) {
+            inp.value = String(Math.round(v));
+          }
+        } catch (e) { /* 잘못된 수식 — 그대로 둠 */ }
+      }
       inp.onblur = function () {
+        evalFormulaIfNeeded();
         var n = parseNum(inp.value);
         inp.value = n > 0 ? formatNum(n) : '';
         var group = inp.closest('.payment-group');
         if (group) { updatePaymentSum(group); updateQuarterlySummary(group); }
+      };
+      // Enter 키 → 바로 계산 + 포맷
+      inp.onkeydown = function (e) {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          inp.blur();
+        }
       };
     });
     container.querySelectorAll('input.pay-date').forEach(function (inp) {
@@ -1114,6 +1135,10 @@
       if (yb) paymentsByIdx[idx] = migratePayments(yb);
     });
     renderPayments(paymentsByIdx);
+
+    // 마일스톤 로드 — getCalendarEvents() 시점에 데이터가 있으면 즉시 표시
+    var milestones = loadProjectMilestonesNow(item.id || item.docId);
+    renderMilestones(milestones);
   }
 
   function loadProject(items) {
@@ -1124,6 +1149,7 @@
       addYearRow();
       renderCalendarBreakdown();
       renderPayments();
+      renderMilestones([]);
       return;
     }
     items = Array.isArray(items) ? items : [];
@@ -1135,6 +1161,7 @@
       setHeaderTexts();
       updateBudgetTableHeader();
       addYearRow();
+      renderMilestones([]);
       return;
     }
     fillFormWithItem(item);
@@ -1306,8 +1333,14 @@
     var savePromise;
     try { savePromise = svc.saveProjects(items); }
     catch (err) { console.error('저장 실패:', err); alert('저장 중 오류가 발생했습니다.'); return; }
-    Promise.resolve(savePromise).then(function () {
+
+    // 마일스톤도 함께 저장 (calendarEvents에 동기화)
+    var milestones = getMilestonesFromForm();
+    var msPromise = saveMilestonesToCalendar(item.id, item.projectName || '', milestones);
+
+    Promise.all([Promise.resolve(savePromise), Promise.resolve(msPromise)]).then(function () {
       if (unsubscribe) { try { unsubscribe(); } catch (e) {} }
+      if (calendarUnsubscribe) { try { calendarUnsubscribe(); } catch (e) {} }
       window.location.href = 'projects.html';
     }).catch(function (err) {
       console.error('저장 실패:', err);
@@ -1332,8 +1365,13 @@
     var savePromise;
     try { savePromise = svc.saveProjects(items); }
     catch (err) { console.error('삭제 실패:', err); alert('삭제 중 오류가 발생했습니다.'); return; }
-    Promise.resolve(savePromise).then(function () {
+
+    // 과제와 연결된 마일스톤도 함께 삭제
+    var msPromise = deleteProjectMilestonesFromCalendar(editingId);
+
+    Promise.all([Promise.resolve(savePromise), Promise.resolve(msPromise)]).then(function () {
       if (unsubscribe) { try { unsubscribe(); } catch (e) {} }
+      if (calendarUnsubscribe) { try { calendarUnsubscribe(); } catch (e) {} }
       window.location.href = 'projects.html';
     }).catch(function (err) {
       console.error('삭제 실패:', err);
@@ -1345,6 +1383,198 @@
   function cancelAndGoBack() {
     if (unsubscribe) { try { unsubscribe(); } catch (e) {} }
     window.location.href = 'projects.html';
+  }
+
+  // ===== 마일스톤 =====
+  var MILESTONE_TYPES = ['협약 체결', '중간 보고', '변경 협약', '연차 보고', '최종 보고', '정산', '기타'];
+  var calendarFirstLoaded = false;
+  var calendarUnsubscribe = null;
+
+  function generateMilestoneId() {
+    return 'ce-' + Date.now() + '-' + Math.random().toString(36).slice(2, 9);
+  }
+
+  function updateMilestoneEmpty() {
+    var tbody = document.getElementById('milestone-tbody');
+    var table = document.getElementById('milestone-table');
+    var empty = document.getElementById('milestone-empty');
+    if (!tbody || !empty || !table) return;
+    var hasRows = tbody.querySelectorAll('.milestone-row').length > 0;
+    table.style.display = hasRows ? '' : 'none';
+    empty.style.display = hasRows ? 'none' : 'block';
+  }
+
+  function milestoneOptionsHtml(selectedValue) {
+    var html = '';
+    MILESTONE_TYPES.forEach(function (t) {
+      var sel = (t === selectedValue) ? ' selected' : '';
+      var label = (t === '기타') ? '기타 (직접 입력)' : t;
+      html += '<option value="' + escapeHtml(t) + '"' + sel + '>' + escapeHtml(label) + '</option>';
+    });
+    return html;
+  }
+
+  function addMilestoneRow(data) {
+    data = data || {};
+    var tbody = document.getElementById('milestone-tbody');
+    if (!tbody) return;
+    var id = data.id || generateMilestoneId();
+    var item = data.item || '';
+    var isPredef = MILESTONE_TYPES.indexOf(item) !== -1 && item !== '기타';
+    var customValue = (!isPredef && item) ? item : '';
+    var customStyle = (!isPredef && item) ? '' : 'display:none;';
+    var selectedOptionValue = isPredef ? item : '기타';
+
+    var tr = document.createElement('tr');
+    tr.className = 'milestone-row' + (data.done ? ' ms-done-row' : '');
+    tr.setAttribute('data-id', id);
+    tr.innerHTML =
+      '<td class="ms-item">' +
+        '<select class="ms-item-select">' + milestoneOptionsHtml(selectedOptionValue) + '</select>' +
+        '<input type="text" class="ms-item-custom" placeholder="직접 입력" style="margin-top:0.35rem;' + customStyle + '" value="' + escapeHtml(customValue) + '">' +
+      '</td>' +
+      '<td><input type="text" class="ms-date" placeholder="YYYY-MM-DD" maxlength="10" inputmode="numeric" value="' + escapeHtml(data.date || '') + '"></td>' +
+      '<td><input type="text" class="ms-manager" placeholder="담당자" value="' + escapeHtml(data.manager || '') + '"></td>' +
+      '<td class="ms-done-cell"><input type="checkbox" class="ms-done"' + (data.done ? ' checked' : '') + '></td>' +
+      '<td><input type="text" class="ms-note" placeholder="(선택)" value="' + escapeHtml(data.note || '') + '"></td>' +
+      '<td class="ms-del-cell"><button type="button" class="ms-del-btn" title="삭제">×</button></td>';
+    tbody.appendChild(tr);
+    bindMilestoneRow(tr);
+    updateMilestoneEmpty();
+  }
+
+  function bindMilestoneRow(tr) {
+    var select = tr.querySelector('.ms-item-select');
+    var customInput = tr.querySelector('.ms-item-custom');
+    var del = tr.querySelector('.ms-del-btn');
+    var dateInput = tr.querySelector('.ms-date');
+    var doneCheckbox = tr.querySelector('.ms-done');
+
+    if (select && customInput) {
+      select.addEventListener('change', function () {
+        if (select.value === '기타') {
+          customInput.style.display = '';
+          customInput.focus();
+        } else {
+          customInput.style.display = 'none';
+          customInput.value = '';
+        }
+      });
+    }
+
+    if (del) {
+      del.addEventListener('click', function () {
+        if (tr.parentNode) tr.parentNode.removeChild(tr);
+        updateMilestoneEmpty();
+      });
+    }
+
+    if (dateInput) dateInput.addEventListener('input', onDateInput);
+
+    if (doneCheckbox) {
+      doneCheckbox.addEventListener('change', function () {
+        if (doneCheckbox.checked) tr.classList.add('ms-done-row');
+        else tr.classList.remove('ms-done-row');
+      });
+    }
+  }
+
+  function renderMilestones(milestones) {
+    var tbody = document.getElementById('milestone-tbody');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    var list = (milestones || []).slice().sort(function (a, b) {
+      return (a.date || '').localeCompare(b.date || '');
+    });
+    list.forEach(addMilestoneRow);
+    updateMilestoneEmpty();
+  }
+
+  function getMilestonesFromForm() {
+    var rows = document.querySelectorAll('#milestone-tbody .milestone-row');
+    var list = [];
+    Array.prototype.forEach.call(rows, function (tr) {
+      var id = tr.getAttribute('data-id');
+      var select = tr.querySelector('.ms-item-select');
+      var customInput = tr.querySelector('.ms-item-custom');
+      var dateInput = tr.querySelector('.ms-date');
+      var managerInput = tr.querySelector('.ms-manager');
+      var doneCheckbox = tr.querySelector('.ms-done');
+      var noteInput = tr.querySelector('.ms-note');
+
+      var item;
+      if (select.value === '기타') {
+        item = (customInput.value || '').trim();
+        if (!item) return; // 빈 마일스톤 스킵
+      } else {
+        item = select.value;
+      }
+
+      var date = (dateInput.value || '').trim();
+      if (!date) return; // 날짜 없으면 스킵
+
+      list.push({
+        id: id,
+        date: date,
+        item: item,
+        manager: (managerInput.value || '').trim(),
+        done: doneCheckbox.checked,
+        note: (noteInput.value || '').trim()
+      });
+    });
+    return list;
+  }
+
+  function loadProjectMilestonesNow(projectId) {
+    var svc = window.firestoreService;
+    if (!svc || typeof svc.getCalendarEvents !== 'function') return [];
+    var all = svc.getCalendarEvents() || [];
+    return all.filter(function (ev) {
+      return ev.type === 'milestone' && ev.projectId === projectId;
+    });
+  }
+
+  function saveMilestonesToCalendar(projectId, projectTitle, milestones) {
+    var svc = window.firestoreService;
+    if (!svc || typeof svc.getCalendarEvents !== 'function' || typeof svc.saveCalendarEvents !== 'function') {
+      return Promise.resolve();
+    }
+    var all = (svc.getCalendarEvents() || []).slice();
+    // 이 과제의 기존 마일스톤 제거
+    var others = all.filter(function (ev) {
+      return !(ev.type === 'milestone' && ev.projectId === projectId);
+    });
+    // 새 마일스톤 추가
+    (milestones || []).forEach(function (ms) {
+      others.push({
+        id: ms.id || generateMilestoneId(),
+        date: ms.date,
+        projectId: projectId,
+        projectTitle: projectTitle || '',
+        item: ms.item,
+        type: 'milestone',
+        manager: ms.manager || '',
+        note: ms.note || '',
+        done: !!ms.done,
+        deadlineTime: '',
+        submissionMethod: ''
+      });
+    });
+    try { svc.saveCalendarEvents(others); } catch (e) { console.error('마일스톤 저장 실패:', e); }
+    return Promise.resolve();
+  }
+
+  function deleteProjectMilestonesFromCalendar(projectId) {
+    var svc = window.firestoreService;
+    if (!svc || typeof svc.getCalendarEvents !== 'function' || typeof svc.saveCalendarEvents !== 'function') {
+      return Promise.resolve();
+    }
+    var all = (svc.getCalendarEvents() || []).slice();
+    var others = all.filter(function (ev) {
+      return !(ev.type === 'milestone' && ev.projectId === projectId);
+    });
+    try { svc.saveCalendarEvents(others); } catch (e) { console.error('마일스톤 삭제 실패:', e); }
+    return Promise.resolve();
   }
 
   // ===== 정부부처 / 전문기관 드롭다운 (사용자 업로드 원본 그대로) =====
@@ -1760,6 +1990,14 @@
     if (deleteTopBtn) deleteTopBtn.addEventListener('click', deleteProject);
     if (deleteBottomBtn) deleteBottomBtn.addEventListener('click', deleteProject);
 
+    // 마일스톤 추가 버튼
+    var addMilestoneBtn = document.getElementById('add-milestone-btn');
+    if (addMilestoneBtn) {
+      addMilestoneBtn.addEventListener('click', function () {
+        addMilestoneRow({});
+      });
+    }
+
     if (!isNewMode) {
       if (deleteTopBtn) deleteTopBtn.style.display = '';
       if (deleteBottomBtn) deleteBottomBtn.style.display = '';
@@ -1781,6 +2019,20 @@
       });
     } else {
       loadProject([]);
+    }
+
+    // 캘린더 이벤트 구독 — 첫 도착 시 편집 모드면 마일스톤 다시 렌더
+    if (svc && typeof svc.subscribeCalendar === 'function') {
+      calendarUnsubscribe = svc.subscribeCalendar(function (events) {
+        if (calendarFirstLoaded) return; // 사용자 편집 중 외부 변경 덮어쓰지 않음
+        calendarFirstLoaded = true;
+        if (!isNewMode && editingId) {
+          var milestones = (events || []).filter(function (ev) {
+            return ev.type === 'milestone' && ev.projectId === editingId;
+          });
+          renderMilestones(milestones);
+        }
+      });
     }
   }
 

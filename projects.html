@@ -652,6 +652,121 @@
       width: 1400px;
       margin: 0 auto;
     }
+
+    /* ===== 다운로드 컬럼 선택 모달 ===== */
+    .dl-modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      padding: 1rem;
+    }
+    .dl-modal-panel {
+      background: #fff;
+      border-radius: 0.75rem;
+      width: 100%;
+      max-width: 460px;
+      max-height: 85vh;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+      overflow: hidden;
+    }
+    .dl-modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 1rem 1.25rem;
+      border-bottom: 1px solid var(--border-color);
+    }
+    .dl-modal-title {
+      font-size: 1.05rem;
+      font-weight: 700;
+      margin: 0;
+      color: var(--text-primary);
+    }
+    .dl-modal-close {
+      background: transparent;
+      border: none;
+      font-size: 1.5rem;
+      line-height: 1;
+      color: var(--text-secondary);
+      cursor: pointer;
+      padding: 0.25rem 0.5rem;
+      border-radius: 0.35rem;
+    }
+    .dl-modal-close:hover {
+      background: #f1f5f9;
+      color: var(--text-primary);
+    }
+    .dl-modal-body {
+      padding: 1.25rem;
+      overflow-y: auto;
+    }
+    .dl-modal-desc {
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+      margin: 0 0 1rem;
+    }
+    .dl-modal-section {
+      margin-bottom: 1.25rem;
+    }
+    .dl-modal-section:last-child {
+      margin-bottom: 0;
+    }
+    .dl-modal-section-title {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      margin-bottom: 0.5rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .dl-modal-base-cols {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 0.45rem;
+      padding: 0.65rem 0.85rem;
+      font-size: 0.82rem;
+      color: var(--text-primary);
+      line-height: 1.5;
+    }
+    .dl-modal-options {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.5rem 0.75rem;
+    }
+    .dl-modal-options label {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.5rem 0.65rem;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 0.4rem;
+      font-size: 0.875rem;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .dl-modal-options label:hover {
+      background: #eff6ff;
+      border-color: var(--primary-color);
+    }
+    .dl-modal-options input[type="checkbox"] {
+      margin: 0;
+      cursor: pointer;
+    }
+    .dl-modal-footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: 0.5rem;
+      padding: 0.85rem 1.25rem;
+      border-top: 1px solid var(--border-color);
+      background: #f9fafb;
+    }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
@@ -667,12 +782,13 @@
         <h1 class="sidebar-title">CI_R&DM</h1>
       </div>
             <nav class="sidebar-nav">
-        <a href="projects-history.html" class="sidebar-link" id="nav-history"><span class="sidebar-link-icon" aria-hidden="true">📜</span><span class="sidebar-link-text">과제 수행 현황</span></a>
-        <a href="index.html#/calendar" class="sidebar-link" id="nav-calendar"><span class="sidebar-link-icon" aria-hidden="true">📅</span><span class="sidebar-link-text">제출 일정 관리</span></a>
+        <a href="projects-history.html" class="sidebar-link" id="nav-history"><span class="sidebar-link-icon" aria-hidden="true">📜</span><span class="sidebar-link-text">수행 현황</span></a>
+        <a href="index.html#/calendar" class="sidebar-link" id="nav-calendar"><span class="sidebar-link-icon" aria-hidden="true">📅</span><span class="sidebar-link-text">일정 관리</span></a>
         <div class="sidebar-divider" aria-hidden="true"></div>
         <a href="dashboard.html" class="sidebar-link" id="nav-dashboard"><span class="sidebar-link-icon" aria-hidden="true">🏠</span><span class="sidebar-link-text">대시보드</span></a>
         <a href="funding.html" class="sidebar-link" id="nav-funding"><span class="sidebar-link-icon" aria-hidden="true">💵</span><span class="sidebar-link-text">자금 관리</span></a>
         <a href="projects.html" class="sidebar-link active" id="nav-projects"><span class="sidebar-link-icon" aria-hidden="true">📋</span><span class="sidebar-link-text">과제 관리</span></a>
+        <a href="projects-summary.html" class="sidebar-link" id="nav-projects-summary"><span class="sidebar-link-icon" aria-hidden="true">📑</span><span class="sidebar-link-text">과제별 상세</span></a>
         <a href="index.html" class="sidebar-link" id="nav-hr"><span class="sidebar-link-icon" aria-hidden="true">👤</span><span class="sidebar-link-text">인력 정보 관리</span></a>
         <a href="index.html#/payroll" class="sidebar-link" id="nav-payroll"><span class="sidebar-link-icon" aria-hidden="true">💰</span><span class="sidebar-link-text">인건비 관리</span></a>
         <a href="index.html#/participation" class="sidebar-link" id="nav-participation"><span class="sidebar-link-icon" aria-hidden="true">📊</span><span class="sidebar-link-text">참여율 관리</span></a>
@@ -683,7 +799,12 @@
       <div class="container">
         <header class="header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.75rem">
           <h1 class="header-title">[R&DM] 과제 관리</h1>
-          <button type="button" class="ui-btn ui-btn--primary" id="project-add-btn">과제 등록</button>
+          <div style="display:flex;gap:0.5rem">
+            <!-- ===== 임시 일괄 등록 버튼 시작 — 등록 작업 완료 후 이 블록 전체 주석 처리 또는 삭제 ===== -->
+            <a href="bulk-upload.html" class="ui-btn ui-btn--ghost" title="용역 일괄 등록 (임시)">📤 일괄 등록 (임시)</a>
+            <!-- ===== 임시 일괄 등록 버튼 끝 ===== -->
+            <button type="button" class="ui-btn ui-btn--primary" id="project-add-btn">과제 등록</button>
+          </div>
         </header>
 
         <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1rem;flex-wrap:wrap">
@@ -829,12 +950,13 @@
           <div class="projects-search-wrap" id="search-wrap">
             <span class="projects-search-icon" aria-hidden="true">🔍</span>
             <input type="search" id="project-search" class="projects-search-input"
-              placeholder="과제명, 담당자, 부처, 키워드로 검색…" autocomplete="off"
+              placeholder="검색어 입력" autocomplete="off"
               aria-label="과제 검색">
             <button type="button" class="projects-search-clear" id="search-clear" aria-label="검색어 지우기">×</button>
           </div>
           <div class="projects-actions-spacer"></div>
           <div class="projects-actions-buttons">
+            <button type="button" class="ui-btn ui-btn--ghost" id="copy-clipboard-btn" title="현재 화면의 표를 클립보드에 복사합니다. 구글 시트나 엑셀에 붙여넣기(Ctrl+V) 하세요.">📋 시트로 복사</button>
             <button type="button" class="ui-btn ui-btn--ghost" id="export-excel-btn" title="현재 화면의 과제 목록을 엑셀로 내보냅니다">📥 엑셀 다운로드</button>
             <div class="projects-col-dropdown">
               <button type="button" class="ui-btn ui-btn--ghost" id="col-toggle-btn">열 선택</button>
@@ -881,6 +1003,42 @@
         </div>
       </div>
     </main>
+  </div>
+
+  <!-- 다운로드 컬럼 선택 모달 -->
+  <div class="dl-modal-overlay" id="dl-modal" style="display:none">
+    <div class="dl-modal-panel" role="dialog" aria-modal="true" aria-labelledby="dl-modal-title">
+      <div class="dl-modal-header">
+        <h2 id="dl-modal-title" class="dl-modal-title">컬럼 선택</h2>
+        <button type="button" class="dl-modal-close" id="dl-modal-close" aria-label="닫기">×</button>
+      </div>
+      <div class="dl-modal-body">
+        <p class="dl-modal-desc">
+          기본 컬럼 외에 함께 포함할 항목을 선택해 주세요.
+        </p>
+        <div class="dl-modal-section">
+          <div class="dl-modal-section-title">기본 컬럼 (항상 포함)</div>
+          <div class="dl-modal-base-cols">
+            No, 유형, 진행 여부, 제출일, 키워드, 책임자, 연구기간, 기관명, 당해 입금, 총 지원금
+          </div>
+        </div>
+        <div class="dl-modal-section">
+          <div class="dl-modal-section-title">추가 컬럼</div>
+          <div class="dl-modal-options" id="dl-modal-options">
+            <label><input type="checkbox" data-col="부처"> 부처</label>
+            <label><input type="checkbox" data-col="과제명"> 과제명</label>
+            <label><input type="checkbox" data-col="시작일"> 시작일</label>
+            <label><input type="checkbox" data-col="종료일"> 종료일</label>
+            <label><input type="checkbox" data-col="지원금총"> 당해 수주</label>
+            <label><input type="checkbox" data-col="비고"> 비고</label>
+          </div>
+        </div>
+      </div>
+      <div class="dl-modal-footer">
+        <button type="button" class="ui-btn ui-btn--ghost" id="dl-modal-cancel">취소</button>
+        <button type="button" class="ui-btn ui-btn--primary" id="dl-modal-confirm">실행</button>
+      </div>
+    </div>
   </div>
 
   <!-- 엑셀 내보내기용 SheetJS -->

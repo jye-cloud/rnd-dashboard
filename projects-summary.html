@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <script>
+    // 인증은 auth-guard.js 가 처리합니다
+  </script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>[R&DM] 과제별 상세</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    html:not(.auth-bypass) .dashboard { visibility: hidden !important; }
+    html.auth-bypass .dashboard { visibility: visible; }
+
+    .summary-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      flex-wrap: wrap;
+      margin-bottom: 1.5rem;
+    }
+    .summary-toolbar .toolbar-label {
+      font-size: 0.85rem;
+      color: #64748b;
+    }
+    .summary-toolbar .toolbar-count {
+      margin-left: auto;
+      font-size: 0.85rem;
+      color: #475569;
+    }
+    .summary-toolbar .toolbar-count strong {
+      color: #2563eb;
+      font-weight: 700;
+    }
+
+    /* 카드 그리드 */
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 1.25rem;
+    }
+    @media (max-width: 1200px) {
+      .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+
+    /* 개별 카드 */
+    .summary-card {
+      background: #ffffff;
+      border: 1px solid #e5e7eb;
+      border-radius: 0.85rem;
+      padding: 1.25rem 1.25rem 1.1rem;
+      cursor: pointer;
+      transition: transform 0.15s, box-shadow 0.15s, border-color 0.15s;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+      display: flex;
+      flex-direction: column;
+      gap: 0.65rem;
+    }
+    .summary-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 16px rgba(0,0,0,0.08);
+      border-color: #2563eb;
+    }
+
+    .summary-card-badges {
+      display: flex;
+      gap: 0.35rem;
+      flex-wrap: wrap;
+    }
+    .summary-badge {
+      font-size: 0.7rem;
+      padding: 0.15rem 0.5rem;
+      border-radius: 999px;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+    .summary-badge--division {
+      background: #eff6ff;
+      color: #1d4ed8;
+    }
+    .summary-badge--status {
+      background: #dcfce7;
+      color: #047857;
+    }
+    .summary-badge--keyword {
+      background: #f1f5f9;
+      color: #475569;
+    }
+
+    .summary-card-title {
+      font-size: 1.0rem;
+      font-weight: 700;
+      color: #111827;
+      line-height: 1.4;
+      margin: 0;
+      /* 2줄까지만 */
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      min-height: 2.8em;
+    }
+
+    .summary-card-business {
+      font-size: 0.78rem;
+      color: #64748b;
+      line-height: 1.45;
+      display: -webkit-box;
+      -webkit-line-clamp: 1;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .summary-card-meta {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 0.25rem 0.6rem;
+      font-size: 0.78rem;
+      padding-top: 0.6rem;
+      border-top: 1px dashed #e5e7eb;
+    }
+    .summary-card-meta dt {
+      color: #94a3b8;
+      font-weight: 500;
+    }
+    .summary-card-meta dd {
+      color: #334155;
+      margin: 0;
+    }
+
+    /* 진행률 바 */
+    .summary-progress {
+      margin-top: 0.2rem;
+    }
+    .summary-progress-bar {
+      height: 6px;
+      background: #f1f5f9;
+      border-radius: 999px;
+      overflow: hidden;
+    }
+    .summary-progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #60a5fa, #2563eb);
+      border-radius: 999px;
+      transition: width 0.5s;
+    }
+    .summary-progress-text {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.72rem;
+      color: #64748b;
+      margin-top: 0.3rem;
+    }
+    .summary-progress-text strong {
+      color: #2563eb;
+      font-weight: 700;
+    }
+
+    .summary-card-money {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      padding-top: 0.5rem;
+      border-top: 1px dashed #e5e7eb;
+    }
+    .summary-card-money-label {
+      font-size: 0.72rem;
+      color: #94a3b8;
+    }
+    .summary-card-money-value {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: #047857;
+    }
+
+    .summary-empty {
+      text-align: center;
+      padding: 3rem 1rem;
+      color: #94a3b8;
+      background: #f9fafb;
+      border-radius: 0.85rem;
+      border: 1px dashed #e5e7eb;
+    }
+
+    .container {
+      width: 1400px;
+      margin: 0 auto;
+    }
+    /* 사이드바 그룹 구분선 */
+    .sidebar-divider {
+      height: 1px;
+      background: #e5e7eb;
+      margin: 0.75rem 1rem;
+      opacity: 0.7;
+    }
+  </style>
+</head>
+<body>
+  <script>
+    // 인증은 auth-guard.js 가 처리합니다
+  </script>
+
+  <div class="dashboard">
+    <aside class="sidebar" id="sidebar" aria-label="메인 메뉴">
+      <div class="sidebar-header">
+        <button type="button" class="sidebar-toggle" id="sidebar-toggle" aria-label="메뉴 접기/펼치기" title="메뉴 접기/펼치기">☰</button>
+        <h1 class="sidebar-title">CI_R&DM</h1>
+      </div>
+      <nav class="sidebar-nav">
+        <a href="projects-history.html" class="sidebar-link" id="nav-history"><span class="sidebar-link-icon" aria-hidden="true">📜</span><span class="sidebar-link-text">수행 현황</span></a>
+        <a href="index.html#/calendar" class="sidebar-link" id="nav-calendar"><span class="sidebar-link-icon" aria-hidden="true">📅</span><span class="sidebar-link-text">일정 관리</span></a>
+        <div class="sidebar-divider" aria-hidden="true"></div>
+        <a href="dashboard.html" class="sidebar-link" id="nav-dashboard"><span class="sidebar-link-icon" aria-hidden="true">🏠</span><span class="sidebar-link-text">대시보드</span></a>
+        <a href="funding.html" class="sidebar-link" id="nav-funding"><span class="sidebar-link-icon" aria-hidden="true">💵</span><span class="sidebar-link-text">자금 관리</span></a>
+        <a href="projects.html" class="sidebar-link" id="nav-projects"><span class="sidebar-link-icon" aria-hidden="true">📋</span><span class="sidebar-link-text">과제 관리</span></a>
+        <a href="projects-summary.html" class="sidebar-link active" id="nav-projects-summary"><span class="sidebar-link-icon" aria-hidden="true">📑</span><span class="sidebar-link-text">과제별 상세</span></a>
+        <a href="index.html" class="sidebar-link" id="nav-hr"><span class="sidebar-link-icon" aria-hidden="true">👤</span><span class="sidebar-link-text">인력 정보 관리</span></a>
+        <a href="index.html#/payroll" class="sidebar-link" id="nav-payroll"><span class="sidebar-link-icon" aria-hidden="true">💰</span><span class="sidebar-link-text">인건비 관리</span></a>
+        <a href="index.html#/participation" class="sidebar-link" id="nav-participation"><span class="sidebar-link-icon" aria-hidden="true">📊</span><span class="sidebar-link-text">참여율 관리</span></a>
+      </nav>
+    </aside>
+
+    <main class="main-area">
+      <div class="container">
+        <header class="header">
+          <h1 class="header-title">[R&DM] 과제별 상세</h1>
+        </header>
+
+        <div class="summary-toolbar">
+          <span class="toolbar-label">현재 수행 중인 과제 및 지원사업 (용역 제외)</span>
+          <span class="toolbar-count" id="summary-count"></span>
+          <button type="button" class="ui-btn ui-btn--primary" id="summary-pdf-btn" style="margin-left:1rem;">📥 전체 PDF 다운로드</button>
+        </div>
+
+        <div id="summary-grid" class="summary-grid"></div>
+        <div id="summary-empty" class="summary-empty" style="display:none">
+          현재 수행 중인 과제가 없습니다.
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-auth-compat.js"></script>
+  <script src="firebase-config.example.js"></script>
+  <script src="firebase-config.js"></script>
+  <script src="firebase.js"></script>
+  <script src="auth-guard.js"></script>
+  <script src="firestore-service.js"></script>
+  <script src="projects-summary.js"></script>
+</body>
+</html>
