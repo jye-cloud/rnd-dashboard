@@ -201,10 +201,10 @@ body {
   padding-right: 80px !important; /* 퀵링크가 내용을 가리지 않도록 */
 }
 
-/* 캘린더 페이지 활성 시 브라우저 스크롤 방지 */
-/* 제출 일정 페이지: 세로는 고정, 가로는 1200px 미만 시 스크롤 */
+/* 캘린더 페이지: 세로 스크롤 허용 (알림 카드 + 캘린더 모두 표시) */
+/* 가로 1200px 미만 시에만 가로 스크롤 */
 .main-area:has(#page-calendar:not([hidden])) {
-  overflow-y: hidden;
+  overflow-y: auto;
   overflow-x: auto;
 }
 
@@ -3557,7 +3557,6 @@ body:has(#page-calendar:not([hidden])) {
   flex-direction: column;
   min-height: 0;
   overflow-x: initial !important;
-  overflow-y: hidden;
 }
 
 #page-calendar .container {
@@ -3569,24 +3568,17 @@ body:has(#page-calendar:not([hidden])) {
   width: 100%;
   min-width: 1400px;
   padding: 20px 30px 2rem 80px;
-  padding-bottom: 0;
   overflow-x: initial !important;
-  overflow-y: hidden;
 }
 
 #page-calendar .calendar-wrap {
   margin-top: 0.25rem;
-  margin-bottom: 0;
+  margin-bottom: 2rem;  /* 하단 여백 추가 → 화면 끝과 떨어짐 */
   padding: 1rem;
-  padding-bottom: 20px;
-  height: calc((100vh - 150px) * 0.98);
   background-color: var(--card-bg);
   border: 1px solid var(--border-color);
   border-radius: 0.75rem;
-  display: flex;
-  flex-direction: column;
-  overflow-x: initial !important;
-  overflow-y: hidden;
+  /* height 강제 제거 → 콘텐츠에 맞게 자연스럽게 */
 }
 
 #page-calendar #calendar {
@@ -3594,62 +3586,20 @@ body:has(#page-calendar:not([hidden])) {
   font-size: 0.9rem;
   width: 100% !important;
   max-width: none !important;
-  height: 100% !important;
-  flex: 1;
-  min-height: 0;
-  overflow: hidden !important;
 }
 
 #page-calendar .fc {
   width: 100% !important;
-  height: 100% !important;
-  overflow: hidden !important;
-}
-
-#page-calendar .fc-view-harness {
-  height: 100% !important;
-  overflow: hidden !important;
-}
-
-#page-calendar .fc-scroller-harness,
-#page-calendar .fc-scroller {
-  height: 100% !important;
-}
-
-#page-calendar .fc-scrollgrid {
-  overflow: hidden !important;
-}
-
-#page-calendar .fc-scrollgrid-liquid {
-  height: 100% !important;
 }
 
 /* 높이 해결: 테이블 두 가지만 적용 */
 #page-calendar .fc-scrollgrid-sync-table,
 #page-calendar .fc-daygrid-body table {
-  height: 100% !important;
   table-layout: fixed;
 }
 
-/* 행(tr) 강제 확장: 5개 주간 행이 흰색 박스를 5등분 */
-#page-calendar .fc-daygrid-body tbody tr {
-  height: calc(100% / 5) !important;
-}
-
-/* 6번째 행 숨기기 */
-#page-calendar .fc-daygrid-body tbody tr:nth-child(6) {
-  display: none !important;
-}
-
-/* 각 칸: height 1px = 테이블에서 "가능한 최대로 늘어나라" 신호 */
-#page-calendar .fc-daygrid-day {
-  height: 1px !important;
-}
-
-/* 날짜 칸 내부 프레임 */
-#page-calendar .fc-daygrid-day-frame {
-  height: 100% !important;
-}
+/* 행과 셀 강제 확장 규칙 제거 → FullCalendar의 fixedWeekCount/expandRows 옵션이 자연스럽게 동작 */
+/* 6번째 행 숨김도 제거 → 6주 필요한 달에 마지막 날까지 정상 표시됨 */
 
 #page-calendar .fc {
   --fc-border-color: var(--border-color);
@@ -3923,5 +3873,4 @@ body:has(#page-calendar:not([hidden])) {
 #page-calendar .container,
 #page-calendar .calendar-wrap {
   overflow-x: initial !important;
-  overflow-y: hidden;
 }

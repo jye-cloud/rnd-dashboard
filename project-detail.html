@@ -1024,8 +1024,8 @@
               </div>
             </div>
 
-            <!-- 1줄: 과제 속성 / 유형 -->
-            <div class="detail-form-grid" style="grid-template-columns: 1fr 1fr;">
+            <!-- 1줄: 과제 속성 / 유형 / 담당자 / 진행 여부 -->
+            <div class="detail-form-grid" style="grid-template-columns: repeat(4, minmax(180px, 1fr));">
               <div class="detail-form-group">
                 <label class="detail-form-label">과제 속성</label>
                 <div class="detail-checkbox-group">
@@ -1041,18 +1041,9 @@
                   <label><input type="radio" name="project-division1" value="기타"> 기타</label>
                 </div>
               </div>
-            </div>
-
-            <!-- 2줄: 담당자 / 제출일 / 진행 여부 -->
-            <div class="detail-form-grid" style="grid-template-columns: repeat(3, minmax(200px, 1fr)); margin-top: 1rem;">
               <div class="detail-form-group">
                 <label class="detail-form-label" for="project-charge">담당자</label>
                 <input type="text" class="detail-form-input" id="project-charge" placeholder="담당자 이름">
-              </div>
-              <div class="detail-form-group">
-                <label class="detail-form-label" for="project-submit-date">제출일 <span class="required">*</span></label>
-                <input type="text" class="detail-form-input" id="project-submit-date" placeholder="YYYY-MM-DD" maxlength="10" inputmode="numeric">
-                <span class="detail-form-hint">"예정" 상태이고 제출일이 지나면 자동으로 "대기"로 표시됩니다</span>
               </div>
               <div class="detail-form-group">
                 <label class="detail-form-label" for="project-status">진행 여부</label>
@@ -1073,6 +1064,50 @@
                 <span class="detail-form-hint" style="margin-top:0.5rem;">"계속/신규"는 시작 연도 기준 자동 판정됩니다</span>
               </div>
             </div>
+
+            <!-- 2줄: 제출일 / 마감 시간 / 제출처 (캘린더 일정 표시용) -->
+            <div class="detail-form-grid" style="grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) minmax(280px, 2fr); margin-top: 1rem;">
+              <div class="detail-form-group">
+                <label class="detail-form-label" for="project-submit-date">제출일 <span class="required">*</span></label>
+                <input type="text" class="detail-form-input" id="project-submit-date" placeholder="YYYY-MM-DD" maxlength="10" inputmode="numeric">
+                <span class="detail-form-hint">"예정" 상태이고 제출일이 지나면 자동으로 "대기"로 표시됩니다</span>
+              </div>
+              <div class="detail-form-group">
+                <label class="detail-form-label" for="project-submit-deadline">마감 시간</label>
+                <input
+                  type="text"
+                  class="detail-form-input"
+                  id="project-submit-deadline"
+                  placeholder="예: 18:00, 자정"
+                >
+                <div style="display:flex; gap:0.4rem; margin-top:0.4rem; flex-wrap:wrap;">
+                  <button type="button" class="deadline-quick-chip" data-value="자정" style="padding:0.25rem 0.7rem; font-size:0.8rem; border:1px solid #e5e7eb; background:#f9fafb; border-radius:999px; cursor:pointer; color:#475569;">자정</button>
+                  <button type="button" class="deadline-quick-chip" data-value="18:00" style="padding:0.25rem 0.7rem; font-size:0.8rem; border:1px solid #e5e7eb; background:#f9fafb; border-radius:999px; cursor:pointer; color:#475569;">18:00</button>
+                  <button type="button" class="deadline-quick-chip" data-value="24:00" style="padding:0.25rem 0.7rem; font-size:0.8rem; border:1px solid #e5e7eb; background:#f9fafb; border-radius:999px; cursor:pointer; color:#475569;">24:00</button>
+                </div>
+              </div>
+              <div class="detail-form-group">
+                <label class="detail-form-label" for="project-submit-system">제출처</label>
+                <div style="display:flex; gap:0.5rem; align-items:stretch;">
+                  <select class="detail-form-select" id="project-submit-system" style="flex:0 0 160px;">
+                    <option value="">선택 안 함</option>
+                    <option value="IRIS">IRIS</option>
+                    <option value="나라장터">나라장터</option>
+                    <option value="시스템">시스템 (직접 입력)</option>
+                    <option value="메일">메일 (이메일 입력)</option>
+                    <option value="직접 입력">직접 입력</option>
+                  </select>
+                  <input
+                    type="text"
+                    class="detail-form-input"
+                    id="project-submit-system-detail"
+                    placeholder="시스템 URL 또는 이메일 주소"
+                    style="flex:1; display:none;"
+                  >
+                </div>
+                <span class="detail-form-hint">캘린더 일정 표시와 구글 캘린더 동기화에 사용됩니다</span>
+              </div>
+            </div>
           </section>
 
           <!-- 3. 참여 형태 -->
@@ -1084,7 +1119,8 @@
               </div>
             </div>
 
-            <div class="detail-form-grid" style="grid-template-columns: 1fr 1fr;">
+            <!-- 1줄: 참여 형태 / 컨소 역할 / 총 지원금 / 우리 분담 비중 (1:1:1:1) -->
+            <div class="detail-form-grid" style="grid-template-columns: repeat(6, 1fr);">
               <div class="detail-form-group">
                 <label class="detail-form-label">참여 형태</label>
                 <div class="detail-radio-group">
@@ -1099,19 +1135,39 @@
                   <label><input type="radio" name="consortium-role" value="참여"> 참여</label>
                 </div>
               </div>
+              <div class="detail-form-group" id="consortium-total-budget-wrap" style="display:none; grid-column: span 3;">
+                <label class="detail-form-label" for="consortium-total-budget">총 지원금 (컨소시엄 전체)</label>
+                <input type="text" class="detail-form-input" id="consortium-total-budget" inputmode="numeric" placeholder="예: 200000000">
+                <span class="detail-form-hint">우리 분담 / 총 지원금 비중을 자동 계산</span>
+              </div>
+              <div class="detail-form-group" id="consortium-budget-pct-wrap" style="display:none;">
+                <label class="detail-form-label">비중</label>
+                <div id="consortium-budget-pct-card" style="background:#ecfdf5; border:1px solid #10b981; border-radius:0.45rem; padding:0.5rem 0.85rem; display:flex; flex-direction:column; justify-content:center; min-height:46px; box-sizing:border-box;">
+                  <div style="font-size:1.15rem; font-weight:700; color:#065f46; line-height:1.2;" id="consortium-budget-pct-num">-</div>
+                  <div style="font-size:0.7rem; color:#047857; margin-top:0.1rem;" id="consortium-budget-pct-sub"></div>
+                </div>
+              </div>
             </div>
 
+            <!-- 2줄: 주관기관 / 공동 참여기관 / 참여 기관 수 (1:2:1) -->
             <div id="consortium-extra-wrap" style="display:none; margin-top:1rem;">
-              <div class="detail-form-grid" style="grid-template-columns: 2fr 1fr;">
+              <div class="detail-form-grid" style="grid-template-columns: repeat(6, 1fr);">
                 <div class="detail-form-group">
-                  <label class="detail-form-label" for="consortium-partners">함께하는 기관</label>
-                  <input type="text" class="detail-form-input" id="consortium-partners" placeholder="예: 한국전기연구원, KAIST">
+                  <label class="detail-form-label" for="consortium-lead" id="consortium-lead-label">주관기관</label>
+                  <input type="text" class="detail-form-input" id="consortium-lead" placeholder="예: 한국전기연구원">
+                  <span class="detail-form-hint" id="consortium-lead-hint">컨소시엄을 주도하는 기관</span>
+                </div>
+                <div class="detail-form-group" style="grid-column: span 4;">
+                  <label class="detail-form-label" for="consortium-partners" id="consortium-partners-label">공동 참여기관</label>
+                  <input type="text" class="detail-form-input" id="consortium-partners" placeholder="예: KAIST, 서울대학교">
                   <span class="detail-form-hint">콤마(,)로 구분하여 여러 기관 입력 가능</span>
                 </div>
                 <div class="detail-form-group">
-                  <label class="detail-form-label" for="consortium-total-budget">총 지원금 (컨소시엄 전체)</label>
-                  <input type="text" class="detail-form-input" id="consortium-total-budget" inputmode="numeric" placeholder="예: 200000000">
-                  <span class="detail-form-hint" id="our-budget-percent">우리 분담 / 총 지원금 비중을 자동 계산해 표시합니다</span>
+                  <label class="detail-form-label">컨소시엄</label>
+                  <div id="consortium-count-card" style="background:#eff6ff; border:1px solid #3b82f6; border-radius:0.45rem; padding:0.5rem 0.85rem; display:flex; flex-direction:column; justify-content:center; min-height:46px; box-sizing:border-box;">
+                    <div style="font-size:1.15rem; font-weight:700; color:#1e3a8a; line-height:1.2;" id="consortium-count-num">-</div>
+                    <div style="font-size:0.7rem; color:#1d4ed8; margin-top:0.1rem;" id="consortium-count-sub"></div>
+                  </div>
                 </div>
               </div>
             </div>

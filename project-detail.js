@@ -245,16 +245,18 @@
   }
 
   function updateBudgetPercent() {
-    var hintEl  = document.getElementById('our-budget-percent');
+    // 새 정보 카드 (1행 우측 끝 — 비중)
+    var pctNum = document.getElementById('consortium-budget-pct-num');
+    var pctSub = document.getElementById('consortium-budget-pct-sub');
+    var pctCard = document.getElementById('consortium-budget-pct-card');
     var totalEl_ = document.getElementById('consortium-total-budget');
-    if (!hintEl || !totalEl_) return;
+    if (!pctNum || !pctSub || !totalEl_) return;
     var grandTotal = parseNum(totalEl_.value);
 
     var ourSupport = 0;
     if (tbodyEl) {
       tbodyEl.querySelectorAll('tr').forEach(function (r) {
         if (isServiceMode()) {
-          // 용역 모드는 컨소시엄 잘 안 쓰지만 호환을 위해 공급가 합산
           var t = parseNum((r.querySelector('.yb-total') || {}).value || '0');
           ourSupport += Math.round(t / 1.1);
         } else {
@@ -263,30 +265,142 @@
       });
     }
 
-    if (!ourSupport && !grandTotal) {
-      hintEl.textContent = '연차별 예산의 정부지원금 합과 비교한 비중을 표시합니다';
+    // 헬퍼: 카드 활성/비활성 시각 처리
+    function setCardActive(active) {
+      if (!pctCard) return;
+      if (active) {
+        pctCard.style.background = '#ecfdf5';
+        pctCard.style.borderColor = '#10b981';
+        pctCard.style.opacity = '1';
+      } else {
+        pctCard.style.background = '#f9fafb';
+        pctCard.style.borderColor = '#e5e7eb';
+        pctCard.style.opacity = '0.6';
+      }
+    }
+
+    if (!grandTotal && !ourSupport) {
+      pctNum.textContent = '-';
+      pctSub.textContent = '';
+      setCardActive(false);
       return;
     }
     if (!grandTotal) {
-      hintEl.textContent = '우리 분담: ' + formatNum(ourSupport) + '원 (총 지원금 입력 시 비중 표시)';
+      pctNum.textContent = '-';
+      pctSub.textContent = formatNum(ourSupport) + ' / -';
+      setCardActive(false);
       return;
     }
     if (!ourSupport) {
-      hintEl.textContent = '총 지원금 ' + formatNum(grandTotal) + '원';
+      pctNum.textContent = '0%';
+      pctSub.textContent = '0 / ' + formatNum(grandTotal);
+      setCardActive(true);
       return;
     }
     var pct = (ourSupport / grandTotal * 100);
     var pctText = (pct > 100 ? pct.toFixed(0) : pct.toFixed(1)) + '%';
-    hintEl.textContent = '총 ' + formatNum(grandTotal) + '원 중 우리 분담 ' + formatNum(ourSupport) + '원 (' + pctText + ')';
+    pctNum.innerHTML = pctText.replace('%', '<span style="font-size:0.85rem;">%</span>');
+    pctSub.textContent = formatNum(ourSupport) + ' / ' + formatNum(grandTotal);
+    setCardActive(true);
+  }
+
+  // 참여 기관 수 자동 계산 (2행 우측 카드)
+  // 우리(주관) → 1 + 공동 참여기관 수
+  // 우리(참여) → 1(우리) + 1(주관) + 공동 참여기관 수
+  function updateConsortiumCount() {
+    var countNum = document.getElementById('consortium-count-num');
+    var countSub = document.getElementById('consortium-count-sub');
+    var countCard = document.getElementById('consortium-count-card');
+    if (!countNum || !countSub) return;
+
+    var roleEl = document.querySelector('input[name="consortium-role"]:checked');
+    var role = roleEl ? roleEl.value : '';
+    var partnersStr = ((document.getElementById('consortium-partners') || {}).value || '').trim();
+    var partners = partnersStr
+      ? partnersStr.split(',').map(function (s) { return s.trim(); }).filter(function (s) { return s; })
+      : [];
+    var partnersCount = partners.length;
+
+    // 헬퍼: 카드 활성/비활성 시각 처리
+    function setCountCardActive(active) {
+      if (!countCard) return;
+      if (active) {
+        countCard.style.background = '#eff6ff';
+        countCard.style.borderColor = '#3b82f6';
+        countCard.style.opacity = '1';
+      } else {
+        countCard.style.background = '#f9fafb';
+        countCard.style.borderColor = '#e5e7eb';
+        countCard.style.opacity = '0.6';
+      }
+    }
+
+    if (!role) {
+      countNum.textContent = '-';
+      countSub.textContent = '';
+      setCountCardActive(false);
+      return;
+    }
+    if (role === '주관') {
+      var total1 = 1 + partnersCount;
+      countNum.textContent = total1;
+      countSub.textContent = '';
+      setCountCardActive(true);
+    } else {
+      var total2 = 1 + 1 + partnersCount;
+      countNum.textContent = total2;
+      countSub.textContent = '';
+      setCountCardActive(true);
+    }
   }
 
   function updateParticipationVisibility() {
     var checked = document.querySelector('input[name="participation-type"]:checked');
     var isCons = checked && checked.value === '컨소';
     var roleWrap = document.getElementById('consortium-role-wrap');
+    var totalBudgetWrap = document.getElementById('consortium-total-budget-wrap');
+    var budgetPctWrap = document.getElementById('consortium-budget-pct-wrap');
     var extraWrap = document.getElementById('consortium-extra-wrap');
     if (roleWrap) roleWrap.style.display = isCons ? '' : 'none';
+    if (totalBudgetWrap) totalBudgetWrap.style.display = isCons ? '' : 'none';
+    if (budgetPctWrap) budgetPctWrap.style.display = isCons ? '' : 'none';
     if (extraWrap) extraWrap.style.display = isCons ? '' : 'none';
+    // 컨소일 때 역할에 따라 라벨/placeholder 동적 변경 + 정보 카드 갱신
+    if (isCons) {
+      updateConsortiumLabels();
+      updateBudgetPercent();
+      updateConsortiumCount();
+    }
+  }
+
+  // 컨소 역할(주관/참여)에 따라 주관기관 입력란 라벨과 placeholder 변경
+  function updateConsortiumLabels() {
+    var roleChecked = document.querySelector('input[name="consortium-role"]:checked');
+    var role = roleChecked ? roleChecked.value : '';
+    var leadLabel = document.getElementById('consortium-lead-label');
+    var leadHint = document.getElementById('consortium-lead-hint');
+    var leadInput = document.getElementById('consortium-lead');
+    var partnersLabel = document.getElementById('consortium-partners-label');
+
+    if (role === '주관') {
+      // 우리가 주관 → 주관기관 = 우리, 입력 불필요
+      if (leadLabel) leadLabel.textContent = '주관기관 (우리)';
+      if (leadHint) leadHint.textContent = '우리가 주관이므로 비워두셔도 됩니다';
+      if (leadInput) leadInput.placeholder = '비워둠 또는 우리 기관명';
+      if (partnersLabel) partnersLabel.textContent = '공동 참여기관';
+    } else if (role === '참여') {
+      // 우리가 참여 → 주관기관 = 다른 기관, 필수에 가까움
+      if (leadLabel) leadLabel.textContent = '주관기관';
+      if (leadHint) leadHint.textContent = '컨소시엄을 주도하는 기관 (우리가 아닌)';
+      if (leadInput) leadInput.placeholder = '예: 한국전기연구원';
+      if (partnersLabel) partnersLabel.textContent = '공동 참여기관 (우리 외)';
+    } else {
+      // 역할 선택 전 기본
+      if (leadLabel) leadLabel.textContent = '주관기관';
+      if (leadHint) leadHint.textContent = '컨소시엄을 주도하는 기관';
+      if (leadInput) leadInput.placeholder = '예: 한국전기연구원';
+      if (partnersLabel) partnersLabel.textContent = '공동 참여기관';
+    }
   }
 
   function renumberRows() {
@@ -1067,6 +1181,62 @@
     if (unsubWrap) unsubWrap.style.display = (v === '미제출') ? '' : 'none';
   }
 
+  // 제출처 선택에 따라 상세 입력란 표시/숨김
+  function updateSubmitSystemDetailVisibility() {
+    var sysEl = document.getElementById('project-submit-system');
+    var detailEl = document.getElementById('project-submit-system-detail');
+    if (!sysEl || !detailEl) return;
+    var v = sysEl.value;
+    if (v === '시스템' || v === '메일' || v === '직접 입력') {
+      detailEl.style.display = '';
+      // placeholder 안내 메시지 변경
+      if (v === '메일') {
+        detailEl.placeholder = '예: rnd@60hz.io';
+      } else if (v === '시스템') {
+        detailEl.placeholder = '예: https://www.ntis.go.kr 또는 시스템명';
+      } else {
+        // 직접 입력
+        detailEl.placeholder = '제출처를 직접 입력하세요';
+      }
+    } else {
+      detailEl.style.display = 'none';
+      detailEl.value = '';
+    }
+  }
+
+  // 페이지 진입 시 한 번만 바인딩 (DOMContentLoaded 안에서 호출 예정)
+  function bindSubmitFieldEvents() {
+    var sysEl = document.getElementById('project-submit-system');
+    if (sysEl && !sysEl.__submitSysBound) {
+      sysEl.__submitSysBound = true;
+      sysEl.addEventListener('change', updateSubmitSystemDetailVisibility);
+    }
+    // 마감 시간 빠른 입력 칩
+    var chips = document.querySelectorAll('.deadline-quick-chip');
+    var deadlineEl = document.getElementById('project-submit-deadline');
+    chips.forEach(function (chip) {
+      if (chip.__chipBound) return;
+      chip.__chipBound = true;
+      chip.addEventListener('click', function () {
+        if (deadlineEl) {
+          deadlineEl.value = chip.getAttribute('data-value') || '';
+          deadlineEl.focus();
+        }
+      });
+      // 호버 효과
+      chip.addEventListener('mouseenter', function () {
+        chip.style.background = '#e0e7ff';
+        chip.style.borderColor = '#6366f1';
+        chip.style.color = '#3730a3';
+      });
+      chip.addEventListener('mouseleave', function () {
+        chip.style.background = '#f9fafb';
+        chip.style.borderColor = '#e5e7eb';
+        chip.style.color = '#475569';
+      });
+    });
+  }
+
   function fillFormWithItem(item) {
     setFormValue('project-keywords',   item.keywords || item.keyword || item['키워드']);
     setFormValue('project-name',       item.projectName || item['과제명']);
@@ -1085,7 +1255,11 @@
       var cRoleEl = document.querySelector('input[name="consortium-role"][value="' + cRole + '"]');
       if (cRoleEl) cRoleEl.checked = true;
     }
+    setFormValue('consortium-lead', item.consortiumLead || '');
     setFormValue('consortium-partners', item.consortiumPartners || '');
+    // 역할에 따른 라벨/placeholder 동적 변경 + 정보 카드 초기화
+    updateConsortiumLabels();
+    updateConsortiumCount();
     var totalBudget = item.consortiumTotalBudget != null ? item.consortiumTotalBudget : (item.ourBudget != null ? item.ourBudget : '');
     setFormValue('consortium-total-budget', totalBudget !== '' ? String(totalBudget) : '');
 
@@ -1101,6 +1275,16 @@
 
     setFormValue('project-submit-date', item.submitDate || item['제출일'] || '');
     setFormValue('project-unsubmitted-reason', item.unsubmittedReason || item['미제출 사유'] || '');
+
+    // 제출처 (드롭다운) / 제출처 상세 / 마감 시간 (캘린더용)
+    var submitSystem = item.submitSystem || item['제출처'] || '';
+    var submitSystemDetail = item.submitSystemDetail || item['제출처 상세'] || '';
+    var submitDeadline = item.submitDeadline || item['마감 시간'] || '';
+    setFormValue('project-submit-system', submitSystem);
+    setFormValue('project-submit-system-detail', submitSystemDetail);
+    setFormValue('project-submit-deadline', submitDeadline);
+    // 상세 입력란 표시 토글 (시스템/메일 선택 시에만)
+    updateSubmitSystemDetailVisibility();
 
     updateStatusConditionalInputs();
     updateParticipationVisibility();
@@ -1231,16 +1415,24 @@
     var submitDate  = (document.getElementById('project-submit-date') || {}).value || '';
     var unsubReason = (document.getElementById('project-unsubmitted-reason') || {}).value || '';
     var charge      = (document.getElementById('project-charge')      || {}).value || '';
+    // 제출처 / 마감 시간 (캘린더 일정 표시용)
+    var submitSystem       = (document.getElementById('project-submit-system')        || {}).value || '';
+    var submitSystemDetail = (document.getElementById('project-submit-system-detail') || {}).value || '';
+    var submitDeadline     = (document.getElementById('project-submit-deadline')      || {}).value || '';
+    // 시스템/메일/직접 입력이 아니면 상세값 비우기 (안전장치)
+    if (submitSystem !== '시스템' && submitSystem !== '메일' && submitSystem !== '직접 입력') submitSystemDetail = '';
     var div1El = document.querySelector('input[name="project-division1"]:checked');
     var division1 = div1El ? div1El.value : '';
     var pTypeEl = document.querySelector('input[name="participation-type"]:checked');
     var participationType = pTypeEl ? pTypeEl.value : '단독';
     var consortiumRole = '';
+    var consortiumLead = '';
     var consortiumPartners = '';
     var consortiumTotalBudget = 0;
     if (participationType === '컨소') {
       var cRoleEl = document.querySelector('input[name="consortium-role"]:checked');
       consortiumRole = cRoleEl ? cRoleEl.value : '';
+      consortiumLead = ((document.getElementById('consortium-lead') || {}).value || '').trim();
       consortiumPartners = ((document.getElementById('consortium-partners') || {}).value || '').trim();
       consortiumTotalBudget = parseNum((document.getElementById('consortium-total-budget') || {}).value || '0');
     }
@@ -1284,12 +1476,16 @@
       charge: charge.trim(),
       participationType: participationType,
       consortiumRole: consortiumRole,
+      consortiumLead: consortiumLead,
       consortiumPartners: consortiumPartners,
       consortiumTotalBudget: consortiumTotalBudget,
       isRd: isRd,
       division1: division1,
       status: status,
       submitDate: submitDate,
+      submitSystem: submitSystem,
+      submitSystemDetail: submitSystemDetail,
+      submitDeadline: submitDeadline,
       unsubmittedReason: unsubReason,
       startDate: startDate,
       endDate: endDate,
@@ -1969,6 +2165,16 @@
     document.querySelectorAll('input[name="participation-type"]').forEach(function (r) {
       r.addEventListener('change', function () { updateParticipationVisibility(); updateBudgetPercent(); });
     });
+    // 컨소 역할(주관/참여) 변경 시 → 주관기관 라벨/placeholder 갱신 + 기관 수 카드 갱신
+    document.querySelectorAll('input[name="consortium-role"]').forEach(function (r) {
+      r.addEventListener('change', function () {
+        updateConsortiumLabels();
+        updateConsortiumCount();
+      });
+    });
+    // 공동 참여기관 입력 시 → 기관 수 카드 갱신
+    var partnersEl = document.getElementById('consortium-partners');
+    if (partnersEl) partnersEl.addEventListener('input', updateConsortiumCount);
     // ★ 분류(division1) 라디오 변경 → 예산 테이블 모드 전환 (용역 ↔ 그 외)
     document.querySelectorAll('input[name="project-division1"]').forEach(function (r) {
       r.addEventListener('change', function () {
@@ -2034,6 +2240,9 @@
         }
       });
     }
+
+    // 제출처 / 마감 시간 입력 필드 이벤트 바인딩
+    bindSubmitFieldEvents();
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);

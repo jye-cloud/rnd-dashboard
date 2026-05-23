@@ -175,6 +175,188 @@
       margin: 0.75rem 1rem;
       opacity: 0.7;
     }
+
+    /* ===== 캘린더 페이지: 일정 알림 카드 ===== */
+    .cal-alert-card {
+      background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%);
+      border: 1px solid #fdba74;
+      border-radius: 0.75rem;
+      padding: 0.7rem 1rem;
+      margin-bottom: 0.85rem;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    }
+    .cal-alert-head {
+      display: flex;
+      align-items: baseline;
+      gap: 0.75rem;
+      margin-bottom: 0.55rem;
+    }
+    .cal-alert-title {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: #7c2d12;
+      margin: 0;
+    }
+    .cal-alert-sub {
+      font-size: 0.78rem;
+      color: #9a3412;
+    }
+    .cal-alert-stats {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 0.4rem;
+      margin-bottom: 0.55rem;
+    }
+    .cal-alert-cell {
+      background: #ffffff;
+      border: 1px solid #fed7aa;
+      border-radius: 0.45rem;
+      padding: 0.5rem 0.5rem;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      font-family: inherit;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 1.25rem;
+    }
+    .cal-alert-cell:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+      border-color: #f59e0b;
+    }
+    .cal-alert-cell.is-active {
+      background: #fed7aa;
+      border-color: #ea580c;
+    }
+    .cal-alert-num {
+      font-size: 1.15rem;
+      font-weight: 800;
+      line-height: 1;
+    }
+    .cal-alert-label {
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: #64748b;
+    }
+    /* 색조 (D-30 가장 옅게 → D-day 진한 빨강) */
+    .cal-alert-cell--d30 .cal-alert-num { color: #94a3b8; }
+    .cal-alert-cell--d30 .cal-alert-label { color: #64748b; }
+    .cal-alert-cell--d14 .cal-alert-num { color: #ca8a04; }
+    .cal-alert-cell--d14 .cal-alert-label { color: #a16207; }
+    .cal-alert-cell--d7 .cal-alert-num { color: #c2410c; }
+    .cal-alert-cell--d7 .cal-alert-label { color: #9a3412; }
+    .cal-alert-cell--d3 .cal-alert-num { color: #dc2626; }
+    .cal-alert-cell--d3 .cal-alert-label { color: #b91c1c; }
+    .cal-alert-cell--dday .cal-alert-num { color: #991b1b; }
+    .cal-alert-cell--dday .cal-alert-label { color: #7f1d1d; }
+    .cal-alert-cell--ending .cal-alert-num { color: #475569; }
+    .cal-alert-cell--ending .cal-alert-label { color: #334155; }
+
+    .cal-alert-list {
+      background: #ffffff;
+      border: 1px solid #fed7aa;
+      border-radius: 0.45rem;
+      padding: 0.4rem 0.7rem;
+      max-height: 130px;
+      overflow-y: auto;
+    }
+    .cal-alert-item {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.3rem 0.2rem;
+      border-bottom: 1px dashed #fed7aa;
+      font-size: 0.82rem;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .cal-alert-item:last-child {
+      border-bottom: none;
+    }
+    .cal-alert-item:hover {
+      background: #fff7ed;
+    }
+    .cal-alert-item-icon {
+      flex-shrink: 0;
+      font-size: 0.95rem;
+    }
+    .cal-alert-item-name {
+      flex: 1;
+      min-width: 0;
+      color: #1e293b;
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .cal-alert-item-meta {
+      flex-shrink: 0;
+      font-size: 0.72rem;
+      color: #64748b;
+      font-variant-numeric: tabular-nums;
+    }
+    .cal-alert-item-dday {
+      flex-shrink: 0;
+      font-size: 0.72rem;
+      font-weight: 700;
+      padding: 0.08rem 0.4rem;
+      border-radius: 999px;
+      background: #fef3c7;
+      color: #92400e;
+      min-width: 44px;
+      text-align: center;
+    }
+    .cal-alert-item-dday--dday {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+    .cal-alert-item-dday--d3 {
+      background: #fee2e2;
+      color: #dc2626;
+    }
+    .cal-alert-item-dday--end {
+      background: #e2e8f0;
+      color: #475569;
+    }
+    .cal-alert-empty {
+      color: #94a3b8;
+      text-align: center;
+      padding: 0.5rem;
+      font-size: 0.82rem;
+    }
+
+    /* ===== 캘린더 영역 ===== */
+    /* 캘린더 컨테이너 — 페이지 내에서 적절한 높이 + 스크롤 */
+    .calendar-wrap {
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 0.75rem;
+      padding: 0.5rem;
+      min-height: 540px;
+    }
+    /* FullCalendar 셀 높이 줄이기 (빈 셀 기준) */
+    .calendar-wrap .fc-daygrid-day-frame {
+      min-height: 78px;
+    }
+    .calendar-wrap .fc-daygrid-day-number {
+      font-size: 0.8rem;
+      padding: 2px 4px;
+    }
+    .calendar-wrap .fc-daygrid-event {
+      font-size: 0.75rem;
+      padding: 1px 4px;
+      margin-top: 1px;
+    }
+    .calendar-wrap .fc-daygrid-more-link {
+      font-size: 0.72rem;
+      color: #2563eb;
+      font-weight: 600;
+    }
+    /* 캘린더가 페이지 안에서 자연 스크롤되도록 — 안쪽 영역만 컴팩트하게 */
+    .calendar-wrap .fc {
+      height: auto !important;
+    }
   </style>
 </head>
 <body>
@@ -511,6 +693,42 @@
           <header class="header">
             <h1 class="header-title">[60hz] 제출 및 수행 일정 관리</h1>
           </header>
+
+          <!-- 일정 알림 카드 (제출 임박 + 종료 예정) -->
+          <section class="cal-alert-card" aria-label="일정 알림">
+            <div class="cal-alert-head">
+              <h2 class="cal-alert-title">일정 알림 ⏰</h2>
+              <span class="cal-alert-sub">제출 임박 · 종료 예정</span>
+            </div>
+            <div class="cal-alert-stats">
+              <button type="button" class="cal-alert-cell cal-alert-cell--d30" data-bucket="d30">
+                <span class="cal-alert-label">D-30</span>
+                <span class="cal-alert-num" id="cal-alert-d30">0</span>
+              </button>
+              <button type="button" class="cal-alert-cell cal-alert-cell--d14" data-bucket="d14">
+                <span class="cal-alert-label">D-14</span>
+                <span class="cal-alert-num" id="cal-alert-d14">0</span>
+              </button>
+              <button type="button" class="cal-alert-cell cal-alert-cell--d7" data-bucket="d7">
+                <span class="cal-alert-label">D-7</span>
+                <span class="cal-alert-num" id="cal-alert-d7">0</span>
+              </button>
+              <button type="button" class="cal-alert-cell cal-alert-cell--d3" data-bucket="d3">
+                <span class="cal-alert-label">D-3</span>
+                <span class="cal-alert-num" id="cal-alert-d3">0</span>
+              </button>
+              <button type="button" class="cal-alert-cell cal-alert-cell--dday" data-bucket="dday">
+                <span class="cal-alert-label">D-day</span>
+                <span class="cal-alert-num" id="cal-alert-dday">0</span>
+              </button>
+              <button type="button" class="cal-alert-cell cal-alert-cell--ending" data-bucket="ending">
+                <span class="cal-alert-label">종료 예정</span>
+                <span class="cal-alert-num" id="cal-alert-ending">0</span>
+              </button>
+            </div>
+            <div class="cal-alert-list" id="cal-alert-list"></div>
+          </section>
+
           <div id="calendar-wrap" class="calendar-wrap"></div>
         </div>
       </div>
@@ -704,6 +922,7 @@
         <div class="form-actions">
           <button type="button" class="cancel-btn" id="calendar-event-cancel">취소</button>
           <button type="button" class="danger-btn calendar-event-delete-btn" id="calendar-event-delete" style="display: none;">삭제</button>
+          <button type="button" class="submit-btn" id="calendar-event-gcal" style="background:#fff;color:#1a73e8;border:1px solid #1a73e8;font-weight:600;" title="구글 캘린더에 이 일정 추가">📅</button>
           <button type="submit" class="submit-btn" id="calendar-event-submit">등록</button>
         </div>
       </form>
