@@ -1,0 +1,1851 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>[60hz] 인력 마스터</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    /* ========== 인증 게이트 (auth-guard.js 와 함께 동작) ========== */
+    html:not(.auth-bypass) .dashboard { visibility: hidden !important; }
+    html.auth-bypass .dashboard { visibility: visible; }
+    .auth-overlay {
+      position: fixed !important; top: 0 !important; left: 0 !important; right: 0 !important; bottom: 0 !important;
+      width: 100% !important; height: 100% !important; z-index: 2147483647 !important;
+      display: flex !important; align-items: center; justify-content: center;
+      background: linear-gradient(135deg, #f8fafc 0%, #eff6ff 50%, #e0f2fe 100%);
+      visibility: visible !important; opacity: 1 !important;
+    }
+    html.auth-bypass .auth-overlay { display: none !important; }
+    .auth-modal {
+      width: 90%; max-width: 400px; background: #fff; border-radius: 1rem;
+      box-shadow: 0 25px 50px -12px rgb(15 23 42 / 0.25); padding: 2rem; text-align: center;
+    }
+    .auth-modal-logo { font-size: 1.5rem; font-weight: 700; color: #2563eb; margin-bottom: 0.5rem; }
+    .auth-modal-title { font-size: 1rem; color: #64748b; margin-bottom: 1.5rem; line-height: 1.5; }
+    .auth-modal .auth-error {
+      margin-top: 0.75rem; font-size: 0.875rem; color: #ef4444; display: none;
+    }
+    .auth-modal .auth-error.visible { display: block; }
+    body { display: none !important; }
+    body.body-ready { display: block !important; }
+    /* ========== 인증 게이트 끝 ========== */
+
+    /* ========== 페이지 스타일 ========== */
+    .history-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      flex-wrap: wrap;
+      margin-bottom: 1rem;
+    }
+    .history-toolbar-label {
+      font-size: 0.875rem;
+      color: var(--text-secondary);
+      font-weight: 500;
+    }
+    .history-toolbar select {
+      min-width: 140px;
+      padding: 0.5rem 0.75rem;
+      border-radius: 0.5rem;
+      border: 1px solid var(--border-color);
+      background: var(--card-bg);
+      font-size: 0.9rem;
+      font-family: inherit;
+    }
+    .history-toolbar-meta {
+      font-size: 0.78rem;
+      color: #94a3b8;
+      white-space: nowrap;
+      padding-left: 0.25rem;
+    }
+
+    /* 통계 카드 */
+    .history-stats-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+    .history-stat-card {
+      flex: 1 1 180px;
+      min-width: 160px;
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 0.75rem;
+      padding: 1rem 1.25rem;
+      box-shadow: var(--shadow-sm);
+      transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+      user-select: none;
+    }
+    .history-stat-card.clickable {
+      cursor: pointer;
+    }
+    .history-stat-card.clickable:hover {
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-md);
+      border-color: var(--primary-color);
+    }
+    .history-stat-card.is-active {
+      border-color: var(--primary-color);
+      border-width: 2px;
+      padding: calc(1rem - 1px) calc(1.25rem - 1px);
+      background: linear-gradient(135deg, rgba(37, 99, 235, 0.04), rgba(37, 99, 235, 0.09));
+    }
+    .history-stat-card.is-active .history-stat-label {
+      color: var(--primary-color);
+      font-weight: 600;
+    }
+    .history-stat-label {
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      margin-bottom: 0.4rem;
+    }
+    .history-stat-value {
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: var(--primary-color);
+      line-height: 1.1;
+      letter-spacing: -0.02em;
+    }
+    .history-stat-value--success { color: var(--success-color, #059669); }
+    .history-stat-value--scheduled { color: #1d4ed8; }
+    .history-stat-value--end { color: #4b5563; }
+    .history-stat-value-unit {
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: var(--text-secondary);
+      margin-left: 0.2rem;
+    }
+    /* 새 카드별 색상 */
+    .history-stat-card--scheduled .history-stat-value { color: #8b5cf6; }
+    .history-stat-card--ongoing .history-stat-value { color: #2563eb; }
+    .history-stat-card--ended .history-stat-value { color: #4b5563; }
+    .history-stat-card--total .history-stat-value { color: #111827; }
+    .history-stat-card--funding {
+      background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+      border-color: #f59e0b;
+      flex-basis: 240px;
+    }
+    .history-stat-card--funding .history-stat-label { color: #92400e; font-weight: 600; }
+    .history-stat-card--funding .history-stat-value { color: #b45309; }
+
+    /* ===== 탭 (R&D 활동 / 용역) ===== */
+    .history-tabs {
+      display: flex;
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+    }
+    .history-tab {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      gap: 0.85rem;
+      padding: 1rem 1.25rem;
+      background: #fff;
+      border: 1.5px solid #e5e7eb;
+      border-radius: 0.75rem;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      text-align: left;
+      font-family: inherit;
+    }
+    .history-tab:hover {
+      border-color: #cbd5e1;
+      background: #f9fafb;
+    }
+    .history-tab.is-active {
+      background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+      border-color: #2563eb;
+      border-width: 2px;
+      padding: calc(1rem - 0.5px) calc(1.25rem - 0.5px);
+      box-shadow: 0 2px 8px rgba(37, 99, 235, 0.15);
+    }
+    .history-tab-icon { font-size: 1.6rem; line-height: 1; flex-shrink: 0; }
+    .history-tab-body { display: flex; flex-direction: column; gap: 0.15rem; flex: 1; }
+    .history-tab-title { font-size: 1rem; font-weight: 700; color: #1e293b; }
+    .history-tab.is-active .history-tab-title { color: #1d4ed8; }
+    .history-tab-sub { font-size: 0.78rem; color: #64748b; }
+    .history-tab-count {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: #64748b;
+      background: #f1f5f9;
+      padding: 0.25rem 0.65rem;
+      border-radius: 999px;
+      flex-shrink: 0;
+    }
+    .history-tab.is-active .history-tab-count {
+      background: #2563eb;
+      color: #fff;
+    }
+    /* 용역 탭 활성 — 오렌지 톤 */
+    .history-tab[data-tab="service"].is-active {
+      background: linear-gradient(135deg, #fff7ed 0%, #fed7aa 100%);
+      border-color: #ea580c;
+      box-shadow: 0 2px 8px rgba(234, 88, 12, 0.15);
+    }
+    .history-tab[data-tab="service"].is-active .history-tab-title { color: #c2410c; }
+    .history-tab[data-tab="service"].is-active .history-tab-count {
+      background: #ea580c;
+      color: #fff;
+    }
+
+    /* NTIS 토글 — 칩 형태 (검색 행 안) */
+    .history-toggle-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.4rem 0.75rem;
+      background: linear-gradient(135deg, #ecfeff 0%, #cffafe 100%);
+      border: 1px solid #67e8f9;
+      border-radius: 999px;
+      cursor: pointer;
+      font-size: 0.82rem;
+      color: #0e7490;
+      user-select: none;
+      transition: all 0.15s ease;
+      white-space: nowrap;
+    }
+    .history-toggle-chip:hover {
+      border-color: #22d3ee;
+    }
+    .history-toggle-chip.is-active {
+      background: linear-gradient(135deg, #cffafe 0%, #a5f3fc 100%);
+      border-color: #0891b2;
+      color: #155e75;
+      font-weight: 600;
+    }
+    .history-toggle-chip input {
+      cursor: pointer;
+      accent-color: #0891b2;
+      margin: 0;
+    }
+    /* 통계 칩 (예정 · 진행) */
+    .history-summary-chips {
+      display: inline-flex;
+      gap: 0.4rem;
+      align-items: center;
+    }
+    .summary-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.4rem 0.8rem;
+      background: #f8fafc;
+      border: 1px solid #e5e7eb;
+      border-radius: 0.5rem;
+      font-size: 0.82rem;
+      color: #475569;
+      white-space: nowrap;
+    }
+    .summary-chip strong {
+      font-size: 0.95rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    .summary-chip--scheduled { background: #ede9fe; border-color: #ddd6fe; color: #5b21b6; }
+    .summary-chip--scheduled strong { color: #7c3aed; }
+    .summary-chip--ongoing { background: #dbeafe; border-color: #bfdbfe; color: #1e40af; }
+    .summary-chip--ongoing strong { color: #2563eb; }
+    .summary-chip--ended { background: #f1f5f9; border-color: #e2e8f0; color: #475569; }
+    .summary-chip--ended strong { color: #64748b; }
+
+    /* ===== 연도별 트렌드 막대 차트 ===== */
+    .history-trend-section {
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 0.75rem;
+      padding: 1rem 1.25rem;
+      margin-bottom: 1.25rem;
+    }
+    .history-trend-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 0.85rem;
+    }
+    .history-trend-title { font-size: 0.95rem; font-weight: 700; color: #1e293b; }
+    .history-trend-hint { font-size: 0.75rem; color: #94a3b8; }
+    .history-trend-chart {
+      display: flex;
+      gap: 0.5rem;
+      align-items: flex-end;
+      height: 130px;
+      padding: 0 0.25rem;
+    }
+    .history-trend-bar-wrap {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.35rem;
+      cursor: pointer;
+      transition: opacity 0.15s ease;
+    }
+    .history-trend-bar-wrap:hover { opacity: 0.8; }
+    .history-trend-bar-num {
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: #475569;
+      font-variant-numeric: tabular-nums;
+    }
+    .history-trend-bar {
+      width: 100%;
+      max-width: 56px;
+      background: linear-gradient(180deg, #93c5fd 0%, #3b82f6 100%);
+      border-radius: 0.35rem 0.35rem 0 0;
+      min-height: 4px;
+      transition: filter 0.15s ease;
+    }
+    .history-trend-bar-wrap.is-active .history-trend-bar { background: linear-gradient(180deg, #f59e0b 0%, #d97706 100%); }
+    .history-trend-bar-wrap:hover .history-trend-bar { filter: brightness(1.1); }
+    .history-trend-bar-label {
+      font-size: 0.72rem;
+      color: #64748b;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* 검색 + 활성 필터 칩 */
+    .history-search-row {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      flex-wrap: wrap;
+      margin-bottom: 0.85rem;
+    }
+    .projects-actions-spacer { flex: 1; }
+    .projects-actions-buttons { display: flex; gap: 0.5rem; align-items: center; }
+    /* 열 선택 드롭다운 */
+    .projects-col-dropdown { position: relative; }
+    .projects-col-panel {
+      display: none;
+      position: absolute;
+      top: 100%;
+      right: 0;
+      margin-top: 4px;
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 0.5rem;
+      box-shadow: var(--shadow-lg);
+      padding: 0.75rem 1rem;
+      z-index: 100;
+      min-width: 180px;
+    }
+    .projects-col-panel.open { display: block; }
+    .projects-col-panel label { display: flex; align-items: center; gap: 0.5rem; padding: 0.35rem 0; cursor: pointer; font-size: 0.875rem; }
+    /* 옵션 컬럼 기본 숨김 */
+    .history-table .col-opt { display: none; }
+    /* 숫자 컬럼 우측 정렬 */
+    .history-table tbody td.col-num { text-align: right; font-variant-numeric: tabular-nums; }
+    /* 과제명 셀 (메인 컬럼) */
+    .history-table .cell-projectname {
+      display: block;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    /* 과제명(용역명) 컬럼: 남은 공간을 다 쓰게 (다른 컬럼들이 고정 너비라서 자동으로 확장됨) */
+    .history-table .col-projectname { max-width: none; width: auto; }
+    .history-table .cell-projectname { max-width: 100%; }
+    /* 사업기간(연구기간) 컬럼 한 줄 강제 */
+    .history-table .col-period,
+    .history-table tbody td.col-period { white-space: nowrap; font-variant-numeric: tabular-nums; }
+    /* 기관명/발주처 컬럼 한 줄 강제 (길면 ...) */
+    .history-table .col-institution,
+    .history-table tbody td.col-institution {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 140px;
+    }
+    /* 표 내용 전반적으로 중앙정렬 */
+    .history-table tbody td { text-align: center; }
+    /* 예외: 과제명/용역명은 좌측 정렬 */
+    .history-table tbody td.col-projectname { text-align: left; }
+    /* 예외: 금액(지원금 총액/사업비 총액/공급가)은 우측 정렬 — col-num 기존 규칙이 적용됨 */
+    /* R&D 뱃지 (현재 미사용) */
+    .projects-badge--rd { background: #ecfeff; color: #0e7490; border: 1px solid #67e8f9; font-size: 0.68rem; font-weight: 700; padding: 0.1rem 0.4rem; border-radius: 0.3rem; }
+    .history-search-wrap {
+      position: relative;
+      flex: 1;
+      min-width: 220px;
+      max-width: 360px;
+    }
+    .history-search-icon {
+      position: absolute;
+      left: 0.7rem;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-secondary);
+      pointer-events: none;
+      font-size: 0.95rem;
+    }
+    .history-search-input {
+      width: 100%;
+      padding: 0.55rem 2.2rem 0.55rem 2.2rem;
+      border: 1px solid var(--border-color);
+      border-radius: 0.5rem;
+      font-size: 0.9rem;
+      background: var(--card-bg);
+      font-family: inherit;
+      box-sizing: border-box;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .history-search-input:focus {
+      outline: none;
+      border-color: var(--primary-color);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+    }
+    .history-search-clear {
+      position: absolute;
+      right: 0.4rem;
+      top: 50%;
+      transform: translateY(-50%);
+      background: transparent;
+      border: none;
+      color: var(--text-secondary);
+      cursor: pointer;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.1rem;
+      line-height: 1;
+      padding: 0;
+    }
+    .history-search-clear:hover {
+      background: #f1f5f9;
+      color: var(--text-primary);
+    }
+    .history-search-wrap.has-value .history-search-clear {
+      display: inline-flex;
+    }
+    .history-active-filters {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+    .history-active-filters:empty { display: none; }
+    .history-filter-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      padding: 0.35rem 0.6rem 0.35rem 0.75rem;
+      background: #dbeafe;
+      color: #1d4ed8;
+      border-radius: 999px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      border: 1px solid rgba(37, 99, 235, 0.2);
+    }
+    .history-filter-chip-clear {
+      background: rgba(255, 255, 255, 0.7);
+      border: none;
+      cursor: pointer;
+      color: inherit;
+      font-size: 0.95rem;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 1;
+      padding: 0;
+    }
+    .history-filter-chip-clear:hover { background: #fff; }
+
+    /* 테이블 */
+    .history-table-wrap {
+      background: var(--card-bg);
+      border-radius: 0.75rem;
+      box-shadow: var(--shadow-md);
+      overflow-x: hidden;
+      overflow-y: auto;
+      border: 1px solid var(--border-color);
+    }
+    .history-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+      table-layout: fixed;  /* 컬럼 너비 헤더 지정대로 고정 → 가로 스크롤 방지 */
+    }
+    /* 기본 셀: 가로 넘침 방지 (... 처리) */
+    .history-table td {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .history-table th,
+    .history-table td {
+      padding: 0.7rem 0.85rem;
+      border-bottom: 1px solid var(--border-color);
+      text-align: left;
+      vertical-align: middle;
+    }
+    .history-table thead th {
+      background: #f5f5f5;
+      font-weight: 600;
+      color: var(--text-primary);
+      white-space: nowrap;
+      font-size: 0.85rem;
+      text-align: center;
+    }
+    .history-table tbody tr:hover {
+      background: #f8fafc;
+    }
+    .history-table .col-amount {
+      text-align: right;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .history-table .col-status {
+      white-space: nowrap;
+    }
+    .history-empty {
+      text-align: center;
+      padding: 3rem 1rem;
+      color: var(--text-secondary);
+      font-size: 0.9rem;
+    }
+
+    /* 상태 배지 — projects.html 과 동일 */
+    .projects-badge { display: inline-block; padding: 0.2rem 0.5rem; border-radius: 0.35rem; font-size: 0.72rem; font-weight: 700; white-space: nowrap; }
+    .projects-badge--ongoing { background: #d1fae5; color: #047857; }              /* 수행 (계속) — 진한 초록 */
+    .projects-badge--ongoing-new { background: #ccfbf1; color: #0d9488; }          /* 수행 (신규) — 청록 */
+    .projects-badge--scheduled { background: #dbeafe; color: #1d4ed8; }
+    .projects-badge--waiting { background: #fef3c7; color: #b45309; }
+    .projects-badge--unselected { background: #fef2f2; color: #b91c1c; }           /* 미선정 — 톤다운 분홍 */
+    .projects-badge--unsubmitted { background: #f3f4f6; color: #6b7280; }          /* 미제출 — 라이트 회색 */
+    .projects-badge--other { background: #ecfccb; color: #65a30d; }                /* 선정(기타) — 라임 */
+    .projects-badge--end { background: #e5e7eb; color: #4b5563; }
+
+    /* 총 N건 + 분류 카드 (상단 통합) */
+    .division-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 0.75rem;
+      padding: 1.25rem 1.5rem;
+      box-shadow: var(--shadow-sm);
+      margin-bottom: 1rem;
+    }
+    .division-card-header {
+      display: flex;
+      align-items: baseline;
+      gap: 0.6rem;
+      cursor: pointer;
+      user-select: none;
+      padding: 0.2rem 0.4rem;
+      margin: -0.2rem -0.4rem 0.6rem;
+      border-radius: 0.4rem;
+      transition: background 0.15s;
+      width: fit-content;
+    }
+    .division-card-header:hover {
+      background: #f1f5f9;
+    }
+    .division-card-label {
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+      font-weight: 500;
+    }
+    .division-card-value {
+      font-size: 1.85rem;
+      font-weight: 800;
+      color: var(--primary-color);
+      line-height: 1;
+      letter-spacing: -0.02em;
+    }
+    .division-card-unit {
+      font-size: 0.95rem;
+      font-weight: 500;
+      color: var(--text-secondary);
+    }
+    .division-card-divider {
+      height: 1px;
+      background: var(--border-color);
+      margin: 0.5rem 0 0.85rem;
+    }
+    .division-pills {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+    .division-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.45rem 0.85rem;
+      background: #f8fafc;
+      border: 1px solid var(--border-color);
+      border-radius: 999px;
+      font-size: 0.85rem;
+      color: var(--text-primary);
+      cursor: pointer;
+      font-family: inherit;
+      font-weight: 600;
+      transition: all 0.15s ease;
+    }
+    .division-pill:hover {
+      background: #fff;
+      border-color: var(--primary-color);
+      transform: translateY(-1px);
+      box-shadow: 0 2px 6px rgba(37, 99, 235, 0.1);
+    }
+    .division-pill.is-active {
+      background: var(--primary-color);
+      border-color: var(--primary-color);
+      color: #fff;
+    }
+    .division-pill-count {
+      color: var(--text-secondary);
+      font-weight: 500;
+    }
+    .division-pill.is-active .division-pill-count {
+      color: rgba(255, 255, 255, 0.85);
+    }
+      /* 사이드바 그룹 구분선 */
+    .sidebar-divider {
+      height: 1px;
+      background: #e5e7eb;
+      margin: 0.75rem 1rem;
+      opacity: 0.7;
+    }
+
+    /* 페이지 전체 너비 고정 — 화면 크기와 무관 */
+    .container {
+      width: 1400px;
+      margin: 0 auto;
+    }
+
+    /* ===== 다운로드 컬럼 선택 모달 ===== */
+    .dl-modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      padding: 1rem;
+    }
+    .dl-modal-panel {
+      background: #fff;
+      border-radius: 0.75rem;
+      width: 100%;
+      max-width: 460px;
+      max-height: 85vh;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+      overflow: hidden;
+    }
+    .dl-modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 1rem 1.25rem;
+      border-bottom: 1px solid var(--border-color);
+    }
+    .dl-modal-title {
+      font-size: 1.05rem;
+      font-weight: 700;
+      margin: 0;
+      color: var(--text-primary);
+    }
+    .dl-modal-close {
+      background: transparent;
+      border: none;
+      font-size: 1.5rem;
+      line-height: 1;
+      color: var(--text-secondary);
+      cursor: pointer;
+      padding: 0.25rem 0.5rem;
+      border-radius: 0.35rem;
+    }
+    .dl-modal-close:hover {
+      background: #f1f5f9;
+      color: var(--text-primary);
+    }
+    .dl-modal-body {
+      padding: 1.25rem;
+      overflow-y: auto;
+    }
+    .dl-modal-desc {
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+      margin: 0 0 1rem;
+    }
+    .dl-modal-section {
+      margin-bottom: 1.25rem;
+    }
+    .dl-modal-section:last-child {
+      margin-bottom: 0;
+    }
+    .dl-modal-section-title {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      margin-bottom: 0.5rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .dl-modal-base-cols {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 0.45rem;
+      padding: 0.65rem 0.85rem;
+      font-size: 0.82rem;
+      color: var(--text-primary);
+      line-height: 1.5;
+    }
+    .dl-modal-options {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.5rem 0.75rem;
+    }
+    .dl-modal-options label {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.5rem 0.65rem;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 0.4rem;
+      font-size: 0.875rem;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .dl-modal-options label:hover {
+      background: #eff6ff;
+      border-color: var(--primary-color);
+    }
+    .dl-modal-options input[type="checkbox"] {
+      margin: 0;
+      cursor: pointer;
+    }
+    .dl-modal-footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: 0.5rem;
+      padding: 0.85rem 1.25rem;
+      border-top: 1px solid var(--border-color);
+      background: #f9fafb;
+    }
+
+    /* ===== 인력 추가/수정 모달 (Step 2-2) ===== */
+    .person-modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      padding: 1rem;
+    }
+    .person-modal-overlay[hidden] { display: none !important; }
+    .person-modal-panel {
+      background: #fff;
+      border-radius: 0.75rem;
+      width: 100%;
+      max-width: 480px;
+      max-height: 90vh;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+      overflow: hidden;
+    }
+    .person-modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 1rem 1.25rem;
+      border-bottom: 1px solid var(--border-color);
+    }
+    .person-modal-title {
+      font-size: 1.05rem;
+      font-weight: 700;
+      margin: 0;
+      color: var(--text-primary);
+    }
+    .person-modal-close {
+      background: transparent;
+      border: none;
+      font-size: 1.5rem;
+      line-height: 1;
+      color: var(--text-secondary);
+      cursor: pointer;
+      padding: 0.25rem 0.5rem;
+      border-radius: 0.35rem;
+    }
+    .person-modal-close:hover {
+      background: #f1f5f9;
+      color: var(--text-primary);
+    }
+    .person-modal-body {
+      padding: 1.25rem;
+      overflow-y: auto;
+    }
+    .person-form-row {
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+      margin-bottom: 1rem;
+    }
+    .person-form-row:last-child { margin-bottom: 0; }
+    .person-form-label {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+    .person-form-label .person-form-required {
+      color: #dc2626;
+      margin-left: 0.15rem;
+    }
+    .person-form-hint {
+      font-size: 0.78rem;
+      color: var(--text-secondary);
+      margin-top: 0.1rem;
+    }
+    .person-form-input,
+    .person-form-textarea {
+      width: 100%;
+      padding: 0.55rem 0.75rem;
+      border: 1px solid var(--border-color);
+      border-radius: 0.5rem;
+      font-size: 0.9rem;
+      font-family: inherit;
+      background: #fff;
+      color: var(--text-primary);
+      transition: border-color 0.15s, box-shadow 0.15s;
+      box-sizing: border-box;
+    }
+    .person-form-input:focus,
+    .person-form-textarea:focus {
+      outline: none;
+      border-color: var(--primary-color);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+    }
+    .person-form-textarea {
+      min-height: 70px;
+      resize: vertical;
+    }
+    .person-form-input--error {
+      border-color: #dc2626;
+      box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.12);
+    }
+    .person-form-row--checkbox {
+      flex-direction: row;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .person-form-row--checkbox label {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      cursor: pointer;
+      font-size: 0.9rem;
+      color: var(--text-primary);
+    }
+    .person-form-row--checkbox input[type="checkbox"] {
+      width: 1.1rem;
+      height: 1.1rem;
+      cursor: pointer;
+      margin: 0;
+    }
+    .person-form-error {
+      font-size: 0.8rem;
+      color: #dc2626;
+      margin-top: 0.2rem;
+    }
+    .person-modal-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.85rem 1.25rem;
+      border-top: 1px solid var(--border-color);
+      background: #f9fafb;
+    }
+    .person-modal-footer-right {
+      display: flex;
+      gap: 0.5rem;
+    }
+    .person-modal-delete-btn {
+      background: transparent;
+      border: 1px solid #fecaca;
+      color: #b91c1c;
+      padding: 0.5rem 0.85rem;
+      border-radius: 0.5rem;
+      font-size: 0.85rem;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .person-modal-delete-btn:hover {
+      background: #fef2f2;
+      border-color: #dc2626;
+      color: #991b1b;
+    }
+    .person-modal-delete-btn[hidden] { display: none !important; }
+
+    /* ===== Y/M/D 3칸 분리 입력 ===== */
+    .date-parts {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+    .date-parts input {
+      padding: 0.55rem 0.5rem;
+      border: 1px solid var(--border-color);
+      border-radius: 0.5rem;
+      font-size: 0.9rem;
+      font-family: inherit;
+      background: #fff;
+      color: var(--text-primary);
+      text-align: center;
+      transition: border-color 0.15s, box-shadow 0.15s;
+      box-sizing: border-box;
+    }
+    .date-parts input:focus {
+      outline: none;
+      border-color: var(--primary-color);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+    }
+    .date-parts input.is-error {
+      border-color: #dc2626;
+      box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.12);
+    }
+    .date-parts .date-input-y { width: 70px; }
+    .date-parts .date-input-m,
+    .date-parts .date-input-d { width: 50px; }
+    .date-parts .date-sep {
+      color: var(--text-secondary);
+      font-size: 0.85rem;
+    }
+
+    /* ===== 성별 라디오 그룹 ===== */
+    .gender-radio-group {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+    .gender-radio {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.45rem 0.85rem;
+      background: #fff;
+      border: 1px solid var(--border-color);
+      border-radius: 0.5rem;
+      cursor: pointer;
+      font-size: 0.875rem;
+      color: var(--text-primary);
+      transition: all 0.15s;
+    }
+    .gender-radio:hover {
+      border-color: var(--primary-color);
+      background: #f8fafc;
+    }
+    .gender-radio input[type="radio"] {
+      margin: 0;
+      cursor: pointer;
+      accent-color: var(--primary-color);
+    }
+    .gender-radio:has(input:checked) {
+      background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+      border-color: var(--primary-color);
+      color: var(--primary-color);
+      font-weight: 600;
+    }
+    /* :has 미지원 브라우저용 fallback */
+    .gender-radio.is-checked {
+      background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+      border-color: var(--primary-color);
+      color: var(--primary-color);
+      font-weight: 600;
+    }
+
+    /* 테이블 안 성별 뱃지 */
+    .gender-badge {
+      display: inline-block;
+      padding: 0.15rem 0.45rem;
+      border-radius: 0.3rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+    .gender-badge--male {
+      background: #dbeafe;
+      color: #1d4ed8;
+    }
+    .gender-badge--female {
+      background: #fce7f3;
+      color: #be185d;
+    }
+    .gender-badge--unknown {
+      color: #cbd5e1;
+      font-size: 0.85rem;
+    }
+
+    /* ===== 명부 업로드 버튼 (헤더 옆) — ui-btn과 같은 크기, 녹색 강조 ===== */
+    .excel-upload-btn {
+      height: 36px;
+      min-width: 96px;
+      padding: 0 12px;
+      border-radius: 0.6rem;
+      border: 1px solid var(--border-color);
+      background: rgba(248, 250, 252, 0.95);
+      color: #047857;
+      font-size: 0.8rem;
+      font-weight: 650;
+      cursor: pointer;
+      transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.4rem;
+      user-select: none;
+      flex-shrink: 0;
+      font-family: inherit;
+    }
+    .excel-upload-btn:hover {
+      background: #f0fdf4;
+      border-color: rgba(4, 120, 87, 0.55);
+      box-shadow: 0 10px 22px rgb(15 23 42 / 0.10);
+      transform: translateY(-1px);
+    }
+    .excel-upload-btn:active {
+      transform: translateY(0);
+      box-shadow: 0 6px 14px rgb(15 23 42 / 0.08);
+    }
+    .excel-upload-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none !important;
+      box-shadow: none !important;
+    }
+    .excel-upload-btn .excel-icon {
+      flex-shrink: 0;
+    }
+
+    /* ===== 마이그레이션 경고 배너 (생년월일 미입력) ===== */
+    .migration-banner {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.75rem 1rem;
+      background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+      border: 1px solid #f59e0b;
+      border-radius: 0.5rem;
+      margin-bottom: 1rem;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .migration-banner:hover {
+      background: linear-gradient(135deg, #fde68a 0%, #fcd34d 100%);
+      transform: translateY(-1px);
+      box-shadow: 0 2px 6px rgba(245, 158, 11, 0.2);
+    }
+    .migration-banner-icon {
+      font-size: 1.3rem;
+      flex-shrink: 0;
+    }
+    .migration-banner-body {
+      flex: 1;
+      font-size: 0.875rem;
+      color: #92400e;
+    }
+    .migration-banner-body strong {
+      font-weight: 700;
+    }
+    .migration-banner-arrow {
+      font-size: 1.2rem;
+      color: #b45309;
+      flex-shrink: 0;
+    }
+    .migration-banner[hidden] { display: none !important; }
+
+    /* ===== 성별 라디오 그룹 (모달) ===== */
+    .gender-radio-group {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+    .gender-radio {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.4rem 0.75rem;
+      border: 1px solid var(--border-color);
+      border-radius: 0.5rem;
+      background: #fff;
+      cursor: pointer;
+      font-size: 0.875rem;
+      color: var(--text-primary);
+      transition: all 0.15s;
+    }
+    .gender-radio:hover {
+      background: #f8fafc;
+      border-color: var(--primary-color);
+    }
+    .gender-radio input[type="radio"] {
+      cursor: pointer;
+      margin: 0;
+    }
+    .gender-radio:has(input:checked) {
+      background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+      border-color: var(--primary-color);
+      color: #1d4ed8;
+      font-weight: 600;
+    }
+
+    /* ===== 성별 뱃지 (테이블) ===== */
+    .gender-badge {
+      display: inline-block;
+      padding: 0.15rem 0.45rem;
+      border-radius: 0.3rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+      line-height: 1.3;
+    }
+    .gender-badge--male {
+      background: #dbeafe;
+      color: #1e40af;
+    }
+    .gender-badge--female {
+      background: #fce7f3;
+      color: #be185d;
+    }
+  
+    /* ============================================================ */
+    /* 디자인 톤 일치를 위해 projects.html에서 가져온 공통 스타일 */
+    /* (Step 2-X: 다른 페이지와 일관된 룩앤필 적용) */
+    /* ============================================================ */
+
+    .projects-stats-grid {
+      display: flex;
+      flex-wrap: nowrap;
+      gap: 0.75rem;
+      margin-bottom: 1.5rem;
+    }
+    .projects-stat-card {
+      flex: 1.4 1 0;
+      min-width: 0;
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 0.75rem;
+      padding: 0.85rem 1rem;
+      box-shadow: var(--shadow-sm);
+      overflow: hidden;
+    }
+    .projects-stat-card--narrow {
+      flex: 1 1 0;
+      min-width: 0;
+    }
+    .projects-stat-card--ongoing {
+      flex: 1.6 1 0;
+      min-width: 0;
+    }
+    .projects-stat-value.projects-stat--warning { color: #b45309; }
+    .projects-stat-value.projects-stat--other { color: #65a30d; }
+    .projects-stat-label {
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      margin-bottom: 0.35rem;
+    }
+    .projects-stat-value {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--primary-color);
+    }
+    .projects-stat-value.projects-stat--danger { color: var(--danger-color); }
+    .projects-stat-value.projects-stat--success { color: var(--success-color); }
+    .projects-stat-sub-hint {
+      font-size: 0.7rem;
+      color: #9ca3af;
+      margin-top: 0.25rem;
+    }
+
+    .projects-table-wrap {
+      background: var(--card-bg);
+      border-radius: 0.75rem;
+      box-shadow: var(--shadow-md);
+      overflow: auto;
+      border: 1px solid var(--border-color);
+    }
+    .projects-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+    }
+    .projects-table th,
+    .projects-table td {
+      padding: 0.65rem 0.85rem;
+      border-bottom: 1px solid var(--border-color);
+      text-align: center;
+    }
+    .projects-table thead th {
+      background: #f5f5f5;
+      font-weight: 600;
+      color: var(--text-primary);
+      white-space: nowrap;
+    }
+    .projects-table tbody td {
+      white-space: nowrap;
+    }
+    /* 단, 긴 텍스트가 들어가는 컬럼은 wrap 허용 (max-width로 길이 제한 + 줄바꿈 허용) */
+    .projects-table tbody td.cell-wrap {
+      white-space: normal;
+      max-width: 320px;
+    }
+    .projects-table tbody tr {
+      cursor: default;
+      transition: background 0.15s;
+    }
+    .projects-table tbody tr:hover {
+      background: #f8fafc;
+    }
+    .projects-table .project-edit-btn {
+      font-size: 0.7rem !important;
+      padding: 0.1rem 0.4rem !important;
+      cursor: pointer;
+      line-height: 1.4 !important;
+      min-width: 0 !important;
+    }
+    /* "수정" 컬럼 — 글자만 들어가는 minimal 너비 */
+    .projects-table thead th:last-child,
+    .projects-table tbody td:last-child {
+      padding-left: 0.35rem !important;
+      padding-right: 0.35rem !important;
+      text-align: center !important;
+    }
+    /* 숫자 컬럼 — 우측 정렬 (금액 비교 편리). 헤더는 영향 안 받도록 tbody td만 */
+    .projects-table tbody td.col-num {
+      text-align: right;
+    }
+    /* 수정 버튼 — SVG 아이콘 가운데 정렬 */
+    .projects-table .project-edit-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0.35rem 0.5rem;
+      color: #64748b;
+    }
+    .projects-table .project-edit-btn:hover {
+      color: #2563eb;
+    }
+    .projects-table .project-edit-btn svg {
+      display: block;
+    }
+    .projects-badge { display: inline-block; padding: 0.2rem 0.5rem; border-radius: 0.35rem; font-size: 0.75rem; font-weight: 600; }
+    .projects-badge--rd { background: #dbeafe; color: #1d4ed8; margin-right: 0.25rem; }
+    .projects-badge--end { background: #e5e7eb; color: #4b5563; }
+    .projects-badge--ongoing { background: #d1fae5; color: #047857; }              /* 수행 (계속) — 진한 초록 */
+    .projects-badge--ongoing-new { background: #ccfbf1; color: #0d9488; }          /* 수행 (신규) — 청록 */
+    .projects-badge--scheduled { background: #dbeafe; color: #1d4ed8; }
+    .projects-badge--waiting { background: #fef3c7; color: #b45309; }
+    .projects-badge--unselected { background: #fef2f2; color: #b91c1c; }           /* 미선정 — 톤다운 분홍 */
+    .projects-badge--unsubmitted { background: #f3f4f6; color: #6b7280; }          /* 미제출 — 라이트 회색 */
+    .projects-badge--other { background: #ecfccb; color: #65a30d; }                /* 선정(기타) — 라임 */
+    /* 유형(division1) 배지 — 차트 색상과 통일 (파스텔톤) */
+    .projects-badge--type-task    { background: #dbeafe; color: #1e40af; }         /* 과제 — 파랑 */
+    .projects-badge--type-grant   { background: #d1fae5; color: #065f46; }         /* 지원사업 — 초록 */
+    .projects-badge--type-service { background: #ffedd5; color: #9a3412; }         /* 용역 — 주황 */
+    .projects-badge--type-other   { background: #f3f4f6; color: #4b5563; }         /* 기타 — 회색 */
+
+    .projects-actions-row {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 0.75rem;
+      flex-wrap: wrap;
+    }
+    .projects-search-input {
+      flex: 1;
+      min-width: 240px;
+      max-width: 480px;
+      padding: 0.55rem 0.85rem 0.55rem 2.2rem;
+      border: 1px solid var(--border-color);
+      border-radius: 0.5rem;
+      font-size: 0.9rem;
+      background: var(--card-bg);
+      color: var(--text-primary);
+      font-family: inherit;
+      transition: border-color 0.15s, box-shadow 0.15s;
+      box-sizing: border-box;
+    }
+    .projects-search-input:focus {
+      outline: none;
+      border-color: var(--primary-color);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+    }
+    .projects-search-wrap {
+      position: relative;
+      flex: 1;
+      min-width: 240px;
+      max-width: 480px;
+      display: inline-flex;
+    }
+    .projects-search-icon {
+      position: absolute;
+      left: 0.7rem;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-secondary);
+      pointer-events: none;
+      font-size: 0.95rem;
+    }
+    .projects-search-clear {
+      position: absolute;
+      right: 0.4rem;
+      top: 50%;
+      transform: translateY(-50%);
+      background: transparent;
+      border: none;
+      color: var(--text-secondary);
+      cursor: pointer;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.1rem;
+      line-height: 1;
+      padding: 0;
+      transition: background 0.15s, color 0.15s;
+    }
+    .projects-search-clear:hover {
+      background: #f1f5f9;
+      color: var(--text-primary);
+    }
+    .projects-search-wrap.has-value .projects-search-clear {
+      display: inline-flex;
+    }
+    .projects-actions-spacer { flex: 1; }
+    .projects-actions-buttons {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+
+    /* ============================================================ */
+
+    /* ===== 회사 구분 뱃지 (테이블 + 모달) ===== */
+    .company-badge {
+      display: inline-block;
+      padding: 0.2rem 0.55rem;
+      border-radius: 0.4rem;
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    .company-badge--sixty {     /* 식스티 — 네이비 */
+      background: #e0e7ff;
+      color: #1e3a8a;
+    }
+    .company-badge--goodnews {  /* 굿뉴스 — 오렌지 */
+      background: #ffedd5;
+      color: #9a3412;
+    }
+    .company-badge--parity {    /* 패리티 — 딥그린 */
+      background: #d1fae5;
+      color: #065f46;
+    }
+    .company-badge--unset {     /* 미지정 */
+      background: #f1f5f9;
+      color: #94a3b8;
+    }
+
+    /* 겸직 뱃지 (이름 옆) */
+    .moonlight-badge {
+      display: inline-block;
+      padding: 0.1rem 0.45rem;
+      margin-left: 0.35rem;
+      background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+      color: #92400e;
+      border-radius: 0.3rem;
+      font-size: 0.7rem;
+      font-weight: 700;
+      vertical-align: middle;
+      cursor: help;
+    }
+
+    /* ===== 회사 선택 모달 (명부 업로드 직전) ===== */
+    .company-select-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1100;
+      padding: 1rem;
+    }
+    .company-select-overlay[hidden] { display: none !important; }
+    .company-select-panel {
+      background: #fff;
+      border-radius: 0.75rem;
+      width: 100%;
+      max-width: 460px;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+      overflow: hidden;
+    }
+    .company-select-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 1rem 1.25rem;
+      border-bottom: 1px solid var(--border-color);
+    }
+    .company-select-title {
+      font-size: 1.05rem;
+      font-weight: 700;
+      margin: 0;
+      color: var(--text-primary);
+    }
+    .company-select-close {
+      background: transparent;
+      border: none;
+      font-size: 1.5rem;
+      line-height: 1;
+      color: var(--text-secondary);
+      cursor: pointer;
+      padding: 0.25rem 0.5rem;
+      border-radius: 0.35rem;
+    }
+    .company-select-close:hover { background: #f1f5f9; color: var(--text-primary); }
+    .company-select-body {
+      padding: 1.25rem;
+    }
+    .company-select-desc {
+      font-size: 0.875rem;
+      color: var(--text-secondary);
+      margin-bottom: 1rem;
+    }
+    .company-options {
+      display: grid;
+      gap: 0.5rem;
+    }
+    .company-option {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.85rem 1rem;
+      background: #fff;
+      border: 1.5px solid var(--border-color);
+      border-radius: 0.6rem;
+      cursor: pointer;
+      transition: all 0.15s;
+      font-family: inherit;
+      font-size: 0.95rem;
+      font-weight: 600;
+      text-align: left;
+      width: 100%;
+    }
+    .company-option:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+    }
+    .company-option .company-badge {
+      flex-shrink: 0;
+      font-size: 0.85rem;
+      padding: 0.3rem 0.65rem;
+    }
+    .company-option-name {
+      color: var(--text-primary);
+      flex: 1;
+    }
+    .company-option-arrow {
+      color: var(--text-secondary);
+      font-size: 1.2rem;
+    }
+    .company-option[data-company="식스티"]:hover {
+      border-color: #1e3a8a;
+      background: linear-gradient(135deg, #fff 0%, #f0f5ff 100%);
+    }
+    .company-option[data-company="굿뉴스"]:hover {
+      border-color: #9a3412;
+      background: linear-gradient(135deg, #fff 0%, #fff7ed 100%);
+    }
+    .company-option[data-company="패리티"]:hover {
+      border-color: #065f46;
+      background: linear-gradient(135deg, #fff 0%, #f0fdf4 100%);
+    }
+
+  </style>
+</head>
+
+<body>
+  <div class="dashboard">
+    <aside class="sidebar" id="sidebar" aria-label="메인 메뉴">
+      <div class="sidebar-header">
+        <button type="button" class="sidebar-toggle" id="sidebar-toggle" aria-label="메뉴 접기/펼치기" title="메뉴 접기/펼치기">☰</button>
+        <h1 class="sidebar-title">CI_R&DM</h1>
+      </div>
+            <nav class="sidebar-nav">
+        <a href="projects-history.html" class="sidebar-link" id="nav-history"><span class="sidebar-link-icon" aria-hidden="true">📜</span><span class="sidebar-link-text">수행 현황</span></a>
+        <a href="index.html#/calendar" class="sidebar-link" id="nav-calendar"><span class="sidebar-link-icon" aria-hidden="true">📅</span><span class="sidebar-link-text">일정 관리</span></a>
+        <div class="sidebar-divider" aria-hidden="true"></div>
+        <a href="dashboard.html" class="sidebar-link" id="nav-dashboard"><span class="sidebar-link-icon" aria-hidden="true">🏠</span><span class="sidebar-link-text">대시보드</span></a>
+        <a href="funding.html" class="sidebar-link" id="nav-funding"><span class="sidebar-link-icon" aria-hidden="true">💵</span><span class="sidebar-link-text">자금 관리</span></a>
+        <a href="projects.html" class="sidebar-link" id="nav-projects"><span class="sidebar-link-icon" aria-hidden="true">📋</span><span class="sidebar-link-text">과제 관리</span></a>
+        <a href="projects-summary.html" class="sidebar-link" id="nav-projects-summary"><span class="sidebar-link-icon" aria-hidden="true">📑</span><span class="sidebar-link-text">과제별 상세</span></a>
+        <a href="index.html" class="sidebar-link" id="nav-hr"><span class="sidebar-link-icon" aria-hidden="true">👤</span><span class="sidebar-link-text">인력 정보 관리</span></a>
+        <a href="index.html#/payroll" class="sidebar-link" id="nav-payroll"><span class="sidebar-link-icon" aria-hidden="true">💰</span><span class="sidebar-link-text">인건비 관리</span></a>
+        <a href="index.html#/participation" class="sidebar-link" id="nav-participation"><span class="sidebar-link-icon" aria-hidden="true">📊</span><span class="sidebar-link-text">참여율 관리</span></a>
+        <div class="sidebar-divider" aria-hidden="true"></div>
+        <a href="persons-master.html" class="sidebar-link active" id="nav-persons-master"><span class="sidebar-link-icon" aria-hidden="true">👥</span><span class="sidebar-link-text">인력 마스터</span></a>
+        <a href="project-labor.html" class="sidebar-link" id="nav-project-labor"><span class="sidebar-link-icon" aria-hidden="true">📋</span><span class="sidebar-link-text">프로젝트별 인건비</span></a>
+        <a href="labor-dashboard.html" class="sidebar-link" id="nav-labor-dashboard"><span class="sidebar-link-icon" aria-hidden="true">📈</span><span class="sidebar-link-text">인건비 대시보드</span></a>
+      </nav>
+    </aside>
+
+
+    <main class="main-area">
+      <div class="container">
+        <header class="header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.75rem">
+          <h1 class="header-title">👥 인력 마스터</h1>
+          <div style="display:flex;gap:0.5rem">
+            <input type="file" id="excel-input" accept=".xlsx,.xls" hidden>
+            <button type="button" class="excel-upload-btn" id="excel-upload-btn" title="건강보험가입자명부 엑셀을 업로드하면 인력이 자동 등록됩니다">
+              <svg class="excel-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z" fill="#217346"/>
+                <path d="M14 2v6h6" fill="#1e5c38"/>
+                <path d="M8 11v8h8V11H8z" fill="rgba(255,255,255,0.2)"/>
+                <path d="M8 13h8M8 16h8M8 19h5" stroke="white" stroke-width="1" stroke-linecap="round" opacity="0.95"/>
+              </svg>
+              명부 업로드
+            </button>
+            <button type="button" class="ui-btn ui-btn--primary" id="person-add-btn" title="인력 한 명씩 직접 추가">+ 인력 추가</button>
+          </div>
+        </header>
+
+        <!-- 마이그레이션 경고 배너: 생년월일 미입력 인력이 있을 때만 표시 -->
+        <div class="migration-banner" id="migration-banner" hidden role="button" tabindex="0" aria-label="생년월일 미입력 인력 필터링">
+          <div class="migration-banner-icon">⚠️</div>
+          <div class="migration-banner-body" id="migration-banner-text">
+            <strong>생년월일 미입력 0명</strong> · 동명이인 구분을 위해 생년월일을 채워주세요.
+          </div>
+          <div class="migration-banner-arrow">→</div>
+        </div>
+
+        <!-- 상단 요약 카드 (4개) -->
+        <section class="projects-stats-grid" aria-label="인력 요약">
+          <div class="projects-stat-card projects-stat-card--narrow">
+            <div class="projects-stat-label">전체 인력</div>
+            <div class="projects-stat-value" id="stat-total">0</div>
+            <div class="projects-stat-sub-hint" id="stat-total-sub">재직 0 · 퇴직 0</div>
+          </div>
+          <div class="projects-stat-card projects-stat-card--narrow">
+            <div class="projects-stat-label">재직 인력</div>
+            <div class="projects-stat-value projects-stat--success" id="stat-active">0</div>
+            <div class="projects-stat-sub-hint" id="stat-active-sub">남 0 · 여 0</div>
+          </div>
+          <div class="projects-stat-card projects-stat-card--narrow">
+            <div class="projects-stat-label">청년 인력</div>
+            <div class="projects-stat-value" id="stat-youth" style="color:#7c3aed">0</div>
+            <div class="projects-stat-sub-hint">청년 필수 (재직)</div>
+          </div>
+          <div class="projects-stat-card projects-stat-card--narrow">
+            <div class="projects-stat-label">퇴직</div>
+            <div class="projects-stat-value" id="stat-exited" style="color:#6b7280">0</div>
+            <div class="projects-stat-sub-hint">퇴직 처리됨</div>
+          </div>
+        </section>
+
+        <!-- 검색 + 필터 행 -->
+        <div class="projects-actions-row">
+          <div class="projects-search-wrap" id="search-wrap">
+            <span class="projects-search-icon" aria-hidden="true">🔍</span>
+            <input type="search" id="person-search" class="projects-search-input"
+              placeholder="이름으로 검색" autocomplete="off"
+              aria-label="인력 검색">
+            <button type="button" class="projects-search-clear" id="search-clear" aria-label="검색어 지우기">×</button>
+          </div>
+          <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap">
+            <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.875rem;color:var(--text-secondary)">
+              상태:
+              <select id="filter-status" class="ui-select">
+                <option value="all">전체</option>
+                <option value="active" selected>재직</option>
+                <option value="exited">퇴직</option>
+                <option value="moonlight">겸직</option>
+              </select>
+            </label>
+            <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.875rem;color:var(--text-secondary)">
+              회사:
+              <select id="filter-company" class="ui-select">
+                <option value="all">전체</option>
+                <option value="식스티">식스티</option>
+                <option value="굿뉴스">굿뉴스</option>
+                <option value="패리티">패리티</option>
+                <option value="unset">미지정</option>
+              </select>
+            </label>
+            <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.875rem;color:var(--text-secondary)">
+              성별:
+              <select id="filter-gender" class="ui-select">
+                <option value="all">전체</option>
+                <option value="M">남</option>
+                <option value="F">여</option>
+                <option value="unknown">미입력</option>
+              </select>
+            </label>
+            <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.875rem;color:var(--text-secondary)">
+              연령대:
+              <select id="filter-age" class="ui-select">
+                <option value="all">전체</option>
+                <option value="20">20대</option>
+                <option value="30">30대</option>
+                <option value="40">40대</option>
+                <option value="50">50대+</option>
+                <option value="unknown">미입력</option>
+              </select>
+            </label>
+            <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.875rem;color:var(--text-secondary)">
+              <input type="checkbox" id="filter-youth" style="margin:0;cursor:pointer">
+              청년만 보기
+            </label>
+          </div>
+          <div class="projects-actions-spacer"></div>
+          <div class="projects-actions-buttons">
+            <span class="section-footnote" id="person-count-hint" style="font-size:0.85rem;color:var(--text-secondary)">0명</span>
+          </div>
+        </div>
+
+        <!-- 인력 테이블 -->
+        <div class="projects-table-wrap" id="persons-table-wrap">
+          <table class="projects-table" id="persons-table">
+            <thead>
+              <tr>
+                <th style="width:40px">No</th>
+                <th style="width:75px">회사</th>
+                <th>상태</th>
+                <th>이름</th>
+                <th style="width:50px">성별</th>
+                <th>주민번호</th>
+                <th style="width:55px">만나이</th>
+                <th>입사일</th>
+                <th>퇴사일</th>
+                <th class="col-num">월급</th>
+                <th>메모</th>
+                <th style="width:50px">수정</th>
+              </tr>
+            </thead>
+            <tbody id="persons-tbody"></tbody>
+          </table>
+        </div>
+
+        <!-- 빈 상태 안내 -->
+        <div id="persons-empty" style="display:none; background:#fff; border:1px dashed #e5e7eb; border-radius:1rem; padding:3rem 2rem; text-align:center; margin-top:1rem;">
+          <div style="font-size:3rem; margin-bottom:1rem;">👥</div>
+          <h2 style="font-size:1.15rem; color:#1e293b; margin-bottom:0.5rem;" id="persons-empty-title">아직 등록된 인력이 없어요</h2>
+          <p style="color:#64748b; font-size:0.9rem; line-height:1.6; max-width:480px; margin:0 auto 1.25rem;" id="persons-empty-desc">
+            오른쪽 위 <strong>"+ 인력 추가"</strong> 버튼으로 첫 인력을 등록해 보세요.<br>
+            등록된 인력은 프로젝트별 인건비 페이지에서 검색하여 추가할 수 있어요.
+          </p>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- ===== 회사 선택 모달 (명부 업로드 직전에 노출) ===== -->
+  <div id="company-select-modal" class="company-select-overlay" hidden role="dialog" aria-modal="true" aria-labelledby="company-select-title">
+    <div class="company-select-panel" role="document">
+      <div class="company-select-header">
+        <h2 class="company-select-title" id="company-select-title">어느 회사 명부인가요?</h2>
+        <button type="button" class="company-select-close" id="company-select-close" aria-label="닫기">×</button>
+      </div>
+      <div class="company-select-body">
+        <p class="company-select-desc">
+          업로드할 명부의 회사를 선택해 주세요. 명부의 모든 인력이 선택한 회사 소속으로 등록됩니다.
+        </p>
+        <div class="company-options">
+          <button type="button" class="company-option" data-company="식스티">
+            <span class="company-badge company-badge--sixty">식스티</span>
+            <span class="company-option-name">식스티헤르츠</span>
+            <span class="company-option-arrow">→</span>
+          </button>
+          <button type="button" class="company-option" data-company="굿뉴스">
+            <span class="company-badge company-badge--goodnews">굿뉴스</span>
+            <span class="company-option-name">굿뉴스에너지</span>
+            <span class="company-option-arrow">→</span>
+          </button>
+          <button type="button" class="company-option" data-company="패리티">
+            <span class="company-badge company-badge--parity">패리티</span>
+            <span class="company-option-name">패리티빌더즈</span>
+            <span class="company-option-arrow">→</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 인력 추가/수정 모달 (Step 2-2) ===== -->
+  <div id="person-modal" class="person-modal-overlay" hidden role="dialog" aria-modal="true" aria-labelledby="person-modal-title">
+    <div class="person-modal-panel" role="document">
+      <div class="person-modal-header">
+        <h2 class="person-modal-title" id="person-modal-title">인력 추가</h2>
+        <button type="button" class="person-modal-close" id="person-modal-close" aria-label="닫기">×</button>
+      </div>
+
+      <div class="person-modal-body">
+        <!-- 회사 (필수) -->
+        <div class="person-form-row">
+          <label class="person-form-label">
+            회사<span class="person-form-required">*</span>
+          </label>
+          <div class="gender-radio-group">
+            <label class="gender-radio">
+              <input type="radio" name="form-company" value="식스티" id="form-company-sixty">
+              <span>식스티</span>
+            </label>
+            <label class="gender-radio">
+              <input type="radio" name="form-company" value="굿뉴스" id="form-company-goodnews">
+              <span>굿뉴스</span>
+            </label>
+            <label class="gender-radio">
+              <input type="radio" name="form-company" value="패리티" id="form-company-parity">
+              <span>패리티</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- 이름 (필수) -->
+        <div class="person-form-row">
+          <label class="person-form-label" for="form-name">
+            이름<span class="person-form-required">*</span>
+          </label>
+          <input type="text" id="form-name" class="person-form-input" placeholder="예: 김지혜" autocomplete="off" maxlength="50">
+        </div>
+
+        <!-- 생년월일 (필수) -->
+        <div class="person-form-row">
+          <label class="person-form-label" for="form-birth-y">
+            생년월일<span class="person-form-required">*</span>
+          </label>
+          <div class="date-parts" id="form-birth-parts">
+            <input type="text" id="form-birth-y" class="date-input-y" inputmode="numeric" maxlength="4" placeholder="YYYY" autocomplete="off">
+            <span class="date-sep">-</span>
+            <input type="text" id="form-birth-m" class="date-input-m" inputmode="numeric" maxlength="2" placeholder="MM" autocomplete="off">
+            <span class="date-sep">-</span>
+            <input type="text" id="form-birth-d" class="date-input-d" inputmode="numeric" maxlength="2" placeholder="DD" autocomplete="off">
+          </div>
+          <div class="person-form-hint">동명이인 구분을 위해 필수입니다</div>
+        </div>
+
+        <!-- 주민번호 뒷자리 (선택, 명부 업로드 시 자동) -->
+        <div class="person-form-row">
+          <label class="person-form-label" for="form-ssn-tail">주민번호 뒷자리</label>
+          <div style="display:flex;align-items:center;gap:0.5rem">
+            <span id="form-ssn-front" style="font-size:0.9rem;color:var(--text-secondary);min-width:75px">------</span>
+            <span class="date-sep">-</span>
+            <input type="text" id="form-ssn-tail" class="person-form-input"
+              inputmode="numeric" maxlength="7" placeholder="2****** 또는 2"
+              style="max-width:140px;letter-spacing:0.05em" autocomplete="off">
+          </div>
+          <div class="person-form-hint" id="ssn-tail-hint">첫 숫자만 입력해도 OK (성별 자동 판정). 명부 업로드 시 자동으로 채워집니다.</div>
+        </div>
+
+        <!-- 성별 (선택) -->
+        <div class="person-form-row">
+          <label class="person-form-label">성별</label>
+          <div class="gender-radio-group">
+            <label class="gender-radio">
+              <input type="radio" name="form-gender" value="" id="form-gender-none">
+              <span>선택 안 함</span>
+            </label>
+            <label class="gender-radio">
+              <input type="radio" name="form-gender" value="M" id="form-gender-m">
+              <span>남성</span>
+            </label>
+            <label class="gender-radio">
+              <input type="radio" name="form-gender" value="F" id="form-gender-f">
+              <span>여성</span>
+            </label>
+          </div>
+          <div class="person-form-hint">명부 업로드 시 주민번호 뒷자리로 자동 입력됩니다</div>
+        </div>
+
+        <!-- 입사일 (선택) -->
+        <div class="person-form-row">
+          <label class="person-form-label" for="form-hire-y">입사일</label>
+          <div class="date-parts" id="form-hire-parts">
+            <input type="text" id="form-hire-y" class="date-input-y" inputmode="numeric" maxlength="4" placeholder="YYYY" autocomplete="off">
+            <span class="date-sep">-</span>
+            <input type="text" id="form-hire-m" class="date-input-m" inputmode="numeric" maxlength="2" placeholder="MM" autocomplete="off">
+            <span class="date-sep">-</span>
+            <input type="text" id="form-hire-d" class="date-input-d" inputmode="numeric" maxlength="2" placeholder="DD" autocomplete="off">
+          </div>
+          <div class="person-form-hint">신규/기존 판정 기준이 됩니다 (프로젝트별로 자동 계산)</div>
+        </div>
+
+        <!-- 청년 필수 인력 (체크박스) -->
+        <div class="person-form-row person-form-row--checkbox">
+          <label>
+            <input type="checkbox" id="form-is-youth">
+            청년 필수 인력
+          </label>
+        </div>
+
+        <!-- 연봉 (선택) -->
+        <div class="person-form-row">
+          <label class="person-form-label" for="form-annual-salary">연봉 (원)</label>
+          <input type="number" id="form-annual-salary" class="person-form-input" placeholder="예: 54000000" min="0" step="100000">
+          <div class="person-form-hint" id="annual-salary-hint">비워두면 인건비 자동 계산에서 제외됩니다 (나중에 입력해도 OK)</div>
+        </div>
+
+        <!-- 퇴사일 (수정 모드에서만 노출) -->
+        <div class="person-form-row" id="form-exit-date-row" hidden>
+          <label class="person-form-label" for="form-exit-y">퇴사일</label>
+          <div class="date-parts" id="form-exit-parts">
+            <input type="text" id="form-exit-y" class="date-input-y" inputmode="numeric" maxlength="4" placeholder="YYYY" autocomplete="off">
+            <span class="date-sep">-</span>
+            <input type="text" id="form-exit-m" class="date-input-m" inputmode="numeric" maxlength="2" placeholder="MM" autocomplete="off">
+            <span class="date-sep">-</span>
+            <input type="text" id="form-exit-d" class="date-input-d" inputmode="numeric" maxlength="2" placeholder="DD" autocomplete="off">
+          </div>
+          <div class="person-form-hint">퇴사일을 입력하면 자동으로 "퇴직" 상태가 됩니다. 비우면 "재직" 상태로 돌아갑니다.</div>
+        </div>
+
+        <!-- 메모 (선택) -->
+        <div class="person-form-row">
+          <label class="person-form-label" for="form-memo">메모</label>
+          <textarea id="form-memo" class="person-form-textarea" placeholder="자유 입력 (선택)" maxlength="200"></textarea>
+        </div>
+
+        <!-- 폼 에러 -->
+        <div class="person-form-error" id="form-error" hidden></div>
+      </div>
+
+      <div class="person-modal-footer">
+        <!-- 삭제 버튼: 수정 모드일 때만 노출 -->
+        <button type="button" class="person-modal-delete-btn" id="person-modal-delete" hidden>삭제</button>
+        <div class="person-modal-footer-right">
+          <button type="button" class="ui-btn ui-btn--ghost" id="person-modal-cancel">취소</button>
+          <button type="button" class="ui-btn ui-btn--primary" id="person-modal-save">저장</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+    <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-auth-compat.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="firebase-config.example.js"></script>
+  <script src="firebase-config.js"></script>
+  <script src="firebase.js"></script>
+  <script src="auth-guard.js"></script>
+  <script src="firestore-service.js"></script>
+  <script src="persons-master.js"></script>
+  <script src="floating-buttons.js"></script>
+</body>
+</html>

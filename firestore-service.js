@@ -15,13 +15,15 @@
   var PARTICIPATION_STORAGE_KEY = 'hr-participation-data-v2';
   var CALENDAR_STORAGE_KEY = 'hr-calendar-events';
   var PROJECTS_STORAGE_KEY = 'rnd-projects-data';
+  var PERSONS_STORAGE_KEY = 'rnd-persons-data';
 
   var COLL = {
     hr: 'hrPersonnel',
     payroll: 'payroll',
     participation: 'participation',
     calendar: 'calendarEvents',
-    projects: 'projects'
+    projects: 'projects',
+    persons: 'persons'
   };
   var DOC_ID = 'data';
 
@@ -30,12 +32,14 @@
   var _participationState = null;
   var _calendarEvents = [];
   var _projectsData = [];
+  var _personsData = [];
 
   var _hrCallbacks = [];
   var _payrollCallbacks = [];
   var _participationCallbacks = [];
   var _calendarCallbacks = [];
   var _projectsCallbacks = [];
+  var _personsCallbacks = [];
 
   function safeParse(str, fallback) {
     try {
@@ -70,6 +74,11 @@
   function getProjectsData() {
     if (configured) return _projectsData;
     return safeParse(localStorage.getItem(PROJECTS_STORAGE_KEY), []);
+  }
+
+  function getPersonsData() {
+    if (configured) return _personsData;
+    return safeParse(localStorage.getItem(PERSONS_STORAGE_KEY), []);
   }
 
   function normalizePayrollState(state) {
@@ -205,6 +214,139 @@
     } else {
       try { localStorage.setItem(CALENDAR_STORAGE_KEY, JSON.stringify(list)); } catch (e) { console.error(e); }
     }
+  }
+
+  // ====================================================================
+  // 인력 마스터 (persons 컬렉션) — 2026-05-25 추가
+  // 다른 컬렉션과 동일한 패턴: { items: [...] } 형태로 단일 문서에 저장
+  //
+  // persons 항목 구조:
+  //   { id, name, hireDate, exitDate, isYouth, monthlySalary,
+  //     memo, status, createdAt, updatedAt }
+  //
+  // - 신규/기존 판정은 저장 안 함 (프로젝트의 newHireCriteria + hireDate로 화면에서 자동 계산)
+  // - 월급(monthlySalary)은 선택 입력
+  // - 청년 필수 인력(isYouth)은 수동 체크박스
+  // ====================================================================
+
+  function subscribePersons(callback) {
+    if (typeof callback !== 'function') return;
+    _personsCallbacks.push(callback);
+    if (configured) {
+      var ref = db.collection(COLL.persons).doc(DOC_ID);
+      ref.onSnapshot(
+        function (snap) {
+          var data = snap.exists && snap.data() && snap.data().items ? snap.data().items : [];
+          _personsData = Array.isArray(data) ? data : [];
+          _personsCallbacks.forEach(function (cb) {
+            try { cb(_personsData); } catch (e) { console.error(e); }
+          });
+        },
+        function (err) { console.error('Firestore Persons snapshot:', err); }
+      );
+    } else {
+      try { callback(getPersonsData()); } catch (e) { console.error(e); }
+    }
+  }
+
+  /**
+   * 인력 마스터 (persons) 전체 저장 — 다른 컬렉션과 동일한 패턴
+   * 전체 배열을 단일 문서에 덮어쓰기
+   */
+  function savePersons(data) {
+    var items = Array.isArray(data) ? data : [];
+    if (configured) {
+      return db.collection(COLL.persons).doc(DOC_ID).set({ items: items })
+        .catch(function (e) {
+          console.error('Firestore Persons 저장 실패:', e);
+          throw e;
+        });
+    } else {
+      try {
+        localStorage.setItem(PERSONS_STORAGE_KEY, JSON.stringify(items));
+        return Promise.resolve();
+      } catch (e) {
+        console.error(e);
+        return Promise.reject(e);
+      }
+    }
+  }
+
+  // --------------------------------------------------------------------
+  // persons 편의 함수 (add / update / delete)
+  // 내부적으로는 전체 배열을 다시 savePersons 하는 패턴.
+  // 항상 현재 메모리(_personsData) 또는 LocalStorage의 최신 값을 기준으로 동작.
+  // --------------------------------------------------------------------
+
+  function makePersonId() {
+    // p_xxxxxxxx 형태의 짧은 ID (시간 + 랜덤)
+    var t = Date.now().toString(36);
+    var r = Math.random().toString(36).slice(2, 6);
+    return 'p_' + t + r;
+  }
+
+  function getCurrentPersons() {
+    // 메모리/LocalStorage 중 현재 활성 데이터를 반환 (저장 전 최신 상태 보장용)
+    return configured
+      ? (Array.isArray(_personsData) ? _personsData.slice() : [])
+      : (safeParse(localStorage.getItem(PERSONS_STORAGE_KEY), []) || []);
+  }
+
+  /**
+   * 인력 추가
+   * @param {Object} person - id, createdAt, updatedAt은 자동 채워짐
+   * @returns {Promise<Object>} 추가된 person (id 포함)
+   */
+  function addPerson(person) {
+    var p = Object.assign({}, person || {});
+    if (!p.id) p.id = makePersonId();
+    var now = new Date().toISOString();
+    if (!p.createdAt) p.createdAt = now;
+    p.updatedAt = now;
+    if (!p.status) p.status = 'active';
+
+    var list = getCurrentPersons();
+    list.push(p);
+    return savePersons(list).then(function () { return p; });
+  }
+
+  /**
+   * 인력 수정
+   * @param {string} id - 인력 ID
+   * @param {Object} updates - 변경할 필드만 (id, createdAt은 무시됨)
+   * @returns {Promise<Object|null>} 수정된 person, 없으면 null
+   */
+  function updatePerson(id, updates) {
+    if (!id) return Promise.reject(new Error('id is required'));
+    var list = getCurrentPersons();
+    var idx = -1;
+    for (var i = 0; i < list.length; i++) {
+      if (list[i] && list[i].id === id) { idx = i; break; }
+    }
+    if (idx < 0) return Promise.resolve(null);
+
+    var merged = Object.assign({}, list[idx], updates || {});
+    // id와 createdAt은 보호
+    merged.id = list[idx].id;
+    merged.createdAt = list[idx].createdAt || merged.createdAt;
+    merged.updatedAt = new Date().toISOString();
+
+    list[idx] = merged;
+    return savePersons(list).then(function () { return merged; });
+  }
+
+  /**
+   * 인력 삭제 (배열에서 제거)
+   * 주의: 인건비 데이터에서 참조 중인 인력은 삭제 대신 status='exited'로 두는 것을 권장.
+   * @param {string} id - 인력 ID
+   * @returns {Promise<boolean>} 삭제 성공 여부
+   */
+  function deletePerson(id) {
+    if (!id) return Promise.reject(new Error('id is required'));
+    var list = getCurrentPersons();
+    var next = list.filter(function (p) { return p && p.id !== id; });
+    if (next.length === list.length) return Promise.resolve(false);  // 없었음
+    return savePersons(next).then(function () { return true; });
   }
 
   /**
@@ -425,6 +567,13 @@
     getProjectsData: getProjectsData,
     subscribeProjects: subscribeProjects,
     saveProjects: saveProjects,
+    // persons (인력 마스터)
+    getPersonsData: getPersonsData,
+    subscribePersons: subscribePersons,
+    savePersons: savePersons,
+    addPerson: addPerson,
+    updatePerson: updatePerson,
+    deletePerson: deletePerson,
     migrateFromLocalStorage: migrateFromLocalStorage,
     uploadFromProjectJson: uploadFromProjectJson,
     // 백업 관리 (필요 시 외부에서 호출)
