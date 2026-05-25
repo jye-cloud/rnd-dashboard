@@ -1292,7 +1292,17 @@
     var isRd = document.getElementById('project-isRd');
     if (isRd) isRd.checked = !!(item.isRd || item.rd || item['R&D 여부']);
 
+    var laborManaged = document.getElementById('project-laborManaged');
+    if (laborManaged) {
+      laborManaged.checked = !!item.laborManaged;
+      laborManaged.dispatchEvent(new Event('change')); // 환급 여부 wrap 토글
+    }
+    var laborRefundVal = item.laborRefund === false ? 'false' : 'true';
+    var laborRefundRadio = document.querySelector('input[name="project-laborRefund"][value="' + laborRefundVal + '"]');
+    if (laborRefundRadio) laborRefundRadio.checked = true;
+
     setRadio('project-division1', item.division1 || item['구분1']);
+    setRadio('project-company',   item.company);
     // 분류가 결정된 후 헤더 갱신 (모드별)
     updateBudgetTableHeader();
 
@@ -1412,6 +1422,9 @@
     var manager     = (document.getElementById('project-manager')     || {}).value || '';
     var status      = (document.getElementById('project-status')      || {}).value || '';
     var isRd        = (document.getElementById('project-isRd')        || {}).checked || false;
+    var laborManaged = (document.getElementById('project-laborManaged') || {}).checked || false;
+    var laborRefundEl = document.querySelector('input[name="project-laborRefund"]:checked');
+    var laborRefund  = laborRefundEl ? laborRefundEl.value !== 'false' : true;
     var submitDate  = (document.getElementById('project-submit-date') || {}).value || '';
     var unsubReason = (document.getElementById('project-unsubmitted-reason') || {}).value || '';
     var charge      = (document.getElementById('project-charge')      || {}).value || '';
@@ -1423,6 +1436,8 @@
     if (submitSystem !== '시스템' && submitSystem !== '메일' && submitSystem !== '직접 입력') submitSystemDetail = '';
     var div1El = document.querySelector('input[name="project-division1"]:checked');
     var division1 = div1El ? div1El.value : '';
+    var companyEl = document.querySelector('input[name="project-company"]:checked');
+    var company = companyEl ? companyEl.value : '';
     var pTypeEl = document.querySelector('input[name="participation-type"]:checked');
     var participationType = pTypeEl ? pTypeEl.value : '단독';
     var consortiumRole = '';
@@ -1480,7 +1495,10 @@
       consortiumPartners: consortiumPartners,
       consortiumTotalBudget: consortiumTotalBudget,
       isRd: isRd,
+      laborManaged: laborManaged,
+      laborRefund: laborRefund,
       division1: division1,
+      company: company,
       status: status,
       submitDate: submitDate,
       submitSystem: submitSystem,
@@ -1503,6 +1521,13 @@
       alert('유형을 선택해 주세요.');
       var radioFirst = document.querySelector('input[name="project-division1"]');
       if (radioFirst) radioFirst.focus();
+      return false;
+    }
+    var companyEl = document.querySelector('input[name="project-company"]:checked');
+    if (!companyEl) {
+      alert('회사를 선택해 주세요.');
+      var companyFirst = document.querySelector('input[name="project-company"]');
+      if (companyFirst) companyFirst.focus();
       return false;
     }
     if (!submitDate.trim()) {

@@ -9,6 +9,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>[R&DM] 과제 상세</title>
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="sidebar.css">
   <style>
     html:not(.auth-bypass) .dashboard { visibility: hidden !important; }
     html.auth-bypass .dashboard { visibility: visible; }
@@ -970,6 +971,16 @@
               </div>
             </div>
 
+            <!-- 회사 (단독 행) -->
+            <div class="detail-form-group" style="margin-bottom:1.25rem;">
+              <label class="detail-form-label">회사 <span class="required">*</span></label>
+              <div class="detail-radio-group" style="display:flex; gap:1.5rem; flex-wrap:wrap;">
+                <label><input type="radio" name="project-company" value="식스티"> 식스티</label>
+                <label><input type="radio" name="project-company" value="굿뉴스"> 굿뉴스</label>
+                <label><input type="radio" name="project-company" value="패리티"> 패리티</label>
+              </div>
+            </div>
+
             <div class="detail-form-grid">
               <div class="detail-form-group">
                 <label class="detail-form-label" for="project-keywords">별칭(키워드)</label>
@@ -1034,6 +1045,18 @@
                 <label class="detail-form-label">과제 속성</label>
                 <div class="detail-checkbox-group">
                   <label><input type="checkbox" id="project-isRd"> R&amp;D 여부 (체크 시 목록에 [R&amp;D] 뱃지 표시)</label>
+                  <label style="margin-top:0.4rem;">
+                    <input type="checkbox" id="project-laborManaged">
+                    인건비 관리 대상
+                  </label>
+                </div>
+                <!-- 인건비 관리 대상 체크 시: 환급 여부 바로 아래 표시 -->
+                <div id="project-labor-refund-wrap" style="margin-top:0.6rem; display:none;">
+                  <label class="detail-form-label" style="margin-bottom:0.3rem;">인건비 환급 여부</label>
+                  <div class="detail-radio-group">
+                    <label><input type="radio" name="project-laborRefund" value="true" checked> 환급됨</label>
+                    <label><input type="radio" name="project-laborRefund" value="false"> 환급 없음 (참여율만 관리)</label>
+                  </div>
                 </div>
               </div>
               <div class="detail-form-group">
@@ -1291,7 +1314,37 @@
   <script src="firebase.js"></script>
   <script src="auth-guard.js"></script>
   <script src="firestore-service.js"></script>
+  <script src="sidebar.js"></script>
   <script src="project-detail.js"></script>
   <script src="floating-buttons.js"></script>
+  <script>
+    // ── 인건비 관리 대상 체크박스 → 환급 여부 토글 ──────────────
+    (function () {
+      var chk  = document.getElementById('project-laborManaged');
+      var wrap = document.getElementById('project-labor-refund-wrap');
+      if (!chk || !wrap) return;
+
+      function toggle() {
+        wrap.style.display = chk.checked ? 'block' : 'none';
+      }
+      chk.addEventListener('change', toggle);
+      toggle(); // 초기 상태 반영
+
+      // ── project-detail.js의 저장/불러오기 훅 ──────────────────
+      // project-detail.js가 window.projectDetailHooks를 지원하면 자동 연동.
+      // 지원하지 않으면 아래 패턴을 project-detail.js에 직접 추가하세요.
+      //
+      // [저장 시 추가할 코드 - project-detail.js formToData 함수 안]
+      //   laborManaged: document.getElementById('project-laborManaged').checked,
+      //   laborRefund:  document.querySelector('[name="project-laborRefund"]:checked')?.value === 'true',
+      //
+      // [불러올 시 추가할 코드 - project-detail.js dataToForm/fillForm 함수 안]
+      //   document.getElementById('project-laborManaged').checked = !!data.laborManaged;
+      //   document.getElementById('project-laborManaged').dispatchEvent(new Event('change'));
+      //   var refundVal = data.laborRefund === false ? 'false' : 'true';
+      //   var refundRadio = document.querySelector('[name="project-laborRefund"][value="' + refundVal + '"]');
+      //   if (refundRadio) refundRadio.checked = true;
+    })();
+  </script>
 </body>
 </html>

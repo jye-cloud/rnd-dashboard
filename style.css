@@ -3874,3 +3874,119 @@ body:has(#page-calendar:not([hidden])) {
 #page-calendar .calendar-wrap {
   overflow-x: initial !important;
 }
+
+/* ============================================================
+   회사 구분 (식스티 / 굿뉴스 / 패리티) — 전역 공통
+   ─────────────────────────────────────────────
+   - .company-badge   : 작은 뱃지 (테이블 셀, 인라인 표시용)
+   - .company-chip    : 큰 필터 칩 (페이지 상단 필터 바)
+   색상 컨벤션:
+     식스티 → 네이비 계열
+     굿뉴스 → 오렌지 계열
+     패리티 → 딥그린 계열
+   ============================================================ */
+
+/* ===== 회사 뱃지 (테이블/인라인) ===== */
+.company-badge {
+  display: inline-block;
+  padding: 0.2rem 0.55rem;
+  border-radius: 0.4rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.company-badge--sixty {     /* 식스티 — 네이비 */
+  background: #e0e7ff;
+  color: #1e3a8a;
+}
+.company-badge--goodnews {  /* 굿뉴스 — 오렌지 */
+  background: #ffedd5;
+  color: #9a3412;
+}
+.company-badge--parity {    /* 패리티 — 딥그린 */
+  background: #d1fae5;
+  color: #065f46;
+}
+.company-badge--unset {     /* 미지정 */
+  background: #f1f5f9;
+  color: #94a3b8;
+}
+
+/* ===== 회사 필터 칩 (페이지 상단 필터 바) =====
+   사용법:
+     <div class="company-chips">
+       <button class="company-chip is-active" data-company="">전체</button>
+       <button class="company-chip" data-company="식스티">식스티</button>
+       <button class="company-chip" data-company="굿뉴스">굿뉴스</button>
+       <button class="company-chip" data-company="패리티">패리티</button>
+     </div>
+*/
+.company-chips {
+  display: inline-flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.company-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.4rem 0.85rem;
+  border-radius: 999px;
+  border: 1.5px solid transparent;
+  background: #f1f5f9;
+  color: #64748b;
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  font-family: inherit;
+  white-space: nowrap;
+}
+.company-chip:hover {
+  background: #e2e8f0;
+  color: #334155;
+}
+.company-chip.is-active {
+  background: #fff;
+  border-color: #cbd5e1;
+  color: #1e293b;
+}
+
+/* 회사별 활성 색상 — 식스티 (네이비) */
+.company-chip[data-company="식스티"].is-active {
+  background: #e0e7ff;
+  border-color: #1e3a8a;
+  color: #1e3a8a;
+}
+/* 회사별 활성 색상 — 굿뉴스 (오렌지) */
+.company-chip[data-company="굿뉴스"].is-active {
+  background: #ffedd5;
+  border-color: #9a3412;
+  color: #9a3412;
+}
+/* 회사별 활성 색상 — 패리티 (딥그린) */
+.company-chip[data-company="패리티"].is-active {
+  background: #d1fae5;
+  border-color: #065f46;
+  color: #065f46;
+}
+
+/* 칩 옆에 붙는 작은 카운트 (있을 때) */
+.company-chip-count {
+  display: inline-block;
+  margin-left: 0.15rem;
+  padding: 0 0.4rem;
+  background: rgba(15, 23, 42, 0.08);
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  min-width: 1.2rem;
+  text-align: center;
+}
+.company-chip.is-active .company-chip-count {
+  background: rgba(255, 255, 255, 0.55);
+}

@@ -1,0 +1,821 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>[R&DM] 프로젝트별 인건비 예산</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="sidebar.css">
+  <style>
+    /* ========== 인증 게이트 (auth-guard.js 와 함께 동작) ========== */
+    html:not(.auth-bypass) .dashboard { visibility: hidden !important; }
+    html.auth-bypass .dashboard { visibility: visible; }
+    .auth-overlay {
+      position: fixed !important; top: 0 !important; left: 0 !important; right: 0 !important; bottom: 0 !important;
+      width: 100% !important; height: 100% !important; z-index: 2147483647 !important;
+      display: flex !important; align-items: center; justify-content: center;
+      background: linear-gradient(135deg, #f8fafc 0%, #eff6ff 50%, #e0f2fe 100%);
+      visibility: visible !important; opacity: 1 !important;
+    }
+    html.auth-bypass .auth-overlay { display: none !important; }
+    .auth-modal {
+      width: 90%; max-width: 400px; background: #fff; border-radius: 1rem;
+      box-shadow: 0 25px 50px -12px rgb(15 23 42 / 0.25); padding: 2rem; text-align: center;
+    }
+    .auth-modal-logo { font-size: 1.5rem; font-weight: 700; color: #2563eb; margin-bottom: 0.5rem; }
+    .auth-modal-title { font-size: 1rem; color: #64748b; margin-bottom: 1.5rem; line-height: 1.5; }
+    .auth-modal .auth-error { margin-top: 0.75rem; font-size: 0.875rem; color: #ef4444; display: none; }
+    .auth-modal .auth-error.visible { display: block; }
+    body { display: none !important; }
+    body.body-ready { display: block !important; }
+    /* ========== 인증 게이트 끝 ========== */
+
+    /* ========== 레이아웃 ========== */
+    .container { width: 1400px; margin: 0 auto; }
+
+    /* ========== 컨트롤바 ========== */
+    .history-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      flex-wrap: wrap;
+      margin-bottom: 1rem;
+    }
+    .history-toolbar-label {
+      font-size: 0.875rem;
+      color: var(--text-secondary);
+      font-weight: 500;
+    }
+    .history-toolbar select {
+      padding: 0.5rem 0.75rem;
+      border-radius: 0.5rem;
+      border: 1px solid var(--border-color);
+      background: var(--card-bg);
+      font-size: 0.9rem;
+      font-family: inherit;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .history-toolbar select:focus {
+      outline: none;
+      border-color: var(--primary-color);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+    }
+
+    /* 오른쪽 액션 버튼 영역 */
+    .projects-actions-buttons { display: flex; gap: 0.5rem; align-items: center; }
+
+    /* ui-btn */
+    .ui-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.5rem 1rem;
+      border-radius: 0.5rem;
+      font-size: 0.875rem;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      border: 1px solid var(--border-color);
+      background: var(--card-bg);
+      color: var(--text-secondary);
+      transition: all 0.15s ease;
+      white-space: nowrap;
+    }
+    .ui-btn:hover { background: #f1f5f9; border-color: #cbd5e1; color: var(--text-primary); }
+    .ui-btn--primary { background: var(--primary-color, #2563eb); border-color: var(--primary-color, #2563eb); color: #fff; }
+    .ui-btn--primary:hover { background: #1d4ed8; color: #fff; }
+    .ui-btn--success { background: #059669; border-color: #059669; color: #fff; }
+    .ui-btn--success:hover { background: #047857; color: #fff; }
+    .ui-btn--warning { background: #f59e0b; border-color: #f59e0b; color: #fff; }
+    .ui-btn--warning:hover { background: #d97706; color: #fff; }
+
+    /* ========== 연차 탭 (history-tab 패턴) ========== */
+    .pb-year-tabs {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+      flex-wrap: wrap;
+    }
+    .pb-year-tab {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.6rem 1.1rem;
+      background: var(--card-bg, #fff);
+      border: 1.5px solid #e5e7eb;
+      border-radius: 0.75rem;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      font-family: inherit;
+      font-size: 0.9rem;
+      color: #475569;
+    }
+    .pb-year-tab:hover { border-color: #cbd5e1; background: #f9fafb; }
+    .pb-year-tab.is-active {
+      background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+      border-color: #2563eb;
+      border-width: 2px;
+      padding: calc(0.6rem - 0.5px) calc(1.1rem - 0.5px);
+      color: #1d4ed8;
+      font-weight: 700;
+      box-shadow: 0 2px 8px rgba(37, 99, 235, 0.15);
+    }
+    .pb-year-tab-period {
+      font-size: 0.74rem;
+      color: #94a3b8;
+    }
+    .pb-year-tab.is-active .pb-year-tab-period { color: #2563eb; }
+
+    /* ========== 제목 박스 (인건비_1차년도 (26.04~26.12)_9개월) ========== */
+    .pb-title-box {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 0.75rem 0.75rem 0 0;
+      padding: 0.75rem 1.25rem;
+      border-bottom: none;
+    }
+    .pb-title-text {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: #1e293b;
+      letter-spacing: -0.01em;
+    }
+    .pb-title-note {
+      font-size: 0.78rem;
+      color: #94a3b8;
+    }
+
+    /* ========== 테이블 래퍼 ========== */
+    .pb-table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--border-color, #e5e7eb);
+      border-radius: 0 0 0.75rem 0.75rem;
+      box-shadow: var(--shadow-sm, 0 1px 3px rgba(0,0,0,0.04));
+      background: var(--card-bg, #fff);
+    }
+
+    /* ========== 메인 테이블 ========== */
+    .pb-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.82rem;
+      table-layout: fixed;
+    }
+    /* 컬럼 너비 — 스프레드시트 그대로 */
+    .pb-table colgroup col.col-type    { width: 70px; }
+    .pb-table colgroup col.col-pay     { width: 70px; }
+    .pb-table colgroup col.col-name    { width: 90px; }
+    .pb-table colgroup col.col-role    { width: 130px; }
+    .pb-table colgroup col.col-3r5g    { width: 80px; }
+    .pb-table colgroup col.col-pos     { width: 80px; }
+    .pb-table colgroup col.col-salary  { width: 100px; }
+    .pb-table colgroup col.col-actual  { width: 100px; }
+    .pb-table colgroup col.col-rate    { width: 70px; }
+    .pb-table colgroup col.col-months  { width: 70px; }
+    .pb-table colgroup col.col-total   { width: 100px; }
+    .pb-table colgroup col.col-cash    { width: 100px; }
+    .pb-table colgroup col.col-inkind  { width: 100px; }
+    .pb-table colgroup col.col-action  { width: 40px; }
+
+    /* 헤더 — 회색 톤 통일 (project-labor 와 동일) */
+    .pb-table thead th {
+      background: #f1f5f9;
+      color: #475569;
+      text-align: center;
+      padding: 0.6rem 0.5rem;
+      font-size: 0.8rem;
+      font-weight: 600;
+      border-right: 1px solid #e2e8f0;
+      border-bottom: 2px solid #e2e8f0;
+      white-space: nowrap;
+    }
+    .pb-table thead th:last-child { border-right: none; }
+    /* 강조 컬럼 (급여총액, 실지급액, 참여율, 참여개월) — 파란 배경 */
+    .pb-table thead th.th-input {
+      background: #dbeafe;
+      color: #1e40af;
+    }
+    /* 강조 컬럼 (실지급액) — 노란 배경 */
+    .pb-table thead th.th-input-yellow {
+      background: #fef9c3;
+      color: #854d0e;
+    }
+
+    /* tbody 셀 기본 */
+    .pb-table tbody td {
+      border-bottom: 1px solid #f1f5f9;
+      border-right: 1px solid #f1f5f9;
+      padding: 0;
+      vertical-align: middle;
+      background: #fff;
+    }
+    .pb-table tbody td:last-child { border-right: none; }
+    .pb-table tbody tr:last-child td { border-bottom: none; }
+
+    /* 셀렉트 컬럼 (기존/신규, 현금/현물) */
+    .pb-cell-select {
+      width: 100%; height: 100%; border: none; background: transparent;
+      text-align: center; font-size: 0.82rem; font-family: inherit;
+      color: var(--text-primary, #1e293b);
+      padding: 0.55rem 0.5rem;
+      cursor: pointer;
+      appearance: none;
+      -webkit-appearance: none;
+      -moz-appearance: none;
+    }
+    .pb-cell-select:focus { outline: none; background: #eff6ff; }
+    .pb-cell-select:hover:not(:focus) { background: #f8fafc; }
+
+    /* 텍스트 입력 셀 */
+    .pb-cell-text {
+      width: 100%; height: 100%; border: none; background: transparent;
+      text-align: center; font-size: 0.82rem; font-family: inherit;
+      color: var(--text-primary, #1e293b);
+      padding: 0.55rem 0.5rem;
+      box-sizing: border-box;
+    }
+    .pb-cell-text:focus { outline: none; background: #eff6ff; }
+    .pb-cell-text:hover:not(:focus) { background: #f8fafc; }
+
+    /* 숫자 입력 셀 (우측 정렬, tabular-nums) */
+    .pb-cell-number {
+      width: 100%; height: 100%; border: none; background: transparent;
+      text-align: right; font-size: 0.82rem; font-family: inherit;
+      color: var(--text-primary, #1e293b);
+      padding: 0.55rem 0.5rem;
+      font-variant-numeric: tabular-nums;
+      box-sizing: border-box;
+    }
+    .pb-cell-number:focus { outline: none; background: #eff6ff; }
+    .pb-cell-number:hover:not(:focus) { background: #f8fafc; }
+
+    /* readonly 계산 셀 */
+    .pb-cell-readonly {
+      width: 100%;
+      padding: 0.55rem 0.5rem;
+      text-align: right;
+      font-size: 0.82rem;
+      color: var(--text-secondary, #64748b);
+      font-variant-numeric: tabular-nums;
+      background: #fafafa;
+    }
+
+    /* 인풋 강조 컬럼 배경 (급여총액 등) */
+    .pb-table tbody td.td-input { background: #eff6ff; }
+    .pb-table tbody td.td-input-yellow { background: #fefce8; }
+
+    /* 행 종류별 색상 */
+    .pb-row-normal td { background: #fff; }
+    .pb-row-youth-req td { background: #fff7ed; }            /* 청년 필수 — 주황 톤 */
+    .pb-row-youth-req td.td-input { background: #fed7aa; }
+    .pb-row-youth-req td.td-input-yellow { background: #fde68a; }
+    .pb-row-youth-add td { background: #f8fafc; }            /* 청년 추가 — 회색 톤 */
+    .pb-row-youth-add td.td-input { background: #e0e7ff; }
+    .pb-row-youth-add td.td-input-yellow { background: #fef3c7; }
+
+    /* 행 액션 (삭제 버튼) */
+    .pb-row-action {
+      display: flex; align-items: center; justify-content: center;
+    }
+    .pb-row-del-btn {
+      background: transparent; border: none; font-size: 1rem;
+      color: #cbd5e1; cursor: pointer; padding: 0.3rem 0.5rem;
+      border-radius: 0.3rem; line-height: 1;
+      transition: all 0.15s;
+    }
+    .pb-row-del-btn:hover { color: #ef4444; background: #fef2f2; }
+
+    /* 추가 행 (+ 일반 인력 / + 청년 필수 / + 청년 추가) */
+    .pb-row-add td {
+      padding: 0.5rem 0.65rem;
+      border-top: 1px dashed #e2e8f0;
+      background: #fafafa;
+    }
+    .pb-row-add-buttons {
+      display: flex; gap: 0.5rem; align-items: center;
+    }
+    .pb-add-btn {
+      display: inline-flex; align-items: center; gap: 0.35rem;
+      background: transparent; border: 1px dashed #cbd5e1;
+      border-radius: 0.4rem; padding: 0.35rem 0.75rem;
+      font-size: 0.78rem; color: var(--text-secondary, #64748b);
+      cursor: pointer; font-family: inherit; transition: all 0.15s;
+    }
+    .pb-add-btn:hover { border-color: var(--primary-color, #2563eb); color: var(--primary-color, #2563eb); background: #eff6ff; }
+    .pb-add-btn--youth { color: #b45309; border-color: #fdba74; }
+    .pb-add-btn--youth:hover { background: #fff7ed; border-color: #f97316; color: #c2410c; }
+    .pb-add-btn--youth-add { color: #475569; }
+
+    /* 합계 행 (직접비/인건비) */
+    .pb-table tfoot tr.pb-tfoot-sum td {
+      background: #ecfdf5;
+      border-top: 2px solid #a7f3d0;
+      padding: 0.6rem 0.65rem;
+      font-size: 0.82rem; font-weight: 700;
+      color: #065f46; text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+    .pb-table tfoot tr.pb-tfoot-sum td.td-label {
+      text-align: center;
+      background: #d1fae5;
+      color: #065f46;
+    }
+
+    /* 예산/차액 행 (별도 작은 테이블) */
+    .pb-budget-summary {
+      margin-top: 0.5rem;
+      display: flex;
+      justify-content: flex-end;
+    }
+    .pb-budget-table {
+      border-collapse: collapse;
+      font-size: 0.85rem;
+      table-layout: fixed;
+    }
+    .pb-budget-table th, .pb-budget-table td {
+      padding: 0.5rem 0.85rem;
+      border: 1px solid #e2e8f0;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      min-width: 100px;
+    }
+    .pb-budget-table th {
+      background: #fef3c7;
+      color: #78350f;
+      text-align: center;
+      font-weight: 700;
+      min-width: 80px;
+    }
+    .pb-budget-table .pb-budget-label-diff {
+      background: #fef3c7;
+      color: #b91c1c;
+    }
+    .pb-budget-table .pb-budget-amount {
+      background: #fffbeb;
+      color: #78350f;
+      font-weight: 700;
+    }
+    .pb-budget-table .pb-budget-diff {
+      color: #dc2626;
+      font-weight: 700;
+    }
+    .pb-budget-table .pb-budget-diff.is-ok { color: #059669; }
+    .pb-budget-table .pb-budget-input {
+      width: 100%; border: none; background: transparent;
+      text-align: right; font-size: 0.85rem; font-family: inherit;
+      font-variant-numeric: tabular-nums; padding: 0;
+      color: inherit;
+    }
+    .pb-budget-table .pb-budget-input:focus { outline: none; background: #fffef0; }
+
+    /* 빈 상태 */
+    .pb-empty {
+      text-align: center; padding: 3rem 1rem;
+      color: var(--text-secondary, #94a3b8); font-size: 0.9rem;
+    }
+
+    /* 안내 배너 */
+    .pb-info-banner {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      background: #fff7ed;
+      border: 1px solid #fdba74;
+      border-radius: 0.75rem;
+      padding: 0.7rem 1rem;
+      margin-bottom: 1rem;
+      font-size: 0.85rem;
+      color: #9a3412;
+    }
+    .pb-info-banner--blue {
+      background: #dbeafe;
+      border-color: #bfdbfe;
+      color: #1e40af;
+    }
+
+    /* 인력 검색 모달 (project-labor 모달과 동일 패턴) */
+    .pb-modal-overlay {
+      position: fixed; inset: 0;
+      background: rgba(15, 23, 42, 0.5);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 1000; padding: 1rem;
+    }
+    .pb-modal-overlay[hidden] { display: none !important; }
+    .pb-modal-panel {
+      background: #fff; border-radius: 0.75rem;
+      width: 100%; max-width: 440px; max-height: 85vh;
+      display: flex; flex-direction: column;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.2); overflow: hidden;
+    }
+    .pb-modal-header {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 1rem 1.25rem; border-bottom: 1px solid var(--border-color);
+    }
+    .pb-modal-title { font-size: 1.05rem; font-weight: 700; margin: 0; color: var(--text-primary); }
+    .pb-modal-close {
+      background: transparent; border: none; font-size: 1.5rem; line-height: 1;
+      color: var(--text-secondary); cursor: pointer; padding: 0.25rem 0.5rem; border-radius: 0.35rem;
+    }
+    .pb-modal-close:hover { background: #f1f5f9; color: var(--text-primary); }
+    .pb-modal-body { padding: 1.25rem; overflow-y: auto; flex: 1; }
+    .pb-modal-desc { font-size: 0.85rem; color: var(--text-secondary); margin: 0 0 1rem; }
+    .pb-modal-search-wrap { position: relative; margin-bottom: 1rem; }
+    .pb-modal-search-icon {
+      position: absolute; left: 0.7rem; top: 50%; transform: translateY(-50%);
+      color: var(--text-secondary); pointer-events: none; font-size: 0.9rem;
+    }
+    .pb-modal-search-input {
+      width: 100%; padding: 0.55rem 2.2rem; border: 1px solid var(--border-color);
+      border-radius: 0.5rem; font-size: 0.9rem; font-family: inherit; box-sizing: border-box;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .pb-modal-search-input:focus {
+      outline: none; border-color: var(--primary-color);
+      box-shadow: 0 0 0 3px rgba(37,99,235,0.12);
+    }
+    .pb-modal-result-list { display: flex; flex-direction: column; gap: 0.4rem; }
+    .pb-modal-person-row {
+      display: flex; align-items: center; gap: 0.75rem;
+      padding: 0.65rem 0.85rem; border: 1px solid var(--border-color);
+      border-radius: 0.5rem; background: #fff; transition: all 0.15s; cursor: pointer;
+    }
+    .pb-modal-person-row:hover { border-color: var(--primary-color); background: #eff6ff; }
+    .pb-modal-person-name { font-weight: 600; font-size: 0.9rem; color: var(--text-primary); flex: 1; }
+    .pb-modal-person-salary { font-size: 0.78rem; color: var(--text-secondary); white-space: nowrap; }
+    .pb-modal-footer {
+      display: flex; justify-content: flex-end; gap: 0.5rem;
+      padding: 0.85rem 1.25rem; border-top: 1px solid var(--border-color); background: #f9fafb;
+    }
+
+    /* ========== 참여연구원 표 내보내기 섹션 ========== */
+    .pb-export-section {
+      margin-top: 2.5rem;
+      padding-top: 1.5rem;
+      border-top: 2px dashed var(--border-color);
+    }
+    .pb-export-header {
+      display: flex; align-items: center; justify-content: space-between;
+      flex-wrap: wrap; gap: 0.75rem;
+      margin-bottom: 1rem;
+    }
+    .pb-export-title {
+      font-size: 1.05rem; font-weight: 700; color: var(--text-primary);
+      margin: 0;
+      display: flex; align-items: center; gap: 0.5rem;
+    }
+    .pb-export-subtitle {
+      font-size: 0.78rem; color: var(--text-secondary);
+      margin-left: 0.5rem; font-weight: 400;
+    }
+    .pb-export-controls {
+      display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;
+    }
+    .pb-export-controls select {
+      padding: 0.45rem 0.7rem;
+      border-radius: 0.5rem;
+      border: 1px solid var(--border-color);
+      background: #fff;
+      font-size: 0.85rem;
+      font-family: inherit;
+      cursor: pointer;
+    }
+    .pb-export-body {
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      gap: 1.25rem;
+      align-items: start;
+    }
+    .pb-export-side {
+      background: #f8fafc;
+      border: 1px solid var(--border-color);
+      border-radius: 0.5rem;
+      padding: 0.85rem;
+      max-height: 480px;
+      display: flex; flex-direction: column;
+    }
+    .pb-export-side-title {
+      font-size: 0.82rem; font-weight: 600; color: var(--text-primary);
+      margin: 0 0 0.6rem; display: flex; align-items: center; justify-content: space-between;
+    }
+    .pb-export-side-actions {
+      display: flex; gap: 0.3rem;
+    }
+    .pb-export-side-actions button {
+      font-size: 0.7rem; padding: 0.2rem 0.5rem;
+      border: 1px solid var(--border-color); background: #fff;
+      border-radius: 0.3rem; cursor: pointer; color: var(--text-secondary);
+    }
+    .pb-export-side-actions button:hover {
+      background: #eff6ff; border-color: var(--primary-color); color: var(--primary-color);
+    }
+    #pb-export-row-list {
+      flex: 1; overflow-y: auto;
+      display: flex; flex-direction: column; gap: 0.3rem;
+    }
+    .pb-export-row-item {
+      display: flex; align-items: center; gap: 0.5rem;
+      padding: 0.45rem 0.6rem;
+      background: #fff; border: 1px solid var(--border-color);
+      border-radius: 0.4rem;
+      font-size: 0.82rem;
+      cursor: pointer;
+      transition: background 0.12s, border-color 0.12s;
+    }
+    .pb-export-row-item:hover {
+      background: #eff6ff;
+      border-color: var(--primary-color);
+    }
+    .pb-export-row-cb {
+      margin: 0; cursor: pointer;
+    }
+    .pb-export-row-name {
+      font-weight: 500; color: var(--text-primary);
+      flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .pb-export-row-sub {
+      font-size: 0.7rem; color: var(--text-secondary);
+      white-space: nowrap;
+    }
+    .pb-export-badge {
+      font-size: 0.65rem; font-weight: 600;
+      padding: 0.1rem 0.35rem;
+      border-radius: 0.25rem;
+      white-space: nowrap;
+    }
+    .pb-export-badge--req {
+      background: #fef3c7; color: #854f0b;
+    }
+    .pb-export-badge--add {
+      background: #e0e7ff; color: #3730a3;
+    }
+    .pb-export-main {
+      min-width: 0; /* 그리드 자식에서 가로 스크롤 활성화 */
+    }
+    .pb-export-actions {
+      display: flex; gap: 0.5rem; margin-bottom: 0.75rem;
+    }
+    .pb-export-actions .ui-btn {
+      flex: 0 0 auto;
+    }
+    .pb-export-preview {
+      background: #fff;
+      border: 1px solid var(--border-color);
+      border-radius: 0.5rem;
+      padding: 1rem;
+      overflow-x: auto;
+      max-height: 520px;
+      overflow-y: auto;
+    }
+    .pb-export-empty {
+      text-align: center; color: var(--text-secondary);
+      padding: 2rem 1rem; font-size: 0.88rem;
+    }
+    .pb-export-table-title {
+      font-size: 0.95rem; font-weight: 700;
+      color: var(--text-primary);
+      text-align: center;
+      margin-bottom: 0.75rem;
+    }
+    .pb-export-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.78rem;
+      table-layout: auto;
+    }
+    .pb-export-table th,
+    .pb-export-table td {
+      border: 1px solid #cbd5e1;
+      padding: 0.4rem 0.5rem;
+      text-align: center;
+      vertical-align: middle;
+      white-space: nowrap;
+    }
+    .pb-export-table th {
+      background: #f1f5f9;
+      font-weight: 700;
+      color: var(--text-primary);
+      font-size: 0.74rem;
+      line-height: 1.3;
+    }
+    .pb-export-table td {
+      background: #fff;
+      color: var(--text-primary);
+    }
+    .pb-export-row--sum td {
+      background: #fef3c7 !important;
+      font-weight: 700;
+    }
+
+    /* 반응형: 좁아지면 사이드 위로 이동 */
+    @media (max-width: 1100px) {
+      .pb-export-body {
+        grid-template-columns: 1fr;
+      }
+      .pb-export-side {
+        max-height: 240px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="dashboard">
+    <aside class="sidebar" id="sidebar" aria-label="메인 메뉴">
+      <div class="sidebar-header">
+        <button type="button" class="sidebar-toggle" id="sidebar-toggle">☰</button>
+        <h1 class="sidebar-title">CI_R&DM</h1>
+      </div>
+      <nav class="sidebar-nav"></nav>
+    </aside>
+
+    <main class="main-area">
+      <div class="container">
+        <header class="header" style="display:flex; align-items:center; justify-content:space-between;">
+          <h1 class="header-title">💵 인건비 예산</h1>
+          <div style="display:flex; align-items:center; gap:0.75rem;">
+            <span style="font-size:0.72rem; color:#94a3b8;">
+              제안서 작성 단계의 인건비 예산 계획 (선정 후 → 인건비 예상 탭에 자동 분배)
+            </span>
+            <span id="pb-save-indicator" style="font-size:0.78rem; color:#059669; opacity:0; transition:opacity 0.3s;"></span>
+            <span id="pb-loading" style="font-size:0.78rem; color:#64748b; display:none;">불러오는 중…</span>
+          </div>
+        </header>
+
+        <!-- 회사 필터 -->
+        <div style="display:flex; align-items:center; gap:0.6rem; margin-bottom:0.75rem;">
+          <span style="font-size:0.85rem; color:var(--text-secondary); font-weight:500;">회사</span>
+          <div class="company-chips" id="pb-company-chips" role="group" aria-label="회사 필터">
+            <button type="button" class="company-chip is-active" data-company="">전체</button>
+            <button type="button" class="company-chip" data-company="식스티">식스티</button>
+            <button type="button" class="company-chip" data-company="굿뉴스">굿뉴스</button>
+            <button type="button" class="company-chip" data-company="패리티">패리티</button>
+          </div>
+        </div>
+
+        <!-- 컨트롤바 1행: 과제 선택 + 액션 버튼 -->
+        <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:0.75rem; margin-bottom:1rem; align-items:center;">
+          <!-- 1+2칸: 과제 선택 -->
+          <div style="grid-column: span 2;">
+            <select id="pb-project-select" style="width:100%; padding:0.5rem 0.75rem; border-radius:0.5rem; border:1px solid var(--border-color); background:var(--card-bg); font-size:0.9rem; font-family:inherit;">
+              <option value="">-- 과제 선택 (제안 단계만) --</option>
+            </select>
+          </div>
+          <!-- 3칸: 액션 버튼 -->
+          <div style="display:flex; gap:0.4rem;">
+            <button type="button" class="ui-btn" id="pb-copy-prev-year-btn" style="flex:1; justify-content:center; font-size:0.78rem; padding:0.45rem 0.3rem; white-space:nowrap;">📋 이전 연차 복사</button>
+            <button type="button" class="ui-btn ui-btn--warning" id="pb-distribute-btn" style="flex:1; justify-content:center; font-size:0.78rem; padding:0.45rem 0.3rem; white-space:nowrap;">⚡ 인건비 예상 분배</button>
+            <button type="button" class="ui-btn ui-btn--primary" id="pb-save-btn" style="flex:1; justify-content:center; font-size:0.78rem; padding:0.45rem 0.3rem; white-space:nowrap;">💾 저장</button>
+          </div>
+        </div>
+
+        <!-- 안내 배너 (과제 미선택 등) -->
+        <div class="pb-info-banner pb-info-banner--blue" id="pb-info-banner" style="display:none">
+          <span>ℹ️</span>
+          <span id="pb-info-text"></span>
+        </div>
+
+        <!-- 연차 탭 -->
+        <div class="pb-year-tabs" id="pb-year-tabs"></div>
+
+        <!-- 제목 박스 -->
+        <div class="pb-title-box" id="pb-title-box" style="display:none;">
+          <span class="pb-title-text" id="pb-title-text">인건비_1차년도</span>
+          <span class="pb-title-note">* 제안서에는 상세 내역은 안 들어감</span>
+        </div>
+
+        <!-- 메인 테이블 -->
+        <div class="pb-table-wrap" id="pb-table-wrap" style="display:none;">
+          <table class="pb-table" id="pb-table"></table>
+        </div>
+
+        <!-- 예산/차액 요약 -->
+        <div class="pb-budget-summary" id="pb-budget-summary" style="display:none;">
+          <table class="pb-budget-table">
+            <tbody>
+              <tr>
+                <th rowspan="2">구분</th>
+                <th style="background:#fde68a;">현금</th>
+                <th style="background:#fde68a;">현물</th>
+              </tr>
+              <tr>
+                <td class="pb-budget-amount">
+                  <input type="text" class="pb-budget-input" id="pb-budget-cash" placeholder="0" inputmode="numeric">
+                </td>
+                <td class="pb-budget-amount">
+                  <input type="text" class="pb-budget-input" id="pb-budget-inkind" placeholder="0" inputmode="numeric">
+                </td>
+              </tr>
+              <tr>
+                <th class="pb-budget-label-diff">차액</th>
+                <td class="pb-budget-diff" id="pb-diff-cash">0</td>
+                <td class="pb-budget-diff" id="pb-diff-inkind">0</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- 빈 상태 -->
+        <div class="pb-empty" id="pb-empty">
+          과제를 선택해주세요.<br>
+          <small style="color:#cbd5e1;">제안 단계(미선정 / 제출 / 미제출) 과제만 표시됩니다.</small>
+        </div>
+
+        <!-- ============================================================
+             참여연구원 표 내보내기 섹션
+             ============================================================ -->
+        <section class="pb-export-section" id="pb-export-section">
+          <div class="pb-export-header">
+            <h2 class="pb-export-title">
+              📋 참여연구원 표 내보내기
+              <span class="pb-export-subtitle">선택한 연차 기준 · 보고서·제안서용 표 자동 생성</span>
+            </h2>
+            <div class="pb-export-controls">
+              <label for="pb-export-form-select" style="font-size:0.82rem; color:var(--text-secondary);">양식</label>
+              <select id="pb-export-form-select">
+                <option value="form1">표1 · 참여연구원 현황 (정부 R&amp;D 표준)</option>
+                <option value="form2">표2 · 인건비 계상 합계 (자동 계산)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="pb-export-body">
+            <!-- 왼쪽: 인력 선택 -->
+            <aside class="pb-export-side">
+              <div class="pb-export-side-title">
+                <span>👥 포함할 인력</span>
+                <div class="pb-export-side-actions">
+                  <button type="button" id="pb-export-select-all" title="모두 선택">전체</button>
+                  <button type="button" id="pb-export-unselect-all" title="모두 해제">해제</button>
+                </div>
+              </div>
+              <div id="pb-export-row-list">
+                <div class="pb-export-empty">먼저 과제와 연차를 선택해 주세요.</div>
+              </div>
+            </aside>
+
+            <!-- 오른쪽: 미리보기 + 다운로드 -->
+            <div class="pb-export-main">
+              <div class="pb-export-actions">
+                <button type="button" class="ui-btn ui-btn--primary" id="pb-export-rtf-btn" title="한글에서 더블클릭으로 열거나, 열고 나서 .hwp로 저장하면 됩니다">📄 한글용 RTF 다운로드</button>
+                <button type="button" class="ui-btn" id="pb-export-xlsx-btn">📊 엑셀(.xlsx) 다운로드</button>
+                <button type="button" class="ui-btn" id="pb-export-hwp-copy-btn" style="background:#fef3c7; border-color:#fcd34d; color:#854f0b;" title="한글 문서 열고 Ctrl+V로 붙여넣기">📋 표 복사</button>
+              </div>
+              <div class="pb-export-preview" id="pb-export-preview">
+                <div class="pb-export-empty">먼저 과제와 연차를 선택해 주세요.</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+      </div>
+    </main>
+  </div>
+
+  <!-- 토스트 알림 -->
+  <div id="pb-toast" style="
+    position:fixed; bottom:1.5rem; left:50%; transform:translateX(-50%) translateY(8px);
+    background:#059669; color:#fff; padding:0.65rem 1.25rem; border-radius:0.5rem;
+    font-size:0.88rem; font-weight:500; display:flex; align-items:center;
+    box-shadow:0 4px 16px rgba(0,0,0,0.18); opacity:0;
+    transition:opacity 0.25s, transform 0.25s; z-index:2000; white-space:nowrap;
+  "></div>
+
+  <!-- 인력 검색 모달 -->
+  <div class="pb-modal-overlay" id="pb-person-modal" hidden>
+    <div class="pb-modal-panel" role="dialog" aria-modal="true" aria-labelledby="pb-modal-title">
+      <div class="pb-modal-header">
+        <h2 class="pb-modal-title" id="pb-modal-title">👥 인력 선택</h2>
+        <button type="button" class="pb-modal-close" id="pb-modal-close" aria-label="닫기">×</button>
+      </div>
+      <div class="pb-modal-body">
+        <p class="pb-modal-desc">기존 인력을 선택하면 급여총액·직위가 자동으로 채워집니다.</p>
+        <div class="pb-modal-search-wrap">
+          <span class="pb-modal-search-icon">🔍</span>
+          <input type="text" id="pb-modal-search" class="pb-modal-search-input"
+            placeholder="이름으로 검색..." autocomplete="off">
+        </div>
+        <div id="pb-modal-result-list" class="pb-modal-result-list"></div>
+      </div>
+      <div class="pb-modal-footer">
+        <button type="button" class="ui-btn" id="pb-modal-cancel">닫기</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-auth-compat.js"></script>
+  <script src="firebase-config.example.js"></script>
+  <script src="firebase-config.js"></script>
+  <script src="firebase.js"></script>
+  <script src="auth-guard.js"></script>
+  <script src="firestore-service.js"></script>
+  <script src="sidebar.js"></script>
+  <script src="project-budget.js"></script>
+  <!-- 표 내보내기 의존성 -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="project-budget-export.js"></script>
+</body>
+</html>

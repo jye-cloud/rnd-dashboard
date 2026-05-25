@@ -3,8 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>[60hz] 프로젝트별 인건비</title>
+  <title>[R&DM] 프로젝트별 인건비</title>
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="sidebar.css">
   <style>
     /* ========== 인증 게이트 (auth-guard.js 와 함께 동작) ========== */
     html:not(.auth-bypass) .dashboard { visibility: hidden !important; }
@@ -23,15 +24,16 @@
     }
     .auth-modal-logo { font-size: 1.5rem; font-weight: 700; color: #2563eb; margin-bottom: 0.5rem; }
     .auth-modal-title { font-size: 1rem; color: #64748b; margin-bottom: 1.5rem; line-height: 1.5; }
-    .auth-modal .auth-error {
-      margin-top: 0.75rem; font-size: 0.875rem; color: #ef4444; display: none;
-    }
+    .auth-modal .auth-error { margin-top: 0.75rem; font-size: 0.875rem; color: #ef4444; display: none; }
     .auth-modal .auth-error.visible { display: block; }
     body { display: none !important; }
     body.body-ready { display: block !important; }
     /* ========== 인증 게이트 끝 ========== */
 
-    /* ========== 페이지 스타일 ========== */
+    /* ========== 레이아웃 ========== */
+    .container { width: 1400px; margin: 0 auto; }
+
+    /* ========== 컨트롤바 (history-toolbar 패턴 동일) ========== */
     .history-toolbar {
       display: flex;
       align-items: center;
@@ -44,95 +46,113 @@
       color: var(--text-secondary);
       font-weight: 500;
     }
-    .history-toolbar select {
-      min-width: 140px;
+    .history-toolbar select,
+    .history-toolbar input[type="number"] {
       padding: 0.5rem 0.75rem;
       border-radius: 0.5rem;
       border: 1px solid var(--border-color);
       background: var(--card-bg);
       font-size: 0.9rem;
       font-family: inherit;
+      transition: border-color 0.15s, box-shadow 0.15s;
     }
-    .history-toolbar-meta {
-      font-size: 0.78rem;
-      color: #94a3b8;
-      white-space: nowrap;
-      padding-left: 0.25rem;
+    .history-toolbar select:focus,
+    .history-toolbar input[type="number"]:focus {
+      outline: none;
+      border-color: var(--primary-color);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+    }
+    .history-toolbar select { min-width: 200px; }
+    .history-toolbar input[type="number"] { width: 76px; }
+
+    /* 분기 네비게이터 */
+    .pl-quarter-nav {
+      display: flex;
+      align-items: center;
+      border: 1px solid var(--border-color);
+      border-radius: 0.5rem;
+      overflow: hidden;
+      background: var(--card-bg);
+    }
+    .pl-quarter-btn {
+      padding: 0.5rem 0.65rem;
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      color: var(--text-secondary);
+      font-size: 0.85rem;
+      transition: background 0.15s;
+      line-height: 1;
+      font-family: inherit;
+    }
+    .pl-quarter-btn:hover { background: #f1f5f9; color: var(--text-primary); }
+    .pl-quarter-label {
+      padding: 0.5rem 0.85rem;
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--text-primary);
+      min-width: 56px;
+      text-align: center;
+      border-left: 1px solid var(--border-color);
+      border-right: 1px solid var(--border-color);
     }
 
-    /* 통계 카드 */
-    .history-stats-grid {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 1rem;
-      margin-bottom: 1.5rem;
-    }
-    .history-stat-card {
-      flex: 1 1 180px;
-      min-width: 160px;
-      background: var(--card-bg);
-      border: 1px solid var(--border-color);
-      border-radius: 0.75rem;
-      padding: 1rem 1.25rem;
-      box-shadow: var(--shadow-sm);
-      transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
-      user-select: none;
-    }
-    .history-stat-card.clickable {
+    /* 오른쪽 액션 버튼 영역 */
+    .projects-actions-spacer { flex: 1; }
+    .projects-actions-buttons { display: flex; gap: 0.5rem; align-items: center; }
+
+    /* ui-btn은 style.css에 있으나 혹시 없을 때 대비 */
+    .ui-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.5rem 1rem;
+      border-radius: 0.5rem;
+      font-size: 0.875rem;
+      font-weight: 600;
+      font-family: inherit;
       cursor: pointer;
+      border: 1px solid var(--border-color);
+      background: var(--card-bg);
+      color: var(--text-secondary);
+      transition: all 0.15s ease;
+      white-space: nowrap;
     }
-    .history-stat-card.clickable:hover {
-      transform: translateY(-2px);
-      box-shadow: var(--shadow-md);
-      border-color: var(--primary-color);
+    .ui-btn:hover { background: #f1f5f9; border-color: #cbd5e1; color: var(--text-primary); }
+    .ui-btn--primary { background: var(--primary-color, #2563eb); border-color: var(--primary-color, #2563eb); color: #fff; }
+    .ui-btn--primary:hover { background: #1d4ed8; color: #fff; }
+    .ui-btn--success { background: #059669; border-color: #059669; color: #fff; }
+    .ui-btn--success:hover { background: #047857; color: #fff; }
+
+    /* ========== 신규 채용 진척 배너 ========== */
+    .pl-hire-banner {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      background: #dbeafe;
+      border: 1px solid #bfdbfe;
+      border-radius: 0.75rem;
+      padding: 0.7rem 1rem;
+      margin-bottom: 1rem;
+      font-size: 0.85rem;
+      color: #1e40af;
     }
-    .history-stat-card.is-active {
-      border-color: var(--primary-color);
-      border-width: 2px;
-      padding: calc(1rem - 1px) calc(1.25rem - 1px);
-      background: linear-gradient(135deg, rgba(37, 99, 235, 0.04), rgba(37, 99, 235, 0.09));
-    }
-    .history-stat-card.is-active .history-stat-label {
-      color: var(--primary-color);
+    .pl-hire-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      padding: 0.2rem 0.6rem;
+      border-radius: 999px;
+      font-size: 0.78rem;
       font-weight: 600;
     }
-    .history-stat-label {
-      font-size: 0.8rem;
-      color: var(--text-secondary);
-      margin-bottom: 0.4rem;
-    }
-    .history-stat-value {
-      font-size: 1.6rem;
-      font-weight: 700;
-      color: var(--primary-color);
-      line-height: 1.1;
-      letter-spacing: -0.02em;
-    }
-    .history-stat-value--success { color: var(--success-color, #059669); }
-    .history-stat-value--scheduled { color: #1d4ed8; }
-    .history-stat-value--end { color: #4b5563; }
-    .history-stat-value-unit {
-      font-size: 0.85rem;
-      font-weight: 500;
-      color: var(--text-secondary);
-      margin-left: 0.2rem;
-    }
-    /* 새 카드별 색상 */
-    .history-stat-card--scheduled .history-stat-value { color: #8b5cf6; }
-    .history-stat-card--ongoing .history-stat-value { color: #2563eb; }
-    .history-stat-card--ended .history-stat-value { color: #4b5563; }
-    .history-stat-card--total .history-stat-value { color: #111827; }
-    .history-stat-card--funding {
-      background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
-      border-color: #f59e0b;
-      flex-basis: 240px;
-    }
-    .history-stat-card--funding .history-stat-label { color: #92400e; font-weight: 600; }
-    .history-stat-card--funding .history-stat-value { color: #b45309; }
+    .pl-hire-badge--done     { background: #dcfce7; color: #166534; }
+    .pl-hire-badge--progress { background: #fef9c3; color: #854d0e; }
 
-    /* ===== 탭 (R&D 활동 / 용역) ===== */
+    /* ========== 탭 (기존 history-tab 카드 스타일과 동일) ========== */
     .history-tabs {
-      display: flex;
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
       gap: 0.75rem;
       margin-bottom: 1rem;
     }
@@ -142,7 +162,7 @@
       align-items: center;
       gap: 0.85rem;
       padding: 1rem 1.25rem;
-      background: #fff;
+      background: var(--card-bg, #fff);
       border: 1.5px solid #e5e7eb;
       border-radius: 0.75rem;
       cursor: pointer;
@@ -150,10 +170,7 @@
       text-align: left;
       font-family: inherit;
     }
-    .history-tab:hover {
-      border-color: #cbd5e1;
-      background: #f9fafb;
-    }
+    .history-tab:hover { border-color: #cbd5e1; background: #f9fafb; }
     .history-tab.is-active {
       background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
       border-color: #2563eb;
@@ -167,31 +184,23 @@
     .history-tab.is-active .history-tab-title { color: #1d4ed8; }
     .history-tab-sub { font-size: 0.78rem; color: #64748b; }
     .history-tab-count {
-      font-size: 0.95rem;
-      font-weight: 700;
-      color: #64748b;
-      background: #f1f5f9;
-      padding: 0.25rem 0.65rem;
-      border-radius: 999px;
-      flex-shrink: 0;
+      font-size: 0.95rem; font-weight: 700; color: #64748b;
+      background: #f1f5f9; padding: 0.25rem 0.65rem;
+      border-radius: 999px; flex-shrink: 0;
     }
-    .history-tab.is-active .history-tab-count {
-      background: #2563eb;
-      color: #fff;
-    }
-    /* 용역 탭 활성 — 오렌지 톤 */
-    .history-tab[data-tab="service"].is-active {
-      background: linear-gradient(135deg, #fff7ed 0%, #fed7aa 100%);
-      border-color: #ea580c;
-      box-shadow: 0 2px 8px rgba(234, 88, 12, 0.15);
-    }
-    .history-tab[data-tab="service"].is-active .history-tab-title { color: #c2410c; }
-    .history-tab[data-tab="service"].is-active .history-tab-count {
-      background: #ea580c;
-      color: #fff;
-    }
+    .history-tab.is-active .history-tab-count { background: #2563eb; color: #fff; }
 
-    /* NTIS 토글 — 칩 형태 (검색 행 안) */
+    /* ========== 탭 콘텐츠 ========== */
+    .pl-tab-content { display: none; }
+    .pl-tab-content.is-active { display: block; }
+
+    /* 비교 탭 옵션 행 */
+    .pl-compare-options {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 0.75rem;
+    }
     .history-toggle-chip {
       display: inline-flex;
       align-items: center;
@@ -207,594 +216,487 @@
       transition: all 0.15s ease;
       white-space: nowrap;
     }
-    .history-toggle-chip:hover {
-      border-color: #22d3ee;
-    }
+    .history-toggle-chip:hover { border-color: #22d3ee; }
     .history-toggle-chip.is-active {
       background: linear-gradient(135deg, #cffafe 0%, #a5f3fc 100%);
-      border-color: #0891b2;
-      color: #155e75;
-      font-weight: 600;
+      border-color: #0891b2; color: #155e75; font-weight: 600;
     }
-    .history-toggle-chip input {
-      cursor: pointer;
-      accent-color: #0891b2;
-      margin: 0;
-    }
-    /* 통계 칩 (예정 · 진행) */
-    .history-summary-chips {
-      display: inline-flex;
-      gap: 0.4rem;
-      align-items: center;
-    }
-    .summary-chip {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.35rem;
-      padding: 0.4rem 0.8rem;
-      background: #f8fafc;
-      border: 1px solid #e5e7eb;
-      border-radius: 0.5rem;
-      font-size: 0.82rem;
-      color: #475569;
-      white-space: nowrap;
-    }
-    .summary-chip strong {
-      font-size: 0.95rem;
-      font-weight: 700;
-      letter-spacing: -0.02em;
-    }
-    .summary-chip--scheduled { background: #ede9fe; border-color: #ddd6fe; color: #5b21b6; }
-    .summary-chip--scheduled strong { color: #7c3aed; }
-    .summary-chip--ongoing { background: #dbeafe; border-color: #bfdbfe; color: #1e40af; }
-    .summary-chip--ongoing strong { color: #2563eb; }
-    .summary-chip--ended { background: #f1f5f9; border-color: #e2e8f0; color: #475569; }
-    .summary-chip--ended strong { color: #64748b; }
+    .history-toggle-chip input { cursor: pointer; accent-color: #0891b2; margin: 0; }
 
-    /* ===== 연도별 트렌드 막대 차트 ===== */
-    .history-trend-section {
-      background: #fff;
-      border: 1px solid #e5e7eb;
+    /* ========== 테이블 래퍼 ========== */
+    .pl-table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--border-color, #e5e7eb);
       border-radius: 0.75rem;
-      padding: 1rem 1.25rem;
-      margin-bottom: 1.25rem;
-    }
-    .history-trend-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: baseline;
-      margin-bottom: 0.85rem;
-    }
-    .history-trend-title { font-size: 0.95rem; font-weight: 700; color: #1e293b; }
-    .history-trend-hint { font-size: 0.75rem; color: #94a3b8; }
-    .history-trend-chart {
-      display: flex;
-      gap: 0.5rem;
-      align-items: flex-end;
-      height: 130px;
-      padding: 0 0.25rem;
-    }
-    .history-trend-bar-wrap {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 0.35rem;
-      cursor: pointer;
-      transition: opacity 0.15s ease;
-    }
-    .history-trend-bar-wrap:hover { opacity: 0.8; }
-    .history-trend-bar-num {
-      font-size: 0.75rem;
-      font-weight: 700;
-      color: #475569;
-      font-variant-numeric: tabular-nums;
-    }
-    .history-trend-bar {
-      width: 100%;
-      max-width: 56px;
-      background: linear-gradient(180deg, #93c5fd 0%, #3b82f6 100%);
-      border-radius: 0.35rem 0.35rem 0 0;
-      min-height: 4px;
-      transition: filter 0.15s ease;
-    }
-    .history-trend-bar-wrap.is-active .history-trend-bar { background: linear-gradient(180deg, #f59e0b 0%, #d97706 100%); }
-    .history-trend-bar-wrap:hover .history-trend-bar { filter: brightness(1.1); }
-    .history-trend-bar-label {
-      font-size: 0.72rem;
-      color: #64748b;
-      font-variant-numeric: tabular-nums;
+      box-shadow: var(--shadow-sm, 0 1px 3px rgba(0,0,0,0.04));
+      background: var(--card-bg, #fff);
     }
 
-    /* 검색 + 활성 필터 칩 */
-    .history-search-row {
-      display: flex;
-      align-items: center;
-      gap: 0.6rem;
-      flex-wrap: wrap;
-      margin-bottom: 0.85rem;
-    }
-    .projects-actions-spacer { flex: 1; }
-    .projects-actions-buttons { display: flex; gap: 0.5rem; align-items: center; }
-    /* 열 선택 드롭다운 */
-    .projects-col-dropdown { position: relative; }
-    .projects-col-panel {
-      display: none;
-      position: absolute;
-      top: 100%;
-      right: 0;
-      margin-top: 4px;
-      background: var(--card-bg);
-      border: 1px solid var(--border-color);
-      border-radius: 0.5rem;
-      box-shadow: var(--shadow-lg);
-      padding: 0.75rem 1rem;
-      z-index: 100;
-      min-width: 180px;
-    }
-    .projects-col-panel.open { display: block; }
-    .projects-col-panel label { display: flex; align-items: center; gap: 0.5rem; padding: 0.35rem 0; cursor: pointer; font-size: 0.875rem; }
-    /* 옵션 컬럼 기본 숨김 */
-    .history-table .col-opt { display: none; }
-    /* 숫자 컬럼 우측 정렬 */
-    .history-table tbody td.col-num { text-align: right; font-variant-numeric: tabular-nums; }
-    /* 과제명 셀 (메인 컬럼) */
-    .history-table .cell-projectname {
-      display: block;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    /* 과제명(용역명) 컬럼: 남은 공간을 다 쓰게 (다른 컬럼들이 고정 너비라서 자동으로 확장됨) */
-    .history-table .col-projectname { max-width: none; width: auto; }
-    .history-table .cell-projectname { max-width: 100%; }
-    /* 사업기간(연구기간) 컬럼 한 줄 강제 */
-    .history-table .col-period,
-    .history-table tbody td.col-period { white-space: nowrap; font-variant-numeric: tabular-nums; }
-    /* 기관명/발주처 컬럼 한 줄 강제 (길면 ...) */
-    .history-table .col-institution,
-    .history-table tbody td.col-institution {
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      max-width: 140px;
-    }
-    /* 표 내용 전반적으로 중앙정렬 */
-    .history-table tbody td { text-align: center; }
-    /* 예외: 과제명/용역명은 좌측 정렬 */
-    .history-table tbody td.col-projectname { text-align: left; }
-    /* 예외: 금액(지원금 총액/사업비 총액/공급가)은 우측 정렬 — col-num 기존 규칙이 적용됨 */
-    /* R&D 뱃지 (현재 미사용) */
-    .projects-badge--rd { background: #ecfeff; color: #0e7490; border: 1px solid #67e8f9; font-size: 0.68rem; font-weight: 700; padding: 0.1rem 0.4rem; border-radius: 0.3rem; }
-    .history-search-wrap {
-      position: relative;
-      flex: 1;
-      min-width: 220px;
-      max-width: 360px;
-    }
-    .history-search-icon {
-      position: absolute;
-      left: 0.7rem;
-      top: 50%;
-      transform: translateY(-50%);
-      color: var(--text-secondary);
-      pointer-events: none;
-      font-size: 0.95rem;
-    }
-    .history-search-input {
-      width: 100%;
-      padding: 0.55rem 2.2rem 0.55rem 2.2rem;
-      border: 1px solid var(--border-color);
-      border-radius: 0.5rem;
-      font-size: 0.9rem;
-      background: var(--card-bg);
-      font-family: inherit;
-      box-sizing: border-box;
-      transition: border-color 0.15s, box-shadow 0.15s;
-    }
-    .history-search-input:focus {
-      outline: none;
-      border-color: var(--primary-color);
-      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
-    }
-    .history-search-clear {
-      position: absolute;
-      right: 0.4rem;
-      top: 50%;
-      transform: translateY(-50%);
-      background: transparent;
-      border: none;
-      color: var(--text-secondary);
-      cursor: pointer;
-      width: 24px;
-      height: 24px;
-      border-radius: 50%;
-      display: none;
-      align-items: center;
-      justify-content: center;
-      font-size: 1.1rem;
-      line-height: 1;
-      padding: 0;
-    }
-    .history-search-clear:hover {
-      background: #f1f5f9;
-      color: var(--text-primary);
-    }
-    .history-search-wrap.has-value .history-search-clear {
-      display: inline-flex;
-    }
-    .history-active-filters {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      flex-wrap: wrap;
-    }
-    .history-active-filters:empty { display: none; }
-    .history-filter-chip {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.45rem;
-      padding: 0.35rem 0.6rem 0.35rem 0.75rem;
-      background: #dbeafe;
-      color: #1d4ed8;
-      border-radius: 999px;
-      font-size: 0.8rem;
-      font-weight: 600;
-      border: 1px solid rgba(37, 99, 235, 0.2);
-    }
-    .history-filter-chip-clear {
-      background: rgba(255, 255, 255, 0.7);
-      border: none;
-      cursor: pointer;
-      color: inherit;
-      font-size: 0.95rem;
-      width: 18px;
-      height: 18px;
-      border-radius: 50%;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      line-height: 1;
-      padding: 0;
-    }
-    .history-filter-chip-clear:hover { background: #fff; }
-
-    /* 테이블 */
-    .history-table-wrap {
-      background: var(--card-bg);
-      border-radius: 0.75rem;
-      box-shadow: var(--shadow-md);
-      overflow-x: hidden;
-      overflow-y: auto;
-      border: 1px solid var(--border-color);
-    }
-    .history-table {
+    /* ========== 메인 테이블 ========== */
+    .pl-table {
       width: 100%;
       border-collapse: collapse;
-      font-size: 0.9rem;
-      table-layout: fixed;  /* 컬럼 너비 헤더 지정대로 고정 → 가로 스크롤 방지 */
+      font-size: 0.82rem;
+      table-layout: fixed;
     }
-    /* 기본 셀: 가로 넘침 방지 (... 처리) */
-    .history-table td {
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-    .history-table th,
-    .history-table td {
-      padding: 0.7rem 0.85rem;
-      border-bottom: 1px solid var(--border-color);
-      text-align: left;
-      vertical-align: middle;
-    }
-    .history-table thead th {
-      background: #f5f5f5;
-      font-weight: 600;
-      color: var(--text-primary);
-      white-space: nowrap;
-      font-size: 0.85rem;
-      text-align: center;
-    }
-    .history-table tbody tr:hover {
-      background: #f8fafc;
-    }
-    .history-table .col-amount {
-      text-align: right;
-      font-weight: 600;
-      white-space: nowrap;
-    }
-    .history-table .col-status {
-      white-space: nowrap;
-    }
-    .history-empty {
-      text-align: center;
-      padding: 3rem 1rem;
-      color: var(--text-secondary);
-      font-size: 0.9rem;
-    }
+    .pl-table colgroup col.col-name   { width: 115px; }
+    .pl-table colgroup col.col-salary { width: 82px; }
+    .pl-table colgroup col.col-rate   { width: 60px; }
+    .pl-table colgroup col.col-cash   { width: 78px; }
+    .pl-table colgroup col.col-inkind { width: 60px; }
 
-    /* 상태 배지 — projects.html 과 동일 */
-    .projects-badge { display: inline-block; padding: 0.2rem 0.5rem; border-radius: 0.35rem; font-size: 0.72rem; font-weight: 700; white-space: nowrap; }
-    .projects-badge--ongoing { background: #d1fae5; color: #047857; }              /* 수행 (계속) — 진한 초록 */
-    .projects-badge--ongoing-new { background: #ccfbf1; color: #0d9488; }          /* 수행 (신규) — 청록 */
-    .projects-badge--scheduled { background: #dbeafe; color: #1d4ed8; }
-    .projects-badge--waiting { background: #fef3c7; color: #b45309; }
-    .projects-badge--unselected { background: #fef2f2; color: #b91c1c; }           /* 미선정 — 톤다운 분홍 */
-    .projects-badge--unsubmitted { background: #f3f4f6; color: #6b7280; }          /* 미제출 — 라이트 회색 */
-    .projects-badge--other { background: #ecfccb; color: #65a30d; }                /* 선정(기타) — 라임 */
-    .projects-badge--end { background: #e5e7eb; color: #4b5563; }
-
-    /* 총 N건 + 분류 카드 (상단 통합) */
-    .division-card {
-      background: var(--card-bg);
-      border: 1px solid var(--border-color);
-      border-radius: 0.75rem;
-      padding: 1.25rem 1.5rem;
-      box-shadow: var(--shadow-sm);
-      margin-bottom: 1rem;
-    }
-    .division-card-header {
-      display: flex;
-      align-items: baseline;
-      gap: 0.6rem;
-      cursor: pointer;
-      user-select: none;
-      padding: 0.2rem 0.4rem;
-      margin: -0.2rem -0.4rem 0.6rem;
-      border-radius: 0.4rem;
-      transition: background 0.15s;
-      width: fit-content;
-    }
-    .division-card-header:hover {
+    /* 월 헤더 행 — 회색 톤 통일 */
+    .pl-table thead tr.pl-thead-month th {
       background: #f1f5f9;
-    }
-    .division-card-label {
-      font-size: 0.85rem;
-      color: var(--text-secondary);
-      font-weight: 500;
-    }
-    .division-card-value {
-      font-size: 1.85rem;
-      font-weight: 800;
-      color: var(--primary-color);
-      line-height: 1;
-      letter-spacing: -0.02em;
-    }
-    .division-card-unit {
-      font-size: 0.95rem;
-      font-weight: 500;
-      color: var(--text-secondary);
-    }
-    .division-card-divider {
-      height: 1px;
-      background: var(--border-color);
-      margin: 0.5rem 0 0.85rem;
-    }
-    .division-pills {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.5rem;
-    }
-    .division-pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.4rem;
-      padding: 0.45rem 0.85rem;
-      background: #f8fafc;
-      border: 1px solid var(--border-color);
-      border-radius: 999px;
-      font-size: 0.85rem;
-      color: var(--text-primary);
-      cursor: pointer;
-      font-family: inherit;
-      font-weight: 600;
-      transition: all 0.15s ease;
-    }
-    .division-pill:hover {
-      background: #fff;
-      border-color: var(--primary-color);
-      transform: translateY(-1px);
-      box-shadow: 0 2px 6px rgba(37, 99, 235, 0.1);
-    }
-    .division-pill.is-active {
-      background: var(--primary-color);
-      border-color: var(--primary-color);
-      color: #fff;
-    }
-    .division-pill-count {
-      color: var(--text-secondary);
-      font-weight: 500;
-    }
-    .division-pill.is-active .division-pill-count {
-      color: rgba(255, 255, 255, 0.85);
-    }
-      /* 사이드바 그룹 구분선 */
-    .sidebar-divider {
-      height: 1px;
-      background: #e5e7eb;
-      margin: 0.75rem 1rem;
-      opacity: 0.7;
-    }
-
-    /* 페이지 전체 너비 고정 — 화면 크기와 무관 */
-    .container {
-      width: 1400px;
-      margin: 0 auto;
-    }
-
-    /* ===== 다운로드 컬럼 선택 모달 ===== */
-    .dl-modal-overlay {
-      position: fixed;
-      inset: 0;
-      background: rgba(15, 23, 42, 0.5);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      z-index: 1000;
-      padding: 1rem;
-    }
-    .dl-modal-panel {
-      background: #fff;
-      border-radius: 0.75rem;
-      width: 100%;
-      max-width: 460px;
-      max-height: 85vh;
-      display: flex;
-      flex-direction: column;
-      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
-      overflow: hidden;
-    }
-    .dl-modal-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 1rem 1.25rem;
-      border-bottom: 1px solid var(--border-color);
-    }
-    .dl-modal-title {
-      font-size: 1.05rem;
-      font-weight: 700;
-      margin: 0;
-      color: var(--text-primary);
-    }
-    .dl-modal-close {
-      background: transparent;
-      border: none;
-      font-size: 1.5rem;
-      line-height: 1;
-      color: var(--text-secondary);
-      cursor: pointer;
-      padding: 0.25rem 0.5rem;
-      border-radius: 0.35rem;
-    }
-    .dl-modal-close:hover {
-      background: #f1f5f9;
-      color: var(--text-primary);
-    }
-    .dl-modal-body {
-      padding: 1.25rem;
-      overflow-y: auto;
-    }
-    .dl-modal-desc {
-      font-size: 0.85rem;
-      color: var(--text-secondary);
-      margin: 0 0 1rem;
-    }
-    .dl-modal-section {
-      margin-bottom: 1.25rem;
-    }
-    .dl-modal-section:last-child {
-      margin-bottom: 0;
-    }
-    .dl-modal-section-title {
+      color: #475569;
+      text-align: center;
+      padding: 0.6rem 0.5rem 0.35rem;
       font-size: 0.8rem;
       font-weight: 600;
-      color: var(--text-secondary);
-      margin-bottom: 0.5rem;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
+      border-right: 1px solid #e2e8f0;
+      border-bottom: 1px solid #e2e8f0;
+      white-space: nowrap;
     }
-    .dl-modal-base-cols {
+    /* 인력/월급 고정 헤더 — 같은 폰트 크기, 중앙정렬 */
+    .pl-table thead tr.pl-thead-month th.th-fixed {
+      background: #e8edf2;
+      color: #374151;
+      font-size: 0.8rem;
+      text-align: center;
+      padding-left: 0.5rem;
+      border-right: 2px solid #d1d9e0;
+    }
+    /* 월별 헤더 — 고정과 동일 회색 */
+    .pl-table thead tr.pl-thead-month th.th-month {
+      background: #f1f5f9;
+    }
+    .pl-table thead tr.pl-thead-month th.month-sep { border-right: 2px solid #d1d9e0 !important; }
+
+    /* 월 헤더 체크박스 */
+    .pl-month-meta {
+      display: flex; align-items: center; justify-content: center;
+      gap: 0.5rem; margin-top: 0.3rem;
+    }
+    .pl-month-meta label {
+      display: inline-flex; align-items: center; gap: 0.2rem;
+      font-size: 0.63rem; color: #94a3b8; cursor: pointer; white-space: nowrap;
+    }
+    .pl-month-meta input[type="checkbox"] { width: 11px; height: 11px; accent-color: #64748b; cursor: pointer; }
+
+    /* 서브 헤더 행 (참여율/현금/현물) */
+    .pl-table thead tr.pl-thead-sub th {
       background: #f8fafc;
-      border: 1px solid #e2e8f0;
-      border-radius: 0.45rem;
-      padding: 0.65rem 0.85rem;
-      font-size: 0.82rem;
-      color: var(--text-primary);
-      line-height: 1.5;
+      color: #64748b;
+      text-align: center;
+      padding: 0.35rem 0.3rem;
+      font-size: 0.72rem;
+      font-weight: 600;
+      border-right: 1px solid #e5e7eb;
+      border-bottom: 2px solid #e2e8f0;
+      white-space: nowrap;
     }
-    .dl-modal-options {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 0.5rem 0.75rem;
+    .pl-table thead tr.pl-thead-sub th.th-fixed {
+      background: #f1f5f9;
+      color: #374151;
+      font-weight: 700;
+      border-right: 2px solid #d1d9e0;
     }
-    .dl-modal-options label {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      padding: 0.5rem 0.65rem;
-      background: #f8fafc;
-      border: 1px solid #e2e8f0;
-      border-radius: 0.4rem;
-      font-size: 0.875rem;
-      cursor: pointer;
-      transition: background 0.15s, border-color 0.15s;
+    .pl-table thead tr.pl-thead-sub th.month-sep { border-right: 2px solid #d1d9e0; }
+
+    /* tbody 셀 기본 */
+    .pl-table tbody td {
+      border-bottom: 1px solid #f1f5f9;
+      border-right: 1px solid #f1f5f9;
+      padding: 0;
+      vertical-align: middle;
     }
-    .dl-modal-options label:hover {
-      background: #eff6ff;
-      border-color: var(--primary-color);
+    .pl-table tbody tr:last-child td { border-bottom: none; }
+    .pl-table tbody td.month-sep { border-right: 2px solid #e8eef5; }
+
+    /* 고정 컬럼 (이름/월급) */
+    .pl-table tbody td.td-fixed {
+      padding: 0.55rem 0.85rem;
+      background: #fafafa;
+      border-right: 2px solid #e2e8f0;
     }
-    .dl-modal-options input[type="checkbox"] {
-      margin: 0;
-      cursor: pointer;
+    .pl-td-name { font-weight: 600; color: var(--text-primary, #1e293b); font-size: 0.85rem; }
+    /* 이름 + 뱃지 인라인 한 줄 */
+    .pl-name-row {
+      display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap;
+      padding: 0.1rem 0;
     }
-    .dl-modal-footer {
-      display: flex;
-      justify-content: flex-end;
-      gap: 0.5rem;
-      padding: 0.85rem 1.25rem;
-      border-top: 1px solid var(--border-color);
-      background: #f9fafb;
+    .pl-name-text { white-space: nowrap; }
+    .pl-name-badges-inline { display: flex; gap: 0.25rem; flex-wrap: wrap; }
+    /* 구형 호환 (비교탭 등) */
+    .pl-name-badges { display: flex; gap: 0.25rem; flex-wrap: wrap; margin-top: 0.2rem; }
+    .pl-badge {
+      font-size: 0.62rem; padding: 0.1rem 0.35rem;
+      border-radius: 999px; font-weight: 600;
     }
+    .pl-badge--youth { background: #ede9fe; color: #5b21b6; }
+    .pl-badge--new   { background: #dbeafe; color: #1e40af; }
+    .pl-badge--exit  { background: #fee2e2; color: #991b1b; }
+    .pl-td-salary {
+      font-size: 0.78rem; color: var(--text-secondary, #64748b);
+      text-align: right; font-variant-numeric: tabular-nums;
+    }
+
+    /* 입력 셀 */
+    .pl-cell-input {
+      width: 100%; height: 100%; border: none; background: transparent;
+      text-align: right; font-size: 0.82rem; font-family: inherit;
+      color: var(--text-primary, #1e293b);
+      padding: 0.55rem 0.5rem;
+      font-variant-numeric: tabular-nums;
+      transition: background 0.1s;
+    }
+    .pl-cell-input:focus { outline: none; background: #eff6ff; }
+    .pl-cell-input:hover:not(:focus) { background: #f8fafc; }
+    .pl-cell-input[readonly] { color: var(--text-secondary, #64748b); cursor: default; }
+    .pl-cell-input[readonly]:hover { background: transparent; }
+
+    /* 참여율 색상 */
+    .pl-cell-input.rate-safe   { color: #166534; }
+    .pl-cell-input.rate-warn   { color: #854d0e; background: #fefce8; }
+    .pl-cell-input.rate-danger { color: #991b1b; background: #fef2f2; font-weight: 700; }
+
+    /* 퇴사자 행 */
+    .pl-row--exited td { opacity: 0.42; }
+    .pl-row--exited td.td-fixed { opacity: 1; }
+    .pl-row--exited .pl-cell-input { background: #f8fafc; cursor: not-allowed; }
+
+    /* 비활성 셀 */
+    .pl-cell--inactive .pl-cell-input { background: #f8fafc; cursor: not-allowed; color: #cbd5e1; }
+
+    /* 메모 (빨간 글씨) */
+    .pl-memo-text {
+      font-size: 0.68rem; color: #dc2626; font-weight: 500;
+      padding: 0 0.4rem 0.2rem; display: block; line-height: 1.3;
+    }
+
+    /* 합계 행 */
+    .pl-table tfoot tr.pl-tfoot-sum td {
+      background: #f1f5f9;
+      border-top: 2px solid #d1d9e0;
+      padding: 0.6rem 0.65rem;
+      font-size: 0.8rem; font-weight: 700;
+      color: #374151; text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+    .pl-table tfoot tr.pl-tfoot-sum td.td-fixed {
+      background: #e8edf2; text-align: center;
+      color: #1f2937; border-right: 2px solid #d1d9e0;
+    }
+    .pl-table tfoot tr.pl-tfoot-sum td.month-sep { border-right: 2px solid #d1d9e0; }
+
+    /* + 인력 추가 행 */
+    .pl-row-add td { padding: 0.5rem 0.65rem; border-top: 1px dashed #e2e8f0; }
+    .pl-add-person-btn {
+      display: inline-flex; align-items: center; gap: 0.35rem;
+      background: transparent; border: 1px dashed #cbd5e1;
+      border-radius: 0.4rem; padding: 0.35rem 0.75rem;
+      font-size: 0.8rem; color: var(--text-secondary, #64748b);
+      cursor: pointer; font-family: inherit; transition: all 0.15s;
+    }
+    .pl-add-person-btn:hover { border-color: var(--primary-color, #2563eb); color: var(--primary-color, #2563eb); background: #eff6ff; }
+
+    /* ========== 비교 탭 ========== */
+    .pl-table tr.pl-row-planned td { background: #fafafa; }
+    .pl-table tr.pl-row-actual  td { background: #fff; }
+    .pl-table tr.pl-row-diff    td { background: #fffbeb; font-weight: 600; }
+    .pl-table tr.pl-row-diff td.diff-pos  { color: #166534; }
+    .pl-table tr.pl-row-diff td.diff-neg  { color: #991b1b; }
+    .pl-table tr.pl-row-diff td.diff-zero { color: #94a3b8; }
+
+    /* 행 구분 라벨 (예상/실제/차이) */
+    .pl-row-type-label {
+      display: inline-block; font-size: 0.65rem; font-weight: 600;
+      padding: 0.1rem 0.35rem; border-radius: 0.2rem; margin-left: 0.3rem; vertical-align: middle;
+    }
+    .pl-row-type-label--planned { background: #e2e8f0; color: #475569; }
+    .pl-row-type-label--actual  { background: #dcfce7; color: #166534; }
+    .pl-row-type-label--diff    { background: #fef9c3; color: #854d0e; }
+
+    /* 빈 상태 */
+    .pl-empty {
+      text-align: center; padding: 3rem 1rem;
+      color: var(--text-secondary, #94a3b8); font-size: 0.9rem;
+    }
+
+    /* ========== 인력 추가 모달 ========== */
+    .pl-modal-overlay {
+      position: fixed; inset: 0;
+      background: rgba(15, 23, 42, 0.5);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 1000; padding: 1rem;
+    }
+    .pl-modal-overlay[hidden] { display: none !important; }
+    .pl-modal-panel {
+      background: #fff; border-radius: 0.75rem;
+      width: 100%; max-width: 440px; max-height: 85vh;
+      display: flex; flex-direction: column;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.2); overflow: hidden;
+    }
+    .pl-modal-header {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 1rem 1.25rem; border-bottom: 1px solid var(--border-color);
+    }
+    .pl-modal-title { font-size: 1.05rem; font-weight: 700; margin: 0; color: var(--text-primary); }
+    .pl-modal-close {
+      background: transparent; border: none; font-size: 1.5rem; line-height: 1;
+      color: var(--text-secondary); cursor: pointer; padding: 0.25rem 0.5rem; border-radius: 0.35rem;
+    }
+    .pl-modal-close:hover { background: #f1f5f9; color: var(--text-primary); }
+    .pl-modal-body { padding: 1.25rem; overflow-y: auto; flex: 1; }
+    .pl-modal-desc { font-size: 0.85rem; color: var(--text-secondary); margin: 0 0 1rem; }
+    .pl-modal-section-title {
+      font-size: 0.75rem; font-weight: 600; color: var(--text-secondary);
+      text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 0.5rem;
+    }
+    .pl-modal-footer {
+      display: flex; justify-content: flex-end; gap: 0.5rem;
+      padding: 0.85rem 1.25rem; border-top: 1px solid var(--border-color); background: #f9fafb;
+    }
+    .pl-modal-search-wrap { position: relative; margin-bottom: 1rem; }
+    .pl-modal-search-icon {
+      position: absolute; left: 0.7rem; top: 50%; transform: translateY(-50%);
+      color: var(--text-secondary); pointer-events: none; font-size: 0.9rem;
+    }
+    .pl-modal-search-input {
+      width: 100%; padding: 0.55rem 2.2rem; border: 1px solid var(--border-color);
+      border-radius: 0.5rem; font-size: 0.9rem; font-family: inherit; box-sizing: border-box;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .pl-modal-search-input:focus {
+      outline: none; border-color: var(--primary-color);
+      box-shadow: 0 0 0 3px rgba(37,99,235,0.12);
+    }
+    .pl-modal-search-clear {
+      position: absolute; right: 0.5rem; top: 50%; transform: translateY(-50%);
+      background: transparent; border: none; font-size: 1.1rem; color: var(--text-secondary);
+      cursor: pointer; padding: 0.2rem 0.4rem; border-radius: 0.3rem; display: none;
+    }
+    .pl-modal-search-clear:hover { background: #f1f5f9; }
+    .pl-modal-result-list { display: flex; flex-direction: column; gap: 0.4rem; }
+    .pl-modal-person-row {
+      display: flex; align-items: center; gap: 0.75rem;
+      padding: 0.65rem 0.85rem; border: 1px solid var(--border-color);
+      border-radius: 0.5rem; background: #fff; transition: all 0.15s;
+    }
+    .pl-modal-person-row:hover { border-color: var(--primary-color); background: #eff6ff; }
+    .pl-modal-person-name { font-weight: 600; font-size: 0.9rem; color: var(--text-primary); flex: 1; }
+    .pl-modal-person-meta { font-size: 0.75rem; color: var(--text-secondary); }
+    .pl-modal-person-salary { font-size: 0.78rem; color: var(--text-secondary); white-space: nowrap; }
+    .pl-modal-add-btn {
+      padding: 0.3rem 0.7rem; border-radius: 0.35rem; font-size: 0.78rem; font-weight: 600;
+      font-family: inherit; cursor: pointer; border: 1px solid #2563eb;
+      background: #eff6ff; color: #2563eb; transition: all 0.15s; white-space: nowrap;
+    }
+    .pl-modal-add-btn:hover { background: #2563eb; color: #fff; }
+    .pl-modal-remove-btn {
+      padding: 0.3rem 0.7rem; border-radius: 0.35rem; font-size: 0.78rem; font-weight: 600;
+      font-family: inherit; cursor: pointer; border: 1px solid #e2e8f0;
+      background: #f8fafc; color: #64748b; transition: all 0.15s; white-space: nowrap;
+    }
+    .pl-modal-remove-btn:hover { background: #fee2e2; border-color: #fca5a5; color: #991b1b; }
+    .pl-modal-empty {
+      text-align: center; padding: 2rem 1rem;
+      color: var(--text-secondary); font-size: 0.88rem;
+    }
+
+    /* 사이드바 구분선 */
+    .sidebar-divider { height: 1px; background: #e5e7eb; margin: 0.75rem 1rem; opacity: 0.7; }
   </style>
 </head>
-
 <body>
   <div class="dashboard">
     <aside class="sidebar" id="sidebar" aria-label="메인 메뉴">
       <div class="sidebar-header">
-        <button type="button" class="sidebar-toggle" id="sidebar-toggle" aria-label="메뉴 접기/펼치기" title="메뉴 접기/펼치기">☰</button>
+        <button type="button" class="sidebar-toggle" id="sidebar-toggle">☰</button>
         <h1 class="sidebar-title">CI_R&DM</h1>
       </div>
-            <nav class="sidebar-nav">
-        <a href="projects-history.html" class="sidebar-link" id="nav-history"><span class="sidebar-link-icon" aria-hidden="true">📜</span><span class="sidebar-link-text">수행 현황</span></a>
-        <a href="index.html#/calendar" class="sidebar-link" id="nav-calendar"><span class="sidebar-link-icon" aria-hidden="true">📅</span><span class="sidebar-link-text">일정 관리</span></a>
-        <div class="sidebar-divider" aria-hidden="true"></div>
-        <a href="dashboard.html" class="sidebar-link" id="nav-dashboard"><span class="sidebar-link-icon" aria-hidden="true">🏠</span><span class="sidebar-link-text">대시보드</span></a>
-        <a href="funding.html" class="sidebar-link" id="nav-funding"><span class="sidebar-link-icon" aria-hidden="true">💵</span><span class="sidebar-link-text">자금 관리</span></a>
-        <a href="projects.html" class="sidebar-link" id="nav-projects"><span class="sidebar-link-icon" aria-hidden="true">📋</span><span class="sidebar-link-text">과제 관리</span></a>
-        <a href="projects-summary.html" class="sidebar-link" id="nav-projects-summary"><span class="sidebar-link-icon" aria-hidden="true">📑</span><span class="sidebar-link-text">과제별 상세</span></a>
-        <a href="index.html" class="sidebar-link" id="nav-hr"><span class="sidebar-link-icon" aria-hidden="true">👤</span><span class="sidebar-link-text">인력 정보 관리</span></a>
-        <a href="index.html#/payroll" class="sidebar-link" id="nav-payroll"><span class="sidebar-link-icon" aria-hidden="true">💰</span><span class="sidebar-link-text">인건비 관리</span></a>
-        <a href="index.html#/participation" class="sidebar-link" id="nav-participation"><span class="sidebar-link-icon" aria-hidden="true">📊</span><span class="sidebar-link-text">참여율 관리</span></a>
-        <div class="sidebar-divider" aria-hidden="true"></div>
-        <a href="persons-master.html" class="sidebar-link" id="nav-persons-master"><span class="sidebar-link-icon" aria-hidden="true">👥</span><span class="sidebar-link-text">인력 마스터</span></a>
-        <a href="project-labor.html" class="sidebar-link active" id="nav-project-labor"><span class="sidebar-link-icon" aria-hidden="true">📋</span><span class="sidebar-link-text">프로젝트별 인건비</span></a>
-        <a href="labor-dashboard.html" class="sidebar-link" id="nav-labor-dashboard"><span class="sidebar-link-icon" aria-hidden="true">📈</span><span class="sidebar-link-text">인건비 대시보드</span></a>
-      </nav>
+      <nav class="sidebar-nav"></nav>
     </aside>
-
 
     <main class="main-area">
       <div class="container">
-        <header class="header">
-          <h1 class="header-title">📋 프로젝트별 인건비</h1>
+        <header class="header" style="display:flex; align-items:center; justify-content:space-between;">
+          <h1 class="header-title">💰 프로젝트별 인건비</h1>
+          <div style="display:flex; align-items:center; gap:0.75rem;">
+            <span style="font-size:0.72rem; color:#94a3b8;">
+              <kbd style="background:#f1f5f9;border:1px solid #e2e8f0;border-radius:0.2rem;padding:0.1rem 0.3rem;font-size:0.68rem;">Tab</kbd> 다음 셀 &nbsp;
+              <kbd style="background:#f1f5f9;border:1px solid #e2e8f0;border-radius:0.2rem;padding:0.1rem 0.3rem;font-size:0.68rem;">↑↓</kbd> 상하이동 &nbsp;
+              <kbd style="background:#f1f5f9;border:1px solid #e2e8f0;border-radius:0.2rem;padding:0.1rem 0.3rem;font-size:0.68rem;">Ctrl+Z</kbd> 되돌리기 &nbsp;
+              <kbd style="background:#f1f5f9;border:1px solid #e2e8f0;border-radius:0.2rem;padding:0.1rem 0.3rem;font-size:0.68rem;">Esc</kbd> 취소
+            </span>
+            <span id="pl-save-indicator" style="font-size:0.78rem; color:#059669; opacity:0; transition:opacity 0.3s;"></span>
+            <span id="pl-loading" style="font-size:0.78rem; color:#64748b; display:none;">불러오는 중…</span>
+          </div>
         </header>
 
-        <div style="background:#fff; border:1px solid #e5e7eb; border-radius:1rem; padding:3rem 2rem; text-align:center; margin-top:2rem;">
-          <div style="font-size:3rem; margin-bottom:1rem;">📋</div>
-          <h2 style="font-size:1.25rem; color:#1e293b; margin-bottom:0.75rem;">프로젝트별 인건비</h2>
-          <p style="color:#64748b; font-size:0.95rem; line-height:1.6; max-width:520px; margin:0 auto 1.5rem;">
-            프로젝트별로 월별 × 인력별 인건비를 입력하고 관리합니다.<br>
-            예상/실제/비교 탭, 자동 수식, 키보드 조작 등 엑셀처럼 사용 가능합니다.
-          </p>
-          <div style="display:inline-block; padding:0.5rem 1rem; background:#fef3c7; color:#92400e; border-radius:9999px; font-size:0.875rem; font-weight:500;">
-            🚧 핵심 페이지 (개발 예정)
+        <!-- 컨트롤바 2행 구조 -->
+        <div style="display:flex; flex-direction:column; gap:0.6rem; margin-bottom:1rem;">
+
+          <!-- 1행: 연도 + 분기 + 회사 필터 -->
+          <div class="history-toolbar" style="margin-bottom:0;">
+            <span class="history-toolbar-label">연도</span>
+            <input type="number" id="pl-year-input" value="2025" min="2020" max="2035" step="1" style="font-weight:700; text-align:center;">
+            <span class="history-toolbar-label">분기</span>
+            <div class="pl-quarter-nav">
+              <button type="button" class="pl-quarter-btn" id="pl-quarter-prev">◀</button>
+              <span class="pl-quarter-label" id="pl-quarter-label">2분기</span>
+              <button type="button" class="pl-quarter-btn" id="pl-quarter-next">▶</button>
+            </div>
+            <span class="history-toolbar-label" style="margin-left:1rem;">회사</span>
+            <div class="company-chips" id="pl-company-chips" role="group" aria-label="회사 필터">
+              <button type="button" class="company-chip is-active" data-company="">전체</button>
+              <button type="button" class="company-chip" data-company="식스티">식스티</button>
+              <button type="button" class="company-chip" data-company="굿뉴스">굿뉴스</button>
+              <button type="button" class="company-chip" data-company="패리티">패리티</button>
+            </div>
+          </div>
+
+          <!-- 2행: 탭과 동일한 CSS grid 3칸으로 정확히 정렬 -->
+          <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:0.75rem; align-items:center;">
+
+            <!-- 1칸 + 2칸: 과제 선택 (colspan 2) -->
+            <div style="grid-column: span 2;">
+              <select id="pl-project-select" style="width:100%; padding:0.5rem 0.75rem; border-radius:0.5rem; border:1px solid var(--border-color); background:var(--card-bg); font-size:0.9rem; font-family:inherit;">
+                <option value="">-- 과제 선택 --</option>
+              </select>
+            </div>
+
+            <!-- 3칸: 버튼 3개 균등 배치 -->
+            <div style="display:flex; gap:0.4rem;">
+              <button type="button" class="ui-btn" id="pl-copy-prev-btn" style="flex:1; justify-content:center; font-size:0.78rem; padding:0.45rem 0.3rem; white-space:nowrap;">📋 이전 분기 복사</button>
+              <button type="button" class="ui-btn ui-btn--success" id="pl-calc-all-btn" style="flex:1; justify-content:center; font-size:0.78rem; padding:0.45rem 0.3rem; white-space:nowrap;">⚡ 일괄 자동 계산</button>
+              <button type="button" class="ui-btn ui-btn--primary" id="pl-add-person-top-btn" style="flex:1; justify-content:center; font-size:0.78rem; padding:0.45rem 0.3rem; white-space:nowrap;">+ 인력 추가</button>
+            </div>
+
+          </div>
+
+        </div>
+
+        <!-- 신규 채용 배너 -->
+        <div class="pl-hire-banner" id="pl-hire-banner" style="display:none">
+          <span>👥</span>
+          <span id="pl-hire-text"></span>
+        </div>
+
+        <!-- 탭 -->
+        <div class="history-tabs">
+          <button type="button" class="history-tab is-active" data-tab="planned">
+            <span class="history-tab-icon">📝</span>
+            <span class="history-tab-body">
+              <span class="history-tab-title">예상 (계획)</span>
+              <span class="history-tab-sub">참여율·현금 입력</span>
+            </span>
+            <span class="history-tab-count" id="tab-count-planned">-</span>
+          </button>
+          <button type="button" class="history-tab" data-tab="actual">
+            <span class="history-tab-icon">✅</span>
+            <span class="history-tab-body">
+              <span class="history-tab-title">실제 (지급 후)</span>
+              <span class="history-tab-sub">실제 지급 내역 입력</span>
+            </span>
+            <span class="history-tab-count" id="tab-count-actual">-</span>
+          </button>
+          <button type="button" class="history-tab" data-tab="compare">
+            <span class="history-tab-icon">⚖️</span>
+            <span class="history-tab-body">
+              <span class="history-tab-title">비교</span>
+              <span class="history-tab-sub">예상 vs 실제 차이</span>
+            </span>
+            <span class="history-tab-count" id="tab-count-compare">-</span>
+          </button>
+        </div>
+
+        <!-- 예상 탭 -->
+        <div class="pl-tab-content is-active" id="tab-planned">
+          <div class="pl-table-wrap">
+            <table class="pl-table" id="pl-table-planned"></table>
           </div>
         </div>
+
+        <!-- 실제 탭 -->
+        <div class="pl-tab-content" id="tab-actual">
+          <div class="pl-table-wrap">
+            <table class="pl-table" id="pl-table-actual"></table>
+          </div>
+        </div>
+
+        <!-- 비교 탭 -->
+        <div class="pl-tab-content" id="tab-compare">
+          <div class="pl-compare-options">
+            <label class="history-toggle-chip" id="pl-diff-only-chip">
+              <input type="checkbox" id="pl-diff-only"> 차이만 보기
+            </label>
+          </div>
+          <div class="pl-table-wrap">
+            <table class="pl-table" id="pl-table-compare"></table>
+          </div>
+        </div>
+
       </div>
     </main>
   </div>
 
-    <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-app-compat.js"></script>
+  <!-- 토스트 알림 -->
+  <div id="pl-toast" style="
+    position:fixed; bottom:1.5rem; left:50%; transform:translateX(-50%) translateY(8px);
+    background:#059669; color:#fff; padding:0.65rem 1.25rem; border-radius:0.5rem;
+    font-size:0.88rem; font-weight:500; display:flex; align-items:center;
+    box-shadow:0 4px 16px rgba(0,0,0,0.18); opacity:0;
+    transition:opacity 0.25s, transform 0.25s; z-index:2000; white-space:nowrap;
+  "></div>
+
+  <!-- 인력 추가 모달 -->
+  <div class="pl-modal-overlay" id="pl-add-modal" hidden>
+    <div class="pl-modal-panel" role="dialog" aria-modal="true" aria-labelledby="pl-modal-title">
+      <div class="pl-modal-header">
+        <h2 class="pl-modal-title" id="pl-modal-title">👥 인력 추가</h2>
+        <button type="button" class="pl-modal-close" id="pl-modal-close" aria-label="닫기">×</button>
+      </div>
+      <div class="pl-modal-body">
+        <p class="pl-modal-desc">이 과제에 참여할 인력을 검색해서 추가하세요.</p>
+
+        <!-- 검색 -->
+        <div class="pl-modal-search-wrap">
+          <span class="pl-modal-search-icon">🔍</span>
+          <input type="text" id="pl-modal-search" class="pl-modal-search-input"
+            placeholder="이름으로 검색..." autocomplete="off">
+          <button type="button" class="pl-modal-search-clear" id="pl-modal-search-clear">×</button>
+        </div>
+
+        <!-- 이미 추가된 인력 -->
+        <div id="pl-modal-added-section" style="margin-bottom:1rem; display:none;">
+          <div class="pl-modal-section-title">이미 추가된 인력</div>
+          <div id="pl-modal-added-list"></div>
+        </div>
+
+        <!-- 검색 결과 -->
+        <div class="pl-modal-section-title">전체 인력</div>
+        <div id="pl-modal-result-list" class="pl-modal-result-list"></div>
+
+        <div id="pl-modal-empty" class="pl-modal-empty" style="display:none;">
+          검색 결과가 없습니다.
+        </div>
+      </div>
+      <div class="pl-modal-footer">
+        <button type="button" class="ui-btn" id="pl-modal-cancel">닫기</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-firestore-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-auth-compat.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="firebase-config.example.js"></script>
   <script src="firebase-config.js"></script>
   <script src="firebase.js"></script>
   <script src="auth-guard.js"></script>
   <script src="firestore-service.js"></script>
-  <script src="floating-buttons.js"></script>
+  <script src="sidebar.js"></script>
+  <script src="project-labor.js"></script>
 </body>
 </html>

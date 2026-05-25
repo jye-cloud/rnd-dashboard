@@ -241,11 +241,17 @@
 
   /**
    * 전체 persons 배열에서 겸직 관계를 미리 계산.
-   * 결과: { [moonlightKey]: [companyList] }
-   * 같은 키에 회사가 2개 이상이면 → 겸직
+   *
+   * 결과:
+   *   { [moonlightKey]: {
+   *       persons: [...],            // 같은 사람의 여러 인력 레코드
+   *       companies: [...],          // 회사 목록 (중복 제거)
+   *       isAdminTransfer: bool      // true면 행정 이관 (퇴사일 = 다른 회사 입사일)
+   *   } }
    */
   function computeMoonlightMap(persons) {
     var map = {};
+    // 1단계: 키별로 묶기
     for (var i = 0; i < persons.length; i++) {
       var p = persons[i];
       if (!p) continue;
@@ -253,30 +259,74 @@
       if (!key) continue;
       var company = getCompany(p);
       if (!company) continue;
-      if (!map[key]) map[key] = [];
-      if (map[key].indexOf(company) < 0) map[key].push(company);
+      if (!map[key]) map[key] = { persons: [], companies: [], isAdminTransfer: false };
+      map[key].persons.push(p);
+      if (map[key].companies.indexOf(company) < 0) map[key].companies.push(company);
     }
+    // 2단계: 같은 키에 2명 이상이면 행정 이관 여부 검사
+    Object.keys(map).forEach(function (key) {
+      var entry = map[key];
+      if (entry.persons.length < 2) return;
+      entry.isAdminTransfer = checkAdminTransfer(entry.persons);
+    });
     return map;
+  }
+
+  /**
+   * 행정 이관 검사:
+   * 한 회사 퇴사일 == 다른 회사 입사일 이면 행정 이관으로 판단.
+   *
+   * 예: 패리티 exitDate = 2025-04-01, 식스티 hireDate = 2025-04-01 → 행정 이관
+   *     → 겸직 표시 X
+   */
+  function checkAdminTransfer(personsOfSameKey) {
+    function normDate(d) {
+      if (!d) return '';
+      var s = String(d).slice(0, 10);
+      return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : '';
+    }
+    var exitInfos = [];   // [{ company, date }]
+    var hireInfos = [];   // [{ company, date }]
+    personsOfSameKey.forEach(function (p) {
+      var c = getCompany(p);
+      var h = normDate(p.hireDate);
+      var e = normDate(p.exitDate);
+      if (h) hireInfos.push({ company: c, date: h });
+      if (e) exitInfos.push({ company: c, date: e });
+    });
+    // 어떤 회사의 퇴사일이 다른 회사의 입사일과 같으면 → 행정 이관
+    for (var i = 0; i < exitInfos.length; i++) {
+      for (var j = 0; j < hireInfos.length; j++) {
+        if (exitInfos[i].company === hireInfos[j].company) continue;  // 같은 회사면 의미 없음
+        if (exitInfos[i].date === hireInfos[j].date) return true;
+      }
+    }
+    return false;
   }
 
   /**
    * 특정 인력이 겸직인지 + 어느 회사들과 겸직인지 (자기 자신 제외)
    *
-   * 정책: 식스티가 모회사, 굿뉴스·패리티가 자회사.
-   * - 식스티 줄: 자회사에도 등록되어 있으면 → 겸직 표시 (본업이 자회사에 있다는 의미)
-   * - 자회사 줄: 거기가 본업이므로 → 겸직 표시 안 함
+   * 정책:
+   * - 식스티가 모회사, 굿뉴스·패리티가 자회사
+   * - 식스티 줄: 자회사에도 등록되어 있으면 → 겸직 표시
+   * - 자회사 줄: 본업이므로 겸직 표시 안 함
+   * - 행정 이관 (퇴사일 = 다른 회사 입사일): 겸직 표시 X
    */
   function getMoonlightInfo(person, moonlightMap) {
     var key = getMoonlightKey(person);
     if (!key || !moonlightMap[key]) return { isMoonlight: false, others: [] };
+    var entry = moonlightMap[key];
     var myCompany = getCompany(person);
-    var companies = moonlightMap[key];
-    if (companies.length < 2) return { isMoonlight: false, others: [] };
+    if (!entry.companies || entry.companies.length < 2) return { isMoonlight: false, others: [] };
+
+    // 행정 이관이면 겸직 아님
+    if (entry.isAdminTransfer) return { isMoonlight: false, others: [] };
 
     // 식스티(모회사) 줄에만 겸직 표시
     if (myCompany !== '식스티') return { isMoonlight: false, others: [] };
 
-    var others = companies.filter(function (c) { return c !== myCompany; });
+    var others = entry.companies.filter(function (c) { return c !== myCompany; });
     return { isMoonlight: true, others: others };
   }
 
@@ -805,7 +855,11 @@
             // (테이블 뱃지는 식스티 줄에만 뜨지만, 필터에서는 전체 맥락을 보고 싶음)
             if (!moonlightMap) return false;
             var mKey = getMoonlightKey(p);
-            if (!mKey || !moonlightMap[mKey] || moonlightMap[mKey].length < 2) return false;
+            if (!mKey || !moonlightMap[mKey]) return false;
+            var mEntry = moonlightMap[mKey];
+            if (!mEntry.companies || mEntry.companies.length < 2) return false;
+            // 행정 이관은 겸직 필터에서도 제외
+            if (mEntry.isAdminTransfer) return false;
           } else {
             // 일반 상태 필터 (재직/퇴직)
             var st = p.status || 'active';
@@ -930,7 +984,7 @@
     // 상태 뱃지
     var statusBadge = isExited
       ? '<span class="projects-badge projects-badge--end">퇴직</span>'
-      : '<span class="projects-badge projects-badge--ongoing">재직</span>';
+      : '<span class="projects-badge projects-badge--active">재직</span>';
 
     // 이름 + 생년월일 미입력 경고 + 겸직 뱃지
     var nameContent = escapeHtml(p.name || '-');

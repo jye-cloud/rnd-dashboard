@@ -16,6 +16,7 @@
   var CALENDAR_STORAGE_KEY = 'hr-calendar-events';
   var PROJECTS_STORAGE_KEY = 'rnd-projects-data';
   var PERSONS_STORAGE_KEY = 'rnd-persons-data';
+  var LAB_REGS_STORAGE_KEY = 'rnd-lab-registrations';
 
   var COLL = {
     hr: 'hrPersonnel',
@@ -23,7 +24,8 @@
     participation: 'participation',
     calendar: 'calendarEvents',
     projects: 'projects',
-    persons: 'persons'
+    persons: 'persons',
+    labRegs: 'labRegistrations'
   };
   var DOC_ID = 'data';
 
@@ -33,6 +35,7 @@
   var _calendarEvents = [];
   var _projectsData = [];
   var _personsData = [];
+  var _labRegsData = [];
 
   var _hrCallbacks = [];
   var _payrollCallbacks = [];
@@ -40,6 +43,7 @@
   var _calendarCallbacks = [];
   var _projectsCallbacks = [];
   var _personsCallbacks = [];
+  var _labRegsCallbacks = [];
 
   function safeParse(str, fallback) {
     try {
@@ -79,6 +83,11 @@
   function getPersonsData() {
     if (configured) return _personsData;
     return safeParse(localStorage.getItem(PERSONS_STORAGE_KEY), []);
+  }
+
+  function getLabRegistrationsData() {
+    if (configured) return _labRegsData;
+    return safeParse(localStorage.getItem(LAB_REGS_STORAGE_KEY), []);
   }
 
   function normalizePayrollState(state) {
@@ -270,6 +279,159 @@
         return Promise.reject(e);
       }
     }
+  }
+
+  // --------------------------------------------------------------------
+  // 기업부설연구소 인력 등록 (labRegistrations)
+  //
+  // 데이터 구조: 단일 문서에 items 배열 (다른 컬렉션과 동일 패턴)
+  // 각 등록 레코드:
+  //   {
+  //     id: "식스티_2025-04",
+  //     company: "식스티",
+  //     yearMonth: "2025-04",
+  //     uploadedAt: "2025-04-15T...",
+  //     uploadedBy: "정지혜",
+  //     members: [
+  //       { personId, name, ssn6, assignedDate },
+  //       ...
+  //     ]
+  //   }
+  // 같은 회사+같은 월이면 id가 같아서 자동으로 교체됨 (upsert)
+  // --------------------------------------------------------------------
+
+  function subscribeLabRegistrations(callback) {
+    if (typeof callback !== 'function') return;
+    _labRegsCallbacks.push(callback);
+    if (configured) {
+      var ref = db.collection(COLL.labRegs).doc(DOC_ID);
+      ref.onSnapshot(
+        function (snap) {
+          var data = snap.exists && snap.data() && snap.data().items ? snap.data().items : [];
+          _labRegsData = Array.isArray(data) ? data : [];
+          _labRegsCallbacks.forEach(function (cb) {
+            try { cb(_labRegsData); } catch (e) { console.error(e); }
+          });
+        },
+        function (err) { console.error('Firestore labRegistrations snapshot:', err); }
+      );
+    } else {
+      try { callback(getLabRegistrationsData()); } catch (e) { console.error(e); }
+    }
+  }
+
+  /**
+   * 전체 labRegistrations 배열 저장 (덮어쓰기)
+   */
+  function saveLabRegistrations(data) {
+    var items = Array.isArray(data) ? data : [];
+    if (configured) {
+      return db.collection(COLL.labRegs).doc(DOC_ID).set({ items: items })
+        .catch(function (e) {
+          console.error('Firestore labRegistrations 저장 실패:', e);
+          throw e;
+        });
+    } else {
+      try {
+        localStorage.setItem(LAB_REGS_STORAGE_KEY, JSON.stringify(items));
+        return Promise.resolve();
+      } catch (e) {
+        console.error(e);
+        return Promise.reject(e);
+      }
+    }
+  }
+
+  function getCurrentLabRegistrations() {
+    return configured
+      ? (_labRegsData.length > 0 ? _labRegsData : getLabRegistrationsData())
+      : getLabRegistrationsData();
+  }
+
+  /**
+   * 특정 회사 + 월의 등록 정보 업서트 (있으면 교체, 없으면 추가)
+   * registration: { company, yearMonth, members, uploadedBy }
+   */
+  function upsertLabRegistration(registration) {
+    if (!registration || !registration.company || !registration.yearMonth) {
+      return Promise.reject(new Error('company, yearMonth 가 필요해요'));
+    }
+    var current = getCurrentLabRegistrations().slice();
+    var id = registration.company + '_' + registration.yearMonth;
+    var nowISO = new Date().toISOString();
+
+    var newRecord = {
+      id: id,
+      company: registration.company,
+      yearMonth: registration.yearMonth,
+      members: Array.isArray(registration.members) ? registration.members : [],
+      approvalDate: registration.approvalDate || '',
+      uploadedAt: nowISO,
+      uploadedBy: registration.uploadedBy || ''
+    };
+
+    // 기존 같은 ID 레코드 제거 후 추가 (upsert)
+    var filtered = current.filter(function (r) { return r && r.id !== id; });
+    filtered.push(newRecord);
+
+    return saveLabRegistrations(filtered);
+  }
+
+  /**
+   * 특정 회사 + 월의 등록 정보 조회
+   */
+  function getLabRegistration(company, yearMonth) {
+    var list = getCurrentLabRegistrations();
+    var id = company + '_' + yearMonth;
+    for (var i = 0; i < list.length; i++) {
+      if (list[i] && list[i].id === id) return list[i];
+    }
+    return null;
+  }
+
+  /**
+   * 특정 회사의 모든 월별 등록 정보 (월 정렬)
+   */
+  function getLabRegistrationsByCompany(company) {
+    var list = getCurrentLabRegistrations();
+    return list.filter(function (r) {
+      return r && r.company === company;
+    }).sort(function (a, b) {
+      // 월 오름차순
+      if (a.yearMonth < b.yearMonth) return -1;
+      if (a.yearMonth > b.yearMonth) return 1;
+      return 0;
+    });
+  }
+
+  /**
+   * 특정 인력이 가장 최근에 어느 회사의 어느 월에 등록되어 있었는지 찾기
+   * @param {string} personId 인력 마스터 ID
+   * @returns {{company, yearMonth, assignedDate} | null}
+   */
+  function findLatestLabRegistrationForPerson(personId) {
+    if (!personId) return null;
+    var list = getCurrentLabRegistrations();
+    // 최신 월부터 역순으로 훑기
+    var sorted = list.slice().sort(function (a, b) {
+      if (a.yearMonth > b.yearMonth) return -1;
+      if (a.yearMonth < b.yearMonth) return 1;
+      return 0;
+    });
+    for (var i = 0; i < sorted.length; i++) {
+      var rec = sorted[i];
+      if (!rec || !Array.isArray(rec.members)) continue;
+      for (var j = 0; j < rec.members.length; j++) {
+        if (rec.members[j] && rec.members[j].personId === personId) {
+          return {
+            company: rec.company,
+            yearMonth: rec.yearMonth,
+            assignedDate: rec.members[j].assignedDate || null
+          };
+        }
+      }
+    }
+    return null;
   }
 
   // --------------------------------------------------------------------
@@ -574,6 +736,14 @@
     addPerson: addPerson,
     updatePerson: updatePerson,
     deletePerson: deletePerson,
+    // labRegistrations (기업부설연구소 인력 등록)
+    getLabRegistrationsData: getLabRegistrationsData,
+    subscribeLabRegistrations: subscribeLabRegistrations,
+    saveLabRegistrations: saveLabRegistrations,
+    upsertLabRegistration: upsertLabRegistration,
+    getLabRegistration: getLabRegistration,
+    getLabRegistrationsByCompany: getLabRegistrationsByCompany,
+    findLatestLabRegistrationForPerson: findLatestLabRegistrationForPerson,
     migrateFromLocalStorage: migrateFromLocalStorage,
     uploadFromProjectJson: uploadFromProjectJson,
     // 백업 관리 (필요 시 외부에서 호출)

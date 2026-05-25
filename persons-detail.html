@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>[60hz] 인력 마스터</title>
+  <title>[60hz] 인력 상세</title>
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="sidebar.css">
   <style>
@@ -793,12 +793,27 @@
       padding: 1.25rem;
       overflow-y: auto;
     }
+    /* 모달 안의 모든 select는 부모 폭에 맞춤 (select 기본 폭 문제 해결) */
+    .person-modal-body select.ui-select,
+    .person-modal-body select.person-form-input {
+      width: 100%;
+      box-sizing: border-box;
+    }
+    /* 그리드 안의 각 셀(div)도 라벨이 위, 입력칸이 아래로 — 통일된 모양 */
+    /* 단, date-parts (YYYY-MM-DD 가로 정렬)는 예외 */
+    .person-modal-body .person-form-row > div:not(.date-parts) {
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+      min-width: 0;
+    }
     .person-form-row {
       display: flex;
       flex-direction: column;
       gap: 0.35rem;
       margin-bottom: 1rem;
     }
+    .person-form-row[hidden] { display: none !important; }
     .person-form-row:last-child { margin-bottom: 0; }
     .person-form-label {
       font-size: 0.85rem;
@@ -1106,7 +1121,7 @@
     }
     .gender-badge--male { color: inherit; }
     .gender-badge--female { color: inherit; }
-
+  
     /* ============================================================ */
     /* 디자인 톤 일치를 위해 projects.html에서 가져온 공통 스타일 */
     /* (Step 2-X: 다른 페이지와 일관된 룩앤필 적용) */
@@ -1464,6 +1479,368 @@
       background: linear-gradient(135deg, #fff 0%, #f0fdf4 100%);
     }
 
+    /* ============================================================ */
+    /* ===== 인력 상세 전용: 좌측 테이블 + 우측 상세 패널 레이아웃 ===== */
+    /* ============================================================ */
+    .detail-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 360px;
+      gap: 1rem;
+      align-items: flex-start;
+    }
+    /* 좁은 화면에선 위아래로 */
+    @media (max-width: 1280px) {
+      .detail-layout {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .detail-side-panel {
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 0.75rem;
+      padding: 1.25rem;
+      box-shadow: var(--shadow-sm);
+      position: sticky;
+      top: 1rem;
+      max-height: calc(100vh - 2rem);
+      overflow-y: auto;
+    }
+    @media (max-width: 1280px) {
+      .detail-side-panel {
+        position: static;
+        max-height: none;
+      }
+    }
+
+    /* 비어있을 때 (인력 미선택 상태) */
+    .detail-empty {
+      text-align: center;
+      color: var(--text-secondary);
+      padding: 2rem 1rem;
+    }
+    .detail-empty-icon {
+      font-size: 2.5rem;
+      opacity: 0.4;
+      margin-bottom: 0.75rem;
+    }
+    .detail-empty-text {
+      font-size: 0.9rem;
+      line-height: 1.5;
+    }
+
+    /* 선택된 인력 상세 */
+    .detail-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      padding-bottom: 0.85rem;
+      margin-bottom: 0.85rem;
+      border-bottom: 1px solid var(--border-color);
+    }
+    .detail-name {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin: 0 0 0.25rem 0;
+    }
+    .detail-name-sub {
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      flex-wrap: wrap;
+    }
+    .detail-edit-btn {
+      background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
+      color: #fff;
+      border: none;
+      border-radius: 0.5rem;
+      padding: 0.4rem 0.85rem;
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      flex-shrink: 0;
+      transition: all 0.15s;
+      font-family: inherit;
+    }
+    .detail-edit-btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 10px rgba(37, 99, 235, 0.3);
+    }
+
+    /* 상세 정보 그리드 */
+    .detail-fields {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 0.85rem;
+    }
+    .detail-field {
+      display: flex;
+      flex-direction: column;
+      gap: 0.2rem;
+    }
+    .detail-field-label {
+      font-size: 0.72rem;
+      color: var(--text-secondary);
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+    .detail-field-value {
+      font-size: 0.9rem;
+      color: var(--text-primary);
+      word-break: break-word;
+    }
+    .detail-field-value--empty {
+      color: #cbd5e1;
+    }
+
+    .detail-section-title {
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      letter-spacing: 0.04em;
+      margin: 0.5rem 0 0.5rem 0;
+      padding-top: 0.5rem;
+      border-top: 1px dashed var(--border-color);
+    }
+    .detail-section-title:first-of-type {
+      border-top: none;
+      padding-top: 0;
+      margin-top: 0;
+    }
+
+    /* ===== 소속 관리 모달 항목 ===== */
+    .dept-manage-item {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.5rem 0.75rem;
+      background: #f8fafc;
+      border: 1px solid var(--border-color);
+      border-radius: 0.5rem;
+    }
+    .dept-manage-item-name {
+      flex: 1;
+      font-size: 0.9rem;
+      color: var(--text-primary);
+      font-weight: 500;
+    }
+    .dept-manage-item-count {
+      font-size: 0.78rem;
+      color: var(--text-secondary);
+      padding: 0.15rem 0.45rem;
+      background: #fff;
+      border-radius: 0.3rem;
+      border: 1px solid var(--border-color);
+    }
+    .dept-manage-item-btn {
+      background: transparent;
+      border: 1px solid var(--border-color);
+      border-radius: 0.35rem;
+      padding: 0.25rem 0.55rem;
+      cursor: pointer;
+      font-size: 0.78rem;
+      color: var(--text-secondary);
+      font-family: inherit;
+    }
+    .dept-manage-item-btn:hover {
+      background: #fff;
+      color: var(--text-primary);
+    }
+    .dept-manage-item-btn--danger:hover {
+      background: #fef2f2;
+      color: #b91c1c;
+      border-color: #fecaca;
+    }
+    .dept-manage-item-input {
+      flex: 1;
+      padding: 0.35rem 0.55rem;
+      border: 1px solid var(--primary-color);
+      border-radius: 0.35rem;
+      font-size: 0.9rem;
+      font-family: inherit;
+    }
+
+    /* 소속 입력칸 옆 작은 아이콘 버튼 (+, ⚙️) — 테두리 없음 */
+    .dept-icon-btn {
+      width: 26px;
+      min-width: 26px;
+      padding: 0;
+      background: transparent;
+      border: none;
+      border-radius: 0.35rem;
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      cursor: pointer;
+      flex-shrink: 0;
+      font-family: inherit;
+      transition: background 0.12s;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .dept-icon-btn:hover {
+      background: #eff6ff;
+      color: var(--primary-color);
+    }
+    .dept-icon-btn:active {
+      background: #dbeafe;
+    }
+
+    /* ===== 인력 일괄 이동 모달의 인력 선택 항목 ===== */
+    .dept-move-person-item {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      padding: 0.45rem 0.6rem;
+      background: #fff;
+      border: 1px solid var(--border-color);
+      border-radius: 0.4rem;
+      cursor: pointer;
+      transition: all 0.12s;
+    }
+    .dept-move-person-item:hover {
+      border-color: var(--primary-color);
+      background: #eff6ff;
+    }
+    .dept-move-person-item input[type="checkbox"] {
+      margin: 0;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .dept-move-person-item-name {
+      flex: 1;
+      font-size: 0.88rem;
+      font-weight: 500;
+      color: var(--text-primary);
+    }
+    .dept-move-person-item-sub {
+      font-size: 0.78rem;
+      color: var(--text-secondary);
+    }
+    .dept-move-person-item.checked {
+      background: #eff6ff;
+      border-color: var(--primary-color);
+    }
+
+    /* 선택된 행 강조 */
+    #persons-table tbody tr.selected {
+      background: linear-gradient(90deg, #eff6ff 0%, transparent 100%) !important;
+      box-shadow: inset 4px 0 0 0 var(--primary-color);
+    }
+    #persons-table tbody tr {
+      cursor: pointer;
+    }
+
+    /* ===== 자격증 (Step 4-2) ===== */
+    /* 폼: 자격증 항목 (모달 내) */
+    .form-certificates-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+    .form-cert-item {
+      display: grid;
+      grid-template-columns: 1.4fr 1.6fr 1.4fr auto;
+      gap: 0.4rem;
+      align-items: center;
+      padding: 0.5rem;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+    }
+    .form-cert-item input {
+      width: 100%;
+      padding: 0.35rem 0.5rem;
+      border: 1px solid #cbd5e1;
+      border-radius: 4px;
+      font-size: 0.85rem;
+      box-sizing: border-box;
+    }
+    .form-cert-item input:focus {
+      outline: none;
+      border-color: var(--primary-color);
+    }
+    .form-cert-item .form-cert-delete {
+      width: 28px;
+      height: 28px;
+      border: none;
+      background: transparent;
+      color: #94a3b8;
+      cursor: pointer;
+      border-radius: 4px;
+      font-size: 1rem;
+      line-height: 1;
+    }
+    .form-cert-item .form-cert-delete:hover {
+      background: #fee2e2;
+      color: #dc2626;
+    }
+    .form-cert-empty {
+      text-align: center;
+      padding: 0.75rem;
+      color: #94a3b8;
+      font-size: 0.85rem;
+      font-style: italic;
+    }
+
+    /* 상세 패널: 자격증 목록 표시 */
+    .detail-cert-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+      margin-top: 0.25rem;
+    }
+    .detail-cert-item {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.5rem 0.75rem;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+    }
+    .detail-cert-name {
+      font-weight: 600;
+      color: #1e293b;
+      font-size: 0.9rem;
+      flex: 0 0 auto;
+    }
+    .detail-cert-memo {
+      color: #64748b;
+      font-size: 0.82rem;
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .detail-cert-link {
+      flex: 0 0 auto;
+      padding: 0.2rem 0.55rem;
+      background: #e0f2fe;
+      color: #0369a1;
+      border-radius: 4px;
+      text-decoration: none;
+      font-size: 0.78rem;
+      font-weight: 500;
+      transition: background 0.15s;
+    }
+    .detail-cert-link:hover {
+      background: #bae6fd;
+    }
+    .detail-cert-empty {
+      color: #94a3b8;
+      font-size: 0.85rem;
+      font-style: italic;
+      padding: 0.4rem 0;
+    }
+
   </style>
 </head>
 
@@ -1486,8 +1863,8 @@
         <a href="index.html#/payroll" class="sidebar-link" id="nav-payroll"><span class="sidebar-link-icon" aria-hidden="true">💰</span><span class="sidebar-link-text">인건비 관리</span></a>
         <a href="index.html#/participation" class="sidebar-link" id="nav-participation"><span class="sidebar-link-icon" aria-hidden="true">📊</span><span class="sidebar-link-text">참여율 관리</span></a>
         <div class="sidebar-divider" aria-hidden="true"></div>
-        <a href="persons-master.html" class="sidebar-link active" id="nav-persons-master"><span class="sidebar-link-icon" aria-hidden="true">👥</span><span class="sidebar-link-text">인력 마스터</span></a>
-        <a href="persons-detail.html" class="sidebar-link" id="nav-persons-detail"><span class="sidebar-link-icon" aria-hidden="true">📑</span><span class="sidebar-link-text">인력 상세</span></a>
+        <a href="persons-master.html" class="sidebar-link" id="nav-persons-master"><span class="sidebar-link-icon" aria-hidden="true">👥</span><span class="sidebar-link-text">인력 마스터</span></a>
+        <a href="persons-detail.html" class="sidebar-link active" id="nav-persons-detail"><span class="sidebar-link-icon" aria-hidden="true">📑</span><span class="sidebar-link-text">인력 상세</span></a>
         <a href="project-labor.html" class="sidebar-link" id="nav-project-labor"><span class="sidebar-link-icon" aria-hidden="true">📋</span><span class="sidebar-link-text">프로젝트별 인건비</span></a>
         <a href="labor-dashboard.html" class="sidebar-link" id="nav-labor-dashboard"><span class="sidebar-link-icon" aria-hidden="true">📈</span><span class="sidebar-link-text">인건비 대시보드</span></a>
       </nav>
@@ -1497,52 +1874,36 @@
     <main class="main-area">
       <div class="container">
         <header class="header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.75rem">
-          <h1 class="header-title">👥 인력 마스터</h1>
-          <div style="display:flex;gap:0.5rem">
-            <input type="file" id="excel-input" accept=".xlsx,.xls" hidden>
-            <button type="button" class="excel-upload-btn" id="excel-upload-btn" title="건강보험가입자명부 엑셀을 업로드하면 인력이 자동 등록됩니다">
-              <svg class="excel-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z" fill="#217346"/>
-                <path d="M14 2v6h6" fill="#1e5c38"/>
-                <path d="M8 11v8h8V11H8z" fill="rgba(255,255,255,0.2)"/>
-                <path d="M8 13h8M8 16h8M8 19h5" stroke="white" stroke-width="1" stroke-linecap="round" opacity="0.95"/>
-              </svg>
-              명부 업로드
-            </button>
-            <button type="button" class="ui-btn ui-btn--primary" id="person-add-btn" title="인력 한 명씩 직접 추가">+ 인력 추가</button>
+          <h1 class="header-title">📑 인력 상세</h1>
+          <div style="display:flex;gap:0.5rem;align-items:center">
+            <span style="font-size:0.85rem;color:var(--text-secondary)">새 인력 등록은</span>
+            <a href="persons-master.html" class="ui-btn ui-btn--ghost" title="인력 마스터에서 명부 업로드 또는 직접 추가">
+              👥 인력 마스터에서
+            </a>
           </div>
         </header>
 
-        <!-- 마이그레이션 경고 배너: 생년월일 미입력 인력이 있을 때만 표시 -->
-        <div class="migration-banner" id="migration-banner" hidden role="button" tabindex="0" aria-label="생년월일 미입력 인력 필터링">
-          <div class="migration-banner-icon">⚠️</div>
-          <div class="migration-banner-body" id="migration-banner-text">
-            <strong>생년월일 미입력 0명</strong> · 동명이인 구분을 위해 생년월일을 채워주세요.
-          </div>
-          <div class="migration-banner-arrow">→</div>
-        </div>
-
         <!-- 상단 요약 카드 (4개) -->
-        <section class="projects-stats-grid" aria-label="인력 요약">
+        <section class="projects-stats-grid" aria-label="정보 입력 현황">
           <div class="projects-stat-card projects-stat-card--narrow">
             <div class="projects-stat-label">전체 인력</div>
             <div class="projects-stat-value" id="stat-total">0</div>
             <div class="projects-stat-sub-hint" id="stat-total-sub">재직 0 · 퇴직 0</div>
           </div>
           <div class="projects-stat-card projects-stat-card--narrow">
-            <div class="projects-stat-label">재직 인력</div>
-            <div class="projects-stat-value projects-stat--success" id="stat-active">0</div>
-            <div class="projects-stat-sub-hint" id="stat-active-sub">남 0 · 여 0</div>
+            <div class="projects-stat-label">정보 입력 완료</div>
+            <div class="projects-stat-value projects-stat--success" id="stat-hr-complete">0</div>
+            <div class="projects-stat-sub-hint" id="stat-hr-complete-sub">재직 인력 중</div>
           </div>
           <div class="projects-stat-card projects-stat-card--narrow">
-            <div class="projects-stat-label">청년 인력</div>
-            <div class="projects-stat-value" id="stat-youth" style="color:#7c3aed">0</div>
-            <div class="projects-stat-sub-hint">청년 필수 (재직)</div>
+            <div class="projects-stat-label">연구자번호 보유</div>
+            <div class="projects-stat-value" id="stat-researcher" style="color:#2563eb">0</div>
+            <div class="projects-stat-sub-hint">정부 R&D 등록</div>
           </div>
           <div class="projects-stat-card projects-stat-card--narrow">
-            <div class="projects-stat-label">퇴직</div>
-            <div class="projects-stat-value" id="stat-exited" style="color:#6b7280">0</div>
-            <div class="projects-stat-sub-hint">퇴직 처리됨</div>
+            <div class="projects-stat-label">연구소 등록</div>
+            <div class="projects-stat-value" id="stat-lab" style="color:#7c3aed">0</div>
+            <div class="projects-stat-sub-hint">기업부설연구소</div>
           </div>
         </section>
 
@@ -1562,7 +1923,6 @@
                 <option value="all">전체</option>
                 <option value="active" selected>재직</option>
                 <option value="exited">퇴직</option>
-                <option value="moonlight">겸직</option>
               </select>
             </label>
             <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.875rem;color:var(--text-secondary)">
@@ -1572,32 +1932,26 @@
                 <option value="식스티">식스티</option>
                 <option value="굿뉴스">굿뉴스</option>
                 <option value="패리티">패리티</option>
-                <option value="unset">미지정</option>
               </select>
             </label>
             <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.875rem;color:var(--text-secondary)">
-              성별:
-              <select id="filter-gender" class="ui-select">
+              최종학위:
+              <select id="filter-degree" class="ui-select">
                 <option value="all">전체</option>
-                <option value="M">남</option>
-                <option value="F">여</option>
-                <option value="unknown">미입력</option>
+                <option value="박사">박사</option>
+                <option value="석사">석사</option>
+                <option value="학사">학사</option>
+                <option value="기타">기타</option>
+                <option value="unset">미입력</option>
               </select>
             </label>
             <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.875rem;color:var(--text-secondary)">
-              연령대:
-              <select id="filter-age" class="ui-select">
-                <option value="all">전체</option>
-                <option value="20">20대</option>
-                <option value="30">30대</option>
-                <option value="40">40대</option>
-                <option value="50">50대+</option>
-                <option value="unknown">미입력</option>
-              </select>
+              <input type="checkbox" id="filter-researcher" style="margin:0;cursor:pointer">
+              연구자번호 보유
             </label>
             <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.875rem;color:var(--text-secondary)">
-              <input type="checkbox" id="filter-youth" style="margin:0;cursor:pointer">
-              청년만 보기
+              <input type="checkbox" id="filter-lab" style="margin:0;cursor:pointer">
+              연구소 등록
             </label>
           </div>
           <div class="projects-actions-spacer"></div>
@@ -1606,72 +1960,59 @@
           </div>
         </div>
 
-        <!-- 인력 테이블 -->
-        <div class="projects-table-wrap" id="persons-table-wrap">
-          <table class="projects-table" id="persons-table">
-            <thead>
-              <tr>
-                <th style="width:40px">No</th>
-                <th style="width:75px">회사</th>
-                <th>상태</th>
-                <th>이름</th>
-                <th style="width:50px">성별</th>
-                <th>주민번호</th>
-                <th style="width:55px">만나이</th>
-                <th>입사일</th>
-                <th>퇴사일</th>
-                <th class="col-num">월급</th>
-                <th>메모</th>
-                <th style="width:50px">수정</th>
-              </tr>
-            </thead>
-            <tbody id="persons-tbody"></tbody>
-          </table>
-        </div>
+        <!-- 인력 상세: 좌측 테이블 + 우측 상세 패널 -->
+        <div class="detail-layout">
 
-        <!-- 빈 상태 안내 -->
-        <div id="persons-empty" style="display:none; background:#fff; border:1px dashed #e5e7eb; border-radius:1rem; padding:3rem 2rem; text-align:center; margin-top:1rem;">
-          <div style="font-size:3rem; margin-bottom:1rem;">👥</div>
-          <h2 style="font-size:1.15rem; color:#1e293b; margin-bottom:0.5rem;" id="persons-empty-title">아직 등록된 인력이 없어요</h2>
-          <p style="color:#64748b; font-size:0.9rem; line-height:1.6; max-width:480px; margin:0 auto 1.25rem;" id="persons-empty-desc">
-            오른쪽 위 <strong>"+ 인력 추가"</strong> 버튼으로 첫 인력을 등록해 보세요.<br>
-            등록된 인력은 프로젝트별 인건비 페이지에서 검색하여 추가할 수 있어요.
-          </p>
+          <!-- 좌측: 테이블 -->
+          <div>
+            <div class="projects-table-wrap" id="persons-table-wrap">
+              <table class="projects-table" id="persons-table">
+                <thead>
+                  <tr>
+                    <th style="width:40px">No</th>
+                    <th style="width:75px">회사</th>
+                    <th>상태</th>
+                    <th>이름</th>
+                    <th>소속</th>
+                    <th>직급</th>
+                    <th>최종학위</th>
+                    <th>연구자번호</th>
+                    <th style="width:60px">연구소</th>
+                    <th style="width:50px">수정</th>
+                  </tr>
+                </thead>
+                <tbody id="persons-tbody"></tbody>
+              </table>
+            </div>
+
+            <!-- 빈 상태 안내 -->
+            <div id="persons-empty" style="display:none; background:#fff; border:1px dashed #e5e7eb; border-radius:1rem; padding:3rem 2rem; text-align:center; margin-top:1rem;">
+              <div style="font-size:3rem; margin-bottom:1rem;">📑</div>
+              <h2 style="font-size:1.15rem; color:#1e293b; margin-bottom:0.5rem;" id="persons-empty-title">조회된 인력이 없어요</h2>
+              <p style="color:#64748b; font-size:0.9rem; line-height:1.6; max-width:480px; margin:0 auto 1.25rem;" id="persons-empty-desc">
+                검색어나 필터를 조정해 보세요.<br>
+                새 인력은 <a href="persons-master.html" style="color:var(--primary-color);font-weight:600">인력 마스터</a>에서 등록할 수 있어요.
+              </p>
+            </div>
+          </div>
+
+          <!-- 우측: 상세 패널 -->
+          <aside class="detail-side-panel" id="detail-panel" aria-label="선택된 인력 상세">
+            <div id="detail-empty-state" class="detail-empty">
+              <div class="detail-empty-icon">👈</div>
+              <div class="detail-empty-text">
+                왼쪽 테이블에서 인력을 클릭하면<br>
+                여기에 상세 정보가 표시됩니다.
+              </div>
+            </div>
+            <div id="detail-content" hidden>
+              <!-- JS에서 채움 -->
+            </div>
+          </aside>
+
         </div>
       </div>
     </main>
-  </div>
-
-  <!-- ===== 회사 선택 모달 (명부 업로드 직전에 노출) ===== -->
-  <div id="company-select-modal" class="company-select-overlay" hidden role="dialog" aria-modal="true" aria-labelledby="company-select-title">
-    <div class="company-select-panel" role="document">
-      <div class="company-select-header">
-        <h2 class="company-select-title" id="company-select-title">어느 회사 명부인가요?</h2>
-        <button type="button" class="company-select-close" id="company-select-close" aria-label="닫기">×</button>
-      </div>
-      <div class="company-select-body">
-        <p class="company-select-desc">
-          업로드할 명부의 회사를 선택해 주세요. 명부의 모든 인력이 선택한 회사 소속으로 등록됩니다.
-        </p>
-        <div class="company-options">
-          <button type="button" class="company-option" data-company="식스티">
-            <span class="company-badge company-badge--sixty">식스티</span>
-            <span class="company-option-name">식스티헤르츠</span>
-            <span class="company-option-arrow">→</span>
-          </button>
-          <button type="button" class="company-option" data-company="굿뉴스">
-            <span class="company-badge company-badge--goodnews">굿뉴스</span>
-            <span class="company-option-name">굿뉴스에너지</span>
-            <span class="company-option-arrow">→</span>
-          </button>
-          <button type="button" class="company-option" data-company="패리티">
-            <span class="company-badge company-badge--parity">패리티</span>
-            <span class="company-option-name">패리티빌더즈</span>
-            <span class="company-option-arrow">→</span>
-          </button>
-        </div>
-      </div>
-    </div>
   </div>
 
   <!-- ===== 인력 추가/수정 모달 (Step 2-2) ===== -->
@@ -1683,128 +2024,146 @@
       </div>
 
       <div class="person-modal-body">
-        <!-- 회사 (필수) -->
-        <div class="person-form-row">
-          <label class="person-form-label">
-            회사<span class="person-form-required">*</span>
-          </label>
-          <div class="gender-radio-group">
-            <label class="gender-radio">
-              <input type="radio" name="form-company" value="식스티" id="form-company-sixty">
-              <span>식스티</span>
-            </label>
-            <label class="gender-radio">
-              <input type="radio" name="form-company" value="굿뉴스" id="form-company-goodnews">
-              <span>굿뉴스</span>
-            </label>
-            <label class="gender-radio">
-              <input type="radio" name="form-company" value="패리티" id="form-company-parity">
-              <span>패리티</span>
-            </label>
+        <!-- 안내 메시지: 기본 정보는 인력 마스터에서 -->
+        <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:0.6rem;padding:0.6rem 0.85rem;margin-bottom:1rem;font-size:0.85rem;color:#1e40af;line-height:1.5;display:flex;align-items:center;gap:0.45rem">
+          <span style="font-size:1rem;flex-shrink:0;line-height:1">💡</span>
+          <div>
+            <strong>기본 정보(이름·생년월일 등)는 <a href="persons-master.html" style="color:#1e40af;text-decoration:underline">인력 마스터</a>에서 수정해 주세요.</strong><br>
+            이 페이지에서는 상세 정보만 수정합니다.
           </div>
         </div>
 
-        <!-- 이름 (필수) -->
-        <div class="person-form-row">
-          <label class="person-form-label" for="form-name">
-            이름<span class="person-form-required">*</span>
-          </label>
-          <input type="text" id="form-name" class="person-form-input" placeholder="예: 김지혜" autocomplete="off" maxlength="50">
-        </div>
+        <!-- ===== HR: 조직 정보 ===== -->
+        <div class="person-form-section-title" style="font-size:0.78rem;font-weight:700;color:#0f172a;letter-spacing:0.04em;margin-bottom:0.75rem;padding-bottom:0.4rem;border-bottom:1px solid #e5e7eb">조직 정보</div>
 
-        <!-- 생년월일 (필수) -->
-        <div class="person-form-row">
-          <label class="person-form-label" for="form-birth-y">
-            생년월일<span class="person-form-required">*</span>
-          </label>
-          <div class="date-parts" id="form-birth-parts">
-            <input type="text" id="form-birth-y" class="date-input-y" inputmode="numeric" maxlength="4" placeholder="YYYY" autocomplete="off">
-            <span class="date-sep">-</span>
-            <input type="text" id="form-birth-m" class="date-input-m" inputmode="numeric" maxlength="2" placeholder="MM" autocomplete="off">
-            <span class="date-sep">-</span>
-            <input type="text" id="form-birth-d" class="date-input-d" inputmode="numeric" maxlength="2" placeholder="DD" autocomplete="off">
+        <div class="person-form-row" style="display:grid;grid-template-columns:1fr 1fr;gap:0.85rem">
+          <div>
+            <label class="person-form-label" for="form-department">소속</label>
+            <div style="display:flex;gap:0.15rem;align-items:stretch">
+              <select id="form-department" class="ui-select" style="flex:1;min-width:0">
+                <option value="">선택 또는 입력</option>
+              </select>
+              <button type="button" id="form-department-add-btn" class="dept-icon-btn" title="새 소속 추가">+</button>
+              <button type="button" id="form-department-manage-btn" class="dept-icon-btn" title="소속 목록 관리 (이름 변경/삭제)">⚙️</button>
+            </div>
+            <div class="person-form-hint">추가 + / 변경, 삭제 ⚙️</div>
           </div>
-          <div class="person-form-hint">동명이인 구분을 위해 필수입니다</div>
-        </div>
-
-        <!-- 주민번호 뒷자리 (선택, 명부 업로드 시 자동) -->
-        <div class="person-form-row">
-          <label class="person-form-label" for="form-ssn-tail">주민번호 뒷자리</label>
-          <div style="display:flex;align-items:center;gap:0.5rem">
-            <span id="form-ssn-front" style="font-size:0.9rem;color:var(--text-secondary);min-width:75px">------</span>
-            <span class="date-sep">-</span>
-            <input type="text" id="form-ssn-tail" class="person-form-input"
-              inputmode="numeric" maxlength="7" placeholder="2****** 또는 2"
-              style="max-width:140px;letter-spacing:0.05em" autocomplete="off">
+          <div>
+            <label class="person-form-label" for="form-position">직급</label>
+            <div style="display:flex;gap:0.15rem;align-items:stretch">
+              <select id="form-position" class="ui-select" style="flex:1;min-width:0">
+                <option value="">선택</option>
+                <option value="대표이사">대표이사</option>
+                <option value="전무">전무</option>
+                <option value="상무">상무</option>
+                <option value="이사">이사</option>
+                <option value="본부장">본부장</option>
+                <option value="팀장">팀장</option>
+                <option value="매니저">매니저</option>
+              </select>
+              <button type="button" id="form-position-add-btn" class="dept-icon-btn" title="새 직급 추가">+</button>
+              <button type="button" id="form-position-manage-btn" class="dept-icon-btn" title="직급 목록 관리 (이름 변경/삭제)">⚙️</button>
+            </div>
           </div>
-          <div class="person-form-hint" id="ssn-tail-hint">첫 숫자만 입력해도 OK (성별 자동 판정). 명부 업로드 시 자동으로 채워집니다.</div>
         </div>
 
-        <!-- 성별 (선택) -->
-        <div class="person-form-row">
-          <label class="person-form-label">성별</label>
-          <div class="gender-radio-group">
-            <label class="gender-radio">
-              <input type="radio" name="form-gender" value="" id="form-gender-none">
-              <span>선택 안 함</span>
-            </label>
-            <label class="gender-radio">
-              <input type="radio" name="form-gender" value="M" id="form-gender-m">
-              <span>남성</span>
-            </label>
-            <label class="gender-radio">
-              <input type="radio" name="form-gender" value="F" id="form-gender-f">
-              <span>여성</span>
-            </label>
+        <!-- ===== HR: 학력 ===== -->
+        <div class="person-form-section-title" style="font-size:0.78rem;font-weight:700;color:#0f172a;letter-spacing:0.04em;margin:1.25rem 0 0.75rem 0;padding-bottom:0.4rem;border-bottom:1px solid #e5e7eb">학력</div>
+
+        <div class="person-form-row" style="display:grid;grid-template-columns:1fr 1fr;gap:0.85rem">
+          <div>
+            <label class="person-form-label" for="form-final-degree">최종학위</label>
+            <select id="form-final-degree" class="ui-select">
+              <option value="">선택</option>
+              <option value="박사">박사</option>
+              <option value="박사수료">박사수료</option>
+              <option value="석사">석사</option>
+              <option value="석사수료">석사수료</option>
+              <option value="학사">학사</option>
+              <option value="학사재학">학사재학</option>
+              <option value="전문학사">전문학사</option>
+              <option value="기타">기타</option>
+            </select>
           </div>
-          <div class="person-form-hint">명부 업로드 시 주민번호 뒷자리로 자동 입력됩니다</div>
-        </div>
-
-        <!-- 입사일 (선택) -->
-        <div class="person-form-row">
-          <label class="person-form-label" for="form-hire-y">입사일</label>
-          <div class="date-parts" id="form-hire-parts">
-            <input type="text" id="form-hire-y" class="date-input-y" inputmode="numeric" maxlength="4" placeholder="YYYY" autocomplete="off">
-            <span class="date-sep">-</span>
-            <input type="text" id="form-hire-m" class="date-input-m" inputmode="numeric" maxlength="2" placeholder="MM" autocomplete="off">
-            <span class="date-sep">-</span>
-            <input type="text" id="form-hire-d" class="date-input-d" inputmode="numeric" maxlength="2" placeholder="DD" autocomplete="off">
+          <div>
+            <label class="person-form-label" for="form-school">학교</label>
+            <input type="text" id="form-school" class="person-form-input" placeholder="예: ○○대학교" autocomplete="off" maxlength="50">
           </div>
-          <div class="person-form-hint">신규/기존 판정 기준이 됩니다 (프로젝트별로 자동 계산)</div>
         </div>
 
-        <!-- 청년 필수 인력 (체크박스) -->
-        <div class="person-form-row person-form-row--checkbox">
-          <label>
-            <input type="checkbox" id="form-is-youth">
-            청년 필수 인력
-          </label>
-        </div>
-
-        <!-- 연봉 (선택) -->
-        <div class="person-form-row">
-          <label class="person-form-label" for="form-annual-salary">연봉 (원)</label>
-          <input type="number" id="form-annual-salary" class="person-form-input" placeholder="예: 54000000" min="0" step="100000">
-          <div class="person-form-hint" id="annual-salary-hint">비워두면 인건비 자동 계산에서 제외됩니다 (나중에 입력해도 OK)</div>
-        </div>
-
-        <!-- 퇴사일 (수정 모드에서만 노출) -->
-        <div class="person-form-row" id="form-exit-date-row" hidden>
-          <label class="person-form-label" for="form-exit-y">퇴사일</label>
-          <div class="date-parts" id="form-exit-parts">
-            <input type="text" id="form-exit-y" class="date-input-y" inputmode="numeric" maxlength="4" placeholder="YYYY" autocomplete="off">
-            <span class="date-sep">-</span>
-            <input type="text" id="form-exit-m" class="date-input-m" inputmode="numeric" maxlength="2" placeholder="MM" autocomplete="off">
-            <span class="date-sep">-</span>
-            <input type="text" id="form-exit-d" class="date-input-d" inputmode="numeric" maxlength="2" placeholder="DD" autocomplete="off">
+        <div class="person-form-row" style="display:grid;grid-template-columns:1fr 1fr;gap:0.85rem">
+          <div>
+            <label class="person-form-label" for="form-major">전공</label>
+            <input type="text" id="form-major" class="person-form-input" placeholder="예: 전기전자공학과" autocomplete="off" maxlength="50">
           </div>
-          <div class="person-form-hint">퇴사일을 입력하면 자동으로 "퇴직" 상태가 됩니다. 비우면 "재직" 상태로 돌아갑니다.</div>
+          <div>
+            <label class="person-form-label" for="form-degree-number">학위번호</label>
+            <input type="text" id="form-degree-number" class="person-form-input" placeholder="학위번호" autocomplete="off" maxlength="50">
+          </div>
         </div>
 
-        <!-- 메모 (선택) -->
         <div class="person-form-row">
-          <label class="person-form-label" for="form-memo">메모</label>
-          <textarea id="form-memo" class="person-form-textarea" placeholder="자유 입력 (선택)" maxlength="200"></textarea>
+          <label class="person-form-label" for="form-degree-y">학위 수여일</label>
+          <div class="date-parts" id="form-degree-parts">
+            <input type="text" id="form-degree-y" class="date-input-y" inputmode="numeric" maxlength="4" placeholder="YYYY" autocomplete="off">
+            <span class="date-sep">-</span>
+            <input type="text" id="form-degree-m" class="date-input-m" inputmode="numeric" maxlength="2" placeholder="MM" autocomplete="off">
+            <span class="date-sep">-</span>
+            <input type="text" id="form-degree-d" class="date-input-d" inputmode="numeric" maxlength="2" placeholder="DD" autocomplete="off">
+          </div>
+        </div>
+
+        <!-- ===== HR: 연구자 정보 ===== -->
+        <div class="person-form-section-title" style="font-size:0.78rem;font-weight:700;color:#0f172a;letter-spacing:0.04em;margin:1.25rem 0 0.75rem 0;padding-bottom:0.4rem;border-bottom:1px solid #e5e7eb">연구자 정보</div>
+
+        <div class="person-form-row">
+          <label class="person-form-label" for="form-researcher-id">연구자번호</label>
+          <input type="text" id="form-researcher-id" class="person-form-input" placeholder="IRIS 연구자 등록번호" autocomplete="off" maxlength="30">
+        </div>
+
+        <!-- ===== 기업부설연구소 등록 (자동 표시 — 읽기 전용) ===== -->
+        <!-- lab.html에서 업로드된 명단 기준으로 자동 계산 -->
+        <div class="person-form-row">
+          <label class="person-form-label">기업부설연구소 등록</label>
+          <div id="form-lab-status" style="padding:0.55rem 0.75rem;background:#f8fafc;border:1px solid var(--border-color);border-radius:0.45rem;font-size:0.88rem;color:var(--text-secondary);min-height:1.2em">
+            <!-- JS에서 채움 -->
+            확인 중…
+          </div>
+          <p style="font-size:0.72rem;color:#94a3b8;margin:0.3rem 0 0 0">
+            💡 <a href="lab.html" style="color:var(--primary-color);text-decoration:none">기업부설연구소</a> 페이지에서 KOITA 명단을 업로드하면 자동으로 반영됩니다.
+          </p>
+        </div>
+
+        <!-- ===== HR: 연락처 ===== -->
+        <div class="person-form-section-title" style="font-size:0.78rem;font-weight:700;color:#0f172a;letter-spacing:0.04em;margin:1.25rem 0 0.75rem 0;padding-bottom:0.4rem;border-bottom:1px solid #e5e7eb">연락처</div>
+
+        <div class="person-form-row" style="display:grid;grid-template-columns:1fr 1fr;gap:0.85rem">
+          <div>
+            <label class="person-form-label" for="form-phone">핸드폰</label>
+            <input type="text" id="form-phone" class="person-form-input" placeholder="010-0000-0000" autocomplete="off" maxlength="20">
+          </div>
+          <div>
+            <label class="person-form-label" for="form-email">이메일</label>
+            <input type="text" id="form-email" class="person-form-input" placeholder="example@company.com" autocomplete="off" maxlength="50">
+          </div>
+        </div>
+
+        <div class="person-form-row">
+          <label class="person-form-label" for="form-address">주소</label>
+          <input type="text" id="form-address" class="person-form-input" placeholder="주소" autocomplete="off" maxlength="200">
+        </div>
+
+        <!-- ===== HR: 자격증 ===== -->
+        <div class="person-form-row">
+          <label class="person-form-label">자격증</label>
+          <div id="form-certificates-list" class="form-certificates-list"></div>
+          <button type="button" id="form-certificate-add-btn" class="ui-btn ui-btn--ghost" style="margin-top:0.5rem; width:100%; border:1px dashed #cbd5e1;">+ 자격증 추가</button>
+        </div>
+
+        <!-- ===== HR: 메모 ===== -->
+        <div class="person-form-row">
+          <label class="person-form-label" for="form-hr-memo">메모</label>
+          <textarea id="form-hr-memo" class="person-form-input" rows="2" placeholder="예: 특이사항, 비고 등" maxlength="300"></textarea>
         </div>
 
         <!-- 폼 에러 -->
@@ -1812,11 +2171,72 @@
       </div>
 
       <div class="person-modal-footer">
-        <!-- 삭제 버튼: 수정 모드일 때만 노출 -->
-        <button type="button" class="person-modal-delete-btn" id="person-modal-delete" hidden>삭제</button>
-        <div class="person-modal-footer-right">
+        <div class="person-modal-footer-right" style="margin-left:auto">
           <button type="button" class="ui-btn ui-btn--ghost" id="person-modal-cancel">취소</button>
           <button type="button" class="ui-btn ui-btn--primary" id="person-modal-save">저장</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 소속 관리 모달 ===== -->
+  <div id="dept-manage-modal" class="company-select-overlay" hidden role="dialog" aria-modal="true" aria-labelledby="dept-manage-title">
+    <div class="company-select-panel" role="document" style="max-width:520px">
+      <div class="company-select-header">
+        <h2 class="company-select-title" id="dept-manage-title">소속 목록 관리</h2>
+        <button type="button" class="company-select-close" id="dept-manage-close" aria-label="닫기">×</button>
+      </div>
+      <div class="company-select-body">
+        <p class="company-select-desc">
+          소속명을 변경하면 해당 소속을 가진 모든 인력의 소속이 일괄 변경됩니다.<br>
+          삭제하면 해당 소속을 가진 인력의 소속 정보가 비워집니다.
+        </p>
+        <div id="dept-manage-list" style="display:flex;flex-direction:column;gap:0.5rem;max-height:50vh;overflow-y:auto">
+          <!-- JS에서 채움 -->
+        </div>
+        <div id="dept-manage-empty" hidden style="text-align:center;padding:1.5rem;color:var(--text-secondary);font-size:0.9rem">
+          등록된 소속이 없어요.<br>"+ 추가" 버튼으로 새 소속을 만들어 보세요.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 인력 일괄 이동 모달 (소속 변경) ===== -->
+  <div id="dept-move-modal" class="company-select-overlay" hidden role="dialog" aria-modal="true" aria-labelledby="dept-move-title">
+    <div class="company-select-panel" role="document" style="max-width:560px">
+      <div class="company-select-header">
+        <h2 class="company-select-title" id="dept-move-title">인력 일괄 이동</h2>
+        <button type="button" class="company-select-close" id="dept-move-close" aria-label="닫기">×</button>
+      </div>
+      <div class="company-select-body">
+        <p class="company-select-desc">
+          <strong id="dept-move-source-name">A</strong> 소속의 인력 중 다른 소속으로 옮길 사람을 선택하세요.
+        </p>
+
+        <!-- 대상 소속 선택 -->
+        <div style="margin-bottom:1rem">
+          <label class="person-form-label" style="font-size:0.85rem;font-weight:600">이동할 소속</label>
+          <div style="display:flex;gap:0.3rem;align-items:stretch;margin-top:0.35rem">
+            <select id="dept-move-target" class="ui-select" style="flex:1;min-width:0;width:100%">
+              <option value="">선택하세요</option>
+            </select>
+            <button type="button" id="dept-move-target-new-btn" class="ui-btn ui-btn--ghost" style="padding:0;width:60px;min-width:60px;font-size:0.8rem;flex-shrink:0" title="새 소속명 입력">새로 만들기</button>
+          </div>
+        </div>
+
+        <!-- 인력 목록 -->
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem">
+          <span style="font-size:0.85rem;font-weight:600;color:var(--text-primary)">인력 선택 (<span id="dept-move-selected-count">0</span>/<span id="dept-move-total-count">0</span>)</span>
+          <button type="button" id="dept-move-select-all" class="dept-manage-item-btn" style="font-size:0.78rem">전체 선택/해제</button>
+        </div>
+        <div id="dept-move-list" style="display:flex;flex-direction:column;gap:0.35rem;max-height:40vh;overflow-y:auto;border:1px solid var(--border-color);border-radius:0.5rem;padding:0.5rem;background:#f8fafc">
+          <!-- JS에서 채움 -->
+        </div>
+
+        <!-- 액션 버튼 -->
+        <div style="display:flex;justify-content:flex-end;gap:0.5rem;margin-top:1rem">
+          <button type="button" class="ui-btn ui-btn--ghost" id="dept-move-cancel">취소</button>
+          <button type="button" class="ui-btn ui-btn--primary" id="dept-move-apply">이동 적용</button>
         </div>
       </div>
     </div>
@@ -1832,7 +2252,7 @@
   <script src="auth-guard.js"></script>
   <script src="firestore-service.js"></script>
   <script src="sidebar.js"></script>
-  <script src="persons-master.js"></script>
+  <script src="persons-detail.js"></script>
   <script src="floating-buttons.js"></script>
 </body>
 </html>

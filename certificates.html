@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>[60hz] 자격증 관리</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="sidebar.css">
+  <style>
+    /* ========== 인증 게이트 (auth-guard.js 와 함께 동작) ========== */
+    html:not(.auth-bypass) .dashboard { visibility: hidden !important; }
+    html.auth-bypass .dashboard { visibility: visible; }
+    .auth-overlay {
+      position: fixed !important; top: 0 !important; left: 0 !important; right: 0 !important; bottom: 0 !important;
+      width: 100% !important; height: 100% !important; z-index: 2147483647 !important;
+      display: flex !important; align-items: center; justify-content: center;
+      background: linear-gradient(135deg, #f8fafc 0%, #eff6ff 50%, #e0f2fe 100%);
+      visibility: visible !important; opacity: 1 !important;
+    }
+    html.auth-bypass .auth-overlay { display: none !important; }
+    .auth-modal {
+      width: 90%; max-width: 400px; background: #fff; border-radius: 1rem;
+      box-shadow: 0 25px 50px -12px rgb(15 23 42 / 0.25); padding: 2rem; text-align: center;
+    }
+    .auth-modal-logo { font-size: 1.5rem; font-weight: 700; color: #2563eb; margin-bottom: 0.5rem; }
+    .auth-modal-title { font-size: 1rem; color: #64748b; margin-bottom: 1.5rem; line-height: 1.5; }
+    .auth-modal .auth-error {
+      margin-top: 0.75rem; font-size: 0.875rem; color: #ef4444; display: none;
+    }
+    .auth-modal .auth-error.visible { display: block; }
+    body { display: none !important; }
+    body.body-ready { display: block !important; }
+    /* ========== 인증 게이트 끝 ========== */
+
+    /* ========== 페이지 스타일 ========== */
+
+    /* 자격증별 보유자 수 (가로 스크롤 칩) */
+    .cert-type-summary {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 0.75rem;
+      padding: 0.85rem 1rem;
+      margin-bottom: 1.5rem;
+    }
+    .cert-type-summary-title {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: #475569;
+      margin-bottom: 0.6rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+    .cert-type-summary-meta {
+      margin-left: auto;
+      font-size: 0.82rem;
+      color: #64748b;
+      font-weight: 500;
+    }
+    .cert-type-summary-meta strong {
+      color: var(--primary-color);
+      font-weight: 700;
+    }
+    .cert-type-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+    }
+    .cert-type-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.3rem 0.7rem;
+      background: #fff;
+      border: 1px solid #cbd5e1;
+      border-radius: 999px;
+      font-size: 0.82rem;
+      color: #334155;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .cert-type-chip:hover {
+      border-color: var(--primary-color);
+      background: #eff6ff;
+    }
+    .cert-type-chip.active {
+      background: var(--primary-color);
+      color: #fff;
+      border-color: var(--primary-color);
+    }
+    .cert-type-chip-count {
+      display: inline-block;
+      min-width: 18px;
+      padding: 0 0.3rem;
+      background: rgba(255,255,255,0.3);
+      border-radius: 999px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      text-align: center;
+    }
+    .cert-type-chip:not(.active) .cert-type-chip-count {
+      background: #f1f5f9;
+      color: #64748b;
+    }
+    .cert-type-empty {
+      font-size: 0.85rem;
+      color: #94a3b8;
+      font-style: italic;
+    }
+
+    /* 툴바: 검색 + 회사 필터 */
+    .cert-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      margin-bottom: 1rem;
+    }
+    .cert-search-wrap {
+      position: relative;
+      flex: 1 1 280px;
+      max-width: 400px;
+    }
+    .cert-search-input {
+      width: 100%;
+      padding: 0.55rem 2.2rem 0.55rem 0.75rem;
+      border: 1px solid var(--border-color);
+      border-radius: 0.5rem;
+      font-size: 0.9rem;
+      font-family: inherit;
+      box-sizing: border-box;
+    }
+    .cert-search-input:focus {
+      outline: none;
+      border-color: var(--primary-color);
+    }
+    .cert-search-clear {
+      position: absolute;
+      right: 0.5rem;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 22px;
+      height: 22px;
+      border: none;
+      background: #f1f5f9;
+      color: #64748b;
+      border-radius: 50%;
+      cursor: pointer;
+      font-size: 0.85rem;
+      line-height: 1;
+    }
+    .cert-search-clear:hover {
+      background: #e2e8f0;
+    }
+    .cert-company-filter {
+      display: flex;
+      gap: 0.3rem;
+      flex-wrap: wrap;
+    }
+    .cert-company-btn {
+      padding: 0.45rem 0.85rem;
+      background: #fff;
+      border: 1px solid #cbd5e1;
+      border-radius: 0.5rem;
+      font-size: 0.85rem;
+      color: #334155;
+      cursor: pointer;
+      font-family: inherit;
+      transition: all 0.15s;
+    }
+    .cert-company-btn:hover {
+      border-color: var(--primary-color);
+    }
+    .cert-company-btn.active {
+      background: var(--primary-color);
+      color: #fff;
+      border-color: var(--primary-color);
+    }
+    .cert-meta {
+      margin-left: auto;
+      font-size: 0.82rem;
+      color: #64748b;
+    }
+
+    /* 테이블 */
+    .cert-table-wrap {
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 0.75rem;
+      overflow: hidden;
+      box-shadow: var(--shadow-sm);
+    }
+    .cert-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.88rem;
+    }
+    .cert-table thead {
+      background: #f8fafc;
+    }
+    .cert-table th {
+      padding: 0.75rem 1rem;
+      text-align: left;
+      font-weight: 600;
+      color: #475569;
+      border-bottom: 1px solid #e2e8f0;
+      font-size: 0.82rem;
+      white-space: nowrap;
+    }
+    .cert-table td {
+      padding: 0.7rem 1rem;
+      border-bottom: 1px solid #f1f5f9;
+      color: #1e293b;
+      vertical-align: middle;
+    }
+    .cert-table tbody tr:hover {
+      background: #f8fafc;
+    }
+    .cert-table tbody tr:last-child td {
+      border-bottom: none;
+    }
+    .cert-company-badge {
+      display: inline-block;
+      padding: 0.15rem 0.55rem;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 500;
+    }
+    .cert-company-badge--식스티   { background: #fef9c3; color: #854d0e; }
+    .cert-company-badge--굿뉴스   { background: #ffedd5; color: #9a3412; }
+    .cert-company-badge--패리티   { background: #d1fae5; color: #065f46; }
+
+    .cert-name-cell {
+      font-weight: 500;
+    }
+    .cert-memo-cell {
+      color: #64748b;
+      font-size: 0.85rem;
+      max-width: 280px;
+    }
+    .cert-link-btn {
+      display: inline-block;
+      padding: 0.3rem 0.7rem;
+      background: #e0f2fe;
+      color: #0369a1;
+      border-radius: 0.4rem;
+      text-decoration: none;
+      font-size: 0.8rem;
+      font-weight: 500;
+      transition: background 0.15s;
+    }
+    .cert-link-btn:hover {
+      background: #bae6fd;
+    }
+    .cert-link-empty {
+      color: #cbd5e1;
+      font-size: 0.85rem;
+    }
+
+    /* 빈 상태 */
+    .cert-empty-state {
+      padding: 3rem 1.5rem;
+      text-align: center;
+      color: #94a3b8;
+    }
+    .cert-empty-state-icon {
+      font-size: 2.5rem;
+      margin-bottom: 0.75rem;
+      opacity: 0.5;
+    }
+    .cert-empty-state-title {
+      font-size: 1.05rem;
+      color: #475569;
+      font-weight: 600;
+      margin-bottom: 0.3rem;
+    }
+    .cert-empty-state-text {
+      font-size: 0.88rem;
+      line-height: 1.5;
+    }
+    .cert-empty-state a {
+      color: var(--primary-color);
+      text-decoration: none;
+      font-weight: 500;
+    }
+    .cert-empty-state a:hover {
+      text-decoration: underline;
+    }
+
+  </style>
+</head>
+
+<body>
+  <div class="dashboard">
+    <!-- sidebar.js가 자동으로 사이드바를 렌더링함 -->
+    <div id="sidebar-mount"></div>
+
+    <main class="main-area">
+      <div class="container">
+        <header class="header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.75rem">
+          <h1 class="header-title">🗃️ 자격증 관리</h1>
+        </header>
+
+        <!-- 자격증별 보유자 수 (칩) -->
+        <section class="cert-type-summary" aria-label="자격증별 보유자 수">
+          <div class="cert-type-summary-title">
+            자격증별 보유자 수
+            <span style="color:#94a3b8;font-weight:400">(클릭해서 필터)</span>
+            <span class="cert-type-summary-meta" id="cert-people-meta"></span>
+          </div>
+          <div class="cert-type-chips" id="cert-type-chips"></div>
+        </section>
+
+        <!-- 툴바: 검색 + 필터 -->
+        <div class="cert-toolbar">
+          <div class="cert-search-wrap">
+            <input type="text" class="cert-search-input" id="cert-search"
+                   placeholder="이름 또는 자격증으로 검색" autocomplete="off">
+            <button type="button" class="cert-search-clear" id="cert-search-clear" hidden title="검색 지우기">✕</button>
+          </div>
+
+          <div class="cert-company-filter" role="group" aria-label="회사 필터">
+            <button type="button" class="cert-company-btn active" data-company="all">전체</button>
+            <button type="button" class="cert-company-btn" data-company="식스티">식스티</button>
+            <button type="button" class="cert-company-btn" data-company="굿뉴스">굿뉴스</button>
+            <button type="button" class="cert-company-btn" data-company="패리티">패리티</button>
+          </div>
+
+          <div class="cert-meta" id="cert-meta">자격증 0건</div>
+        </div>
+
+        <!-- 테이블 -->
+        <div class="cert-table-wrap">
+          <table class="cert-table" id="cert-table">
+            <thead>
+              <tr>
+                <th style="width:90px">회사</th>
+                <th style="width:120px">이름</th>
+                <th>자격증</th>
+                <th>메모</th>
+                <th style="width:90px; text-align:center">증빙</th>
+              </tr>
+            </thead>
+            <tbody id="cert-tbody">
+              <!-- JS가 동적으로 렌더링 -->
+            </tbody>
+          </table>
+
+          <!-- 빈 상태 -->
+          <div class="cert-empty-state" id="cert-empty-state" hidden>
+            <div class="cert-empty-state-icon">📋</div>
+            <div class="cert-empty-state-title">등록된 자격증이 없습니다</div>
+            <div class="cert-empty-state-text">
+              자격증은 <a href="persons-detail.html">인력 상세</a> 페이지에서 등록할 수 있어요.
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- 인증 모달 (auth-guard.js가 자동 처리) -->
+  <div class="auth-overlay" id="auth-overlay">
+    <div class="auth-modal">
+      <div class="auth-modal-logo">🔒 CI_R&DM</div>
+      <div class="auth-modal-title">접근 권한을 확인 중입니다...</div>
+      <div class="auth-error" id="auth-error">접근 권한이 없습니다.</div>
+    </div>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-auth-compat.js"></script>
+  <script src="firebase-config.example.js"></script>
+  <script src="firebase-config.js"></script>
+  <script src="firebase.js"></script>
+  <script src="auth-guard.js"></script>
+  <script src="firestore-service.js"></script>
+  <script src="sidebar.js"></script>
+  <script src="certificates.js"></script>
+  <script src="floating-buttons.js"></script>
+</body>
+</html>

@@ -1,12 +1,16 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
+  <script>
+    // 인증은 auth-guard.js 가 처리합니다 (페이지 하단 스크립트 참고)
+    // 페이지를 일단 숨김 — auth-guard.js 가 인증 통과 후 표시
+  </script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>[60hz] 인건비 대시보드</title>
+  <title>[R&DM] 인건비 대시보드</title>
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="sidebar.css">
   <style>
-    /* ========== 인증 게이트 (auth-guard.js 와 함께 동작) ========== */
     html:not(.auth-bypass) .dashboard { visibility: hidden !important; }
     html.auth-bypass .dashboard { visibility: visible; }
     .auth-overlay {
@@ -17,736 +21,383 @@
       visibility: visible !important; opacity: 1 !important;
     }
     html.auth-bypass .auth-overlay { display: none !important; }
-    .auth-modal {
-      width: 90%; max-width: 400px; background: #fff; border-radius: 1rem;
-      box-shadow: 0 25px 50px -12px rgb(15 23 42 / 0.25); padding: 2rem; text-align: center;
-    }
+    .auth-modal { width: 90%; max-width: 400px; background: #fff; border-radius: 1rem; box-shadow: 0 25px 50px -12px rgb(15 23 42 / 0.25); padding: 2rem; text-align: center; }
     .auth-modal-logo { font-size: 1.5rem; font-weight: 700; color: #2563eb; margin-bottom: 0.5rem; }
-    .auth-modal-title { font-size: 1rem; color: #64748b; margin-bottom: 1.5rem; line-height: 1.5; }
-    .auth-modal .auth-error {
-      margin-top: 0.75rem; font-size: 0.875rem; color: #ef4444; display: none;
-    }
+    .auth-modal-title { font-size: 1rem; color: #64748b; margin-bottom: 1.5rem; }
+    .auth-modal input[type="password"] { width: 100%; padding: 0.75rem 1rem; border: 1px solid #e2e8f0; border-radius: 0.5rem; font-size: 1rem; box-sizing: border-box; }
+    .auth-modal .auth-submit-btn { width: 100%; margin-top: 1rem; padding: 0.75rem 1rem; background: #2563eb; color: #fff; border: none; border-radius: 0.5rem; font-size: 1rem; font-weight: 600; cursor: pointer; }
+    .auth-modal .auth-error { margin-top: 0.75rem; font-size: 0.875rem; color: #ef4444; display: none; }
     .auth-modal .auth-error.visible { display: block; }
     body { display: none !important; }
     body.body-ready { display: block !important; }
-    /* ========== 인증 게이트 끝 ========== */
 
-    /* ========== 페이지 스타일 ========== */
-    .history-toolbar {
+    /* ============================================================
+       Labor Dashboard styles  (prefix: ld-)
+       ============================================================ */
+    .ld-toolbar {
       display: flex;
       align-items: center;
-      gap: 1rem;
+      gap: 0.75rem;
       flex-wrap: wrap;
-      margin-bottom: 1rem;
+      margin-bottom: 1.25rem;
     }
-    .history-toolbar-label {
+    .ld-toolbar-label {
       font-size: 0.875rem;
       color: var(--text-secondary);
       font-weight: 500;
     }
-    .history-toolbar select {
-      min-width: 140px;
+    .ld-toolbar .ui-select {
+      min-width: 110px;
       padding: 0.5rem 0.75rem;
       border-radius: 0.5rem;
       border: 1px solid var(--border-color);
       background: var(--card-bg);
       font-size: 0.9rem;
-      font-family: inherit;
     }
-    .history-toolbar-meta {
-      font-size: 0.78rem;
-      color: #94a3b8;
-      white-space: nowrap;
-      padding-left: 0.25rem;
+    .ld-toolbar-meta {
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      margin-left: auto;
     }
 
-    /* 통계 카드 */
-    .history-stats-grid {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 1rem;
-      margin-bottom: 1.5rem;
-    }
-    .history-stat-card {
-      flex: 1 1 180px;
-      min-width: 160px;
+    /* ===== Section wrappers ===== */
+    .ld-section {
       background: var(--card-bg);
       border: 1px solid var(--border-color);
-      border-radius: 0.75rem;
-      padding: 1rem 1.25rem;
+      border-radius: 0.875rem;
+      padding: 1.25rem 1.25rem 1.1rem;
       box-shadow: var(--shadow-sm);
-      transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
-      user-select: none;
+      margin-bottom: 1.25rem;
     }
-    .history-stat-card.clickable {
-      cursor: pointer;
+    .ld-section-header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      margin-bottom: 0.9rem;
+      gap: 0.75rem;
+      flex-wrap: wrap;
     }
-    .history-stat-card.clickable:hover {
-      transform: translateY(-2px);
-      box-shadow: var(--shadow-md);
-      border-color: var(--primary-color);
+    .ld-section-title {
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin: 0;
+      letter-spacing: -0.01em;
     }
-    .history-stat-card.is-active {
-      border-color: var(--primary-color);
-      border-width: 2px;
-      padding: calc(1rem - 1px) calc(1.25rem - 1px);
-      background: linear-gradient(135deg, rgba(37, 99, 235, 0.04), rgba(37, 99, 235, 0.09));
+    .ld-section-sub {
+      font-size: 0.78rem;
+      color: var(--text-secondary);
+      font-weight: 500;
     }
-    .history-stat-card.is-active .history-stat-label {
-      color: var(--primary-color);
-      font-weight: 600;
+
+    /* ===== 1) Top summary cards (4) ===== */
+    .ld-stat-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 0.85rem;
+      margin-bottom: 1.25rem;
     }
-    .history-stat-label {
-      font-size: 0.8rem;
+    .ld-stat-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 0.875rem;
+      padding: 1rem 1.1rem 0.95rem;
+      box-shadow: var(--shadow-sm);
+      position: relative;
+    }
+    .ld-stat-label {
+      font-size: 0.82rem;
       color: var(--text-secondary);
       margin-bottom: 0.4rem;
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
     }
-    .history-stat-value {
+    .ld-stat-value {
       font-size: 1.6rem;
       font-weight: 700;
-      color: var(--primary-color);
+      color: var(--text-primary);
+      letter-spacing: -0.02em;
       line-height: 1.1;
-      letter-spacing: -0.02em;
     }
-    .history-stat-value--success { color: var(--success-color, #059669); }
-    .history-stat-value--scheduled { color: #1d4ed8; }
-    .history-stat-value--end { color: #4b5563; }
-    .history-stat-value-unit {
-      font-size: 0.85rem;
-      font-weight: 500;
-      color: var(--text-secondary);
-      margin-left: 0.2rem;
-    }
-    /* 새 카드별 색상 */
-    .history-stat-card--scheduled .history-stat-value { color: #8b5cf6; }
-    .history-stat-card--ongoing .history-stat-value { color: #2563eb; }
-    .history-stat-card--ended .history-stat-value { color: #4b5563; }
-    .history-stat-card--total .history-stat-value { color: #111827; }
-    .history-stat-card--funding {
-      background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
-      border-color: #f59e0b;
-      flex-basis: 240px;
-    }
-    .history-stat-card--funding .history-stat-label { color: #92400e; font-weight: 600; }
-    .history-stat-card--funding .history-stat-value { color: #b45309; }
-
-    /* ===== 탭 (R&D 활동 / 용역) ===== */
-    .history-tabs {
-      display: flex;
-      gap: 0.75rem;
-      margin-bottom: 1rem;
-    }
-    .history-tab {
-      flex: 1;
-      display: flex;
-      align-items: center;
-      gap: 0.85rem;
-      padding: 1rem 1.25rem;
-      background: #fff;
-      border: 1.5px solid #e5e7eb;
-      border-radius: 0.75rem;
-      cursor: pointer;
-      transition: all 0.15s ease;
-      text-align: left;
-      font-family: inherit;
-    }
-    .history-tab:hover {
-      border-color: #cbd5e1;
-      background: #f9fafb;
-    }
-    .history-tab.is-active {
-      background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
-      border-color: #2563eb;
-      border-width: 2px;
-      padding: calc(1rem - 0.5px) calc(1.25rem - 0.5px);
-      box-shadow: 0 2px 8px rgba(37, 99, 235, 0.15);
-    }
-    .history-tab-icon { font-size: 1.6rem; line-height: 1; flex-shrink: 0; }
-    .history-tab-body { display: flex; flex-direction: column; gap: 0.15rem; flex: 1; }
-    .history-tab-title { font-size: 1rem; font-weight: 700; color: #1e293b; }
-    .history-tab.is-active .history-tab-title { color: #1d4ed8; }
-    .history-tab-sub { font-size: 0.78rem; color: #64748b; }
-    .history-tab-count {
-      font-size: 0.95rem;
-      font-weight: 700;
-      color: #64748b;
-      background: #f1f5f9;
-      padding: 0.25rem 0.65rem;
-      border-radius: 999px;
-      flex-shrink: 0;
-    }
-    .history-tab.is-active .history-tab-count {
-      background: #2563eb;
-      color: #fff;
-    }
-    /* 용역 탭 활성 — 오렌지 톤 */
-    .history-tab[data-tab="service"].is-active {
-      background: linear-gradient(135deg, #fff7ed 0%, #fed7aa 100%);
-      border-color: #ea580c;
-      box-shadow: 0 2px 8px rgba(234, 88, 12, 0.15);
-    }
-    .history-tab[data-tab="service"].is-active .history-tab-title { color: #c2410c; }
-    .history-tab[data-tab="service"].is-active .history-tab-count {
-      background: #ea580c;
-      color: #fff;
-    }
-
-    /* NTIS 토글 — 칩 형태 (검색 행 안) */
-    .history-toggle-chip {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.4rem;
-      padding: 0.4rem 0.75rem;
-      background: linear-gradient(135deg, #ecfeff 0%, #cffafe 100%);
-      border: 1px solid #67e8f9;
-      border-radius: 999px;
-      cursor: pointer;
-      font-size: 0.82rem;
-      color: #0e7490;
-      user-select: none;
-      transition: all 0.15s ease;
-      white-space: nowrap;
-    }
-    .history-toggle-chip:hover {
-      border-color: #22d3ee;
-    }
-    .history-toggle-chip.is-active {
-      background: linear-gradient(135deg, #cffafe 0%, #a5f3fc 100%);
-      border-color: #0891b2;
-      color: #155e75;
-      font-weight: 600;
-    }
-    .history-toggle-chip input {
-      cursor: pointer;
-      accent-color: #0891b2;
-      margin: 0;
-    }
-    /* 통계 칩 (예정 · 진행) */
-    .history-summary-chips {
-      display: inline-flex;
-      gap: 0.4rem;
-      align-items: center;
-    }
-    .summary-chip {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.35rem;
-      padding: 0.4rem 0.8rem;
-      background: #f8fafc;
-      border: 1px solid #e5e7eb;
-      border-radius: 0.5rem;
-      font-size: 0.82rem;
-      color: #475569;
-      white-space: nowrap;
-    }
-    .summary-chip strong {
-      font-size: 0.95rem;
-      font-weight: 700;
-      letter-spacing: -0.02em;
-    }
-    .summary-chip--scheduled { background: #ede9fe; border-color: #ddd6fe; color: #5b21b6; }
-    .summary-chip--scheduled strong { color: #7c3aed; }
-    .summary-chip--ongoing { background: #dbeafe; border-color: #bfdbfe; color: #1e40af; }
-    .summary-chip--ongoing strong { color: #2563eb; }
-    .summary-chip--ended { background: #f1f5f9; border-color: #e2e8f0; color: #475569; }
-    .summary-chip--ended strong { color: #64748b; }
-
-    /* ===== 연도별 트렌드 막대 차트 ===== */
-    .history-trend-section {
-      background: #fff;
-      border: 1px solid #e5e7eb;
-      border-radius: 0.75rem;
-      padding: 1rem 1.25rem;
-      margin-bottom: 1.25rem;
-    }
-    .history-trend-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: baseline;
-      margin-bottom: 0.85rem;
-    }
-    .history-trend-title { font-size: 0.95rem; font-weight: 700; color: #1e293b; }
-    .history-trend-hint { font-size: 0.75rem; color: #94a3b8; }
-    .history-trend-chart {
-      display: flex;
-      gap: 0.5rem;
-      align-items: flex-end;
-      height: 130px;
-      padding: 0 0.25rem;
-    }
-    .history-trend-bar-wrap {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 0.35rem;
-      cursor: pointer;
-      transition: opacity 0.15s ease;
-    }
-    .history-trend-bar-wrap:hover { opacity: 0.8; }
-    .history-trend-bar-num {
-      font-size: 0.75rem;
-      font-weight: 700;
-      color: #475569;
-      font-variant-numeric: tabular-nums;
-    }
-    .history-trend-bar {
-      width: 100%;
-      max-width: 56px;
-      background: linear-gradient(180deg, #93c5fd 0%, #3b82f6 100%);
-      border-radius: 0.35rem 0.35rem 0 0;
-      min-height: 4px;
-      transition: filter 0.15s ease;
-    }
-    .history-trend-bar-wrap.is-active .history-trend-bar { background: linear-gradient(180deg, #f59e0b 0%, #d97706 100%); }
-    .history-trend-bar-wrap:hover .history-trend-bar { filter: brightness(1.1); }
-    .history-trend-bar-label {
+    .ld-stat-value--primary { color: var(--primary-color, #2563eb); }
+    .ld-stat-value--success { color: var(--success-color, #059669); }
+    .ld-stat-value--warning { color: #b45309; }
+    .ld-stat-value--danger  { color: var(--danger-color, #dc2626); }
+    .ld-stat-sub {
       font-size: 0.72rem;
-      color: #64748b;
+      color: #9ca3af;
+      margin-top: 0.3rem;
+    }
+    .ld-stat-card--accent-blue   { background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); border-color: #bae6fd; }
+    .ld-stat-card--accent-green  { background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%); border-color: #bbf7d0; }
+    .ld-stat-card--accent-amber  { background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%); border-color: #fde68a; }
+    .ld-stat-card--accent-rose   { background: linear-gradient(135deg, #fff1f2 0%, #ffe4e6 100%); border-color: #fecdd3; }
+
+    /* ===== 2) Monthly refund trend chart ===== */
+    .ld-chart-wrap {
+      position: relative;
+      width: 100%;
+      height: 280px;
+    }
+
+    /* ===== 3) Project refund progress (horizontal bars) ===== */
+    .ld-bar-list { display: flex; flex-direction: column; gap: 0.65rem; }
+    .ld-bar-row {
+      display: grid;
+      grid-template-columns: minmax(140px, 1.4fr) 1fr minmax(170px, auto);
+      gap: 0.8rem;
+      align-items: center;
+    }
+    .ld-bar-name {
+      font-size: 0.88rem;
+      color: var(--text-primary);
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .ld-bar-track {
+      position: relative;
+      height: 10px;
+      background: #f1f5f9;
+      border-radius: 999px;
+      overflow: hidden;
+    }
+    .ld-bar-fill {
+      position: absolute;
+      top: 0; left: 0; bottom: 0;
+      background: linear-gradient(90deg, #60a5fa, #2563eb);
+      border-radius: 999px;
+      transition: width 0.4s ease;
+    }
+    .ld-bar-fill--done { background: linear-gradient(90deg, #34d399, #059669); }
+    .ld-bar-fill--warn { background: linear-gradient(90deg, #fbbf24, #d97706); }
+    .ld-bar-fill--danger { background: linear-gradient(90deg, #f87171, #dc2626); }
+    .ld-bar-meta {
+      font-size: 0.82rem;
+      color: var(--text-secondary);
+      white-space: nowrap;
+      text-align: right;
       font-variant-numeric: tabular-nums;
     }
-
-    /* 검색 + 활성 필터 칩 */
-    .history-search-row {
-      display: flex;
-      align-items: center;
-      gap: 0.6rem;
-      flex-wrap: wrap;
-      margin-bottom: 0.85rem;
-    }
-    .projects-actions-spacer { flex: 1; }
-    .projects-actions-buttons { display: flex; gap: 0.5rem; align-items: center; }
-    /* 열 선택 드롭다운 */
-    .projects-col-dropdown { position: relative; }
-    .projects-col-panel {
-      display: none;
-      position: absolute;
-      top: 100%;
-      right: 0;
-      margin-top: 4px;
-      background: var(--card-bg);
-      border: 1px solid var(--border-color);
-      border-radius: 0.5rem;
-      box-shadow: var(--shadow-lg);
-      padding: 0.75rem 1rem;
-      z-index: 100;
-      min-width: 180px;
-    }
-    .projects-col-panel.open { display: block; }
-    .projects-col-panel label { display: flex; align-items: center; gap: 0.5rem; padding: 0.35rem 0; cursor: pointer; font-size: 0.875rem; }
-    /* 옵션 컬럼 기본 숨김 */
-    .history-table .col-opt { display: none; }
-    /* 숫자 컬럼 우측 정렬 */
-    .history-table tbody td.col-num { text-align: right; font-variant-numeric: tabular-nums; }
-    /* 과제명 셀 (메인 컬럼) */
-    .history-table .cell-projectname {
-      display: block;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    /* 과제명(용역명) 컬럼: 남은 공간을 다 쓰게 (다른 컬럼들이 고정 너비라서 자동으로 확장됨) */
-    .history-table .col-projectname { max-width: none; width: auto; }
-    .history-table .cell-projectname { max-width: 100%; }
-    /* 사업기간(연구기간) 컬럼 한 줄 강제 */
-    .history-table .col-period,
-    .history-table tbody td.col-period { white-space: nowrap; font-variant-numeric: tabular-nums; }
-    /* 기관명/발주처 컬럼 한 줄 강제 (길면 ...) */
-    .history-table .col-institution,
-    .history-table tbody td.col-institution {
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      max-width: 140px;
-    }
-    /* 표 내용 전반적으로 중앙정렬 */
-    .history-table tbody td { text-align: center; }
-    /* 예외: 과제명/용역명은 좌측 정렬 */
-    .history-table tbody td.col-projectname { text-align: left; }
-    /* 예외: 금액(지원금 총액/사업비 총액/공급가)은 우측 정렬 — col-num 기존 규칙이 적용됨 */
-    /* R&D 뱃지 (현재 미사용) */
-    .projects-badge--rd { background: #ecfeff; color: #0e7490; border: 1px solid #67e8f9; font-size: 0.68rem; font-weight: 700; padding: 0.1rem 0.4rem; border-radius: 0.3rem; }
-    .history-search-wrap {
-      position: relative;
-      flex: 1;
-      min-width: 220px;
-      max-width: 360px;
-    }
-    .history-search-icon {
-      position: absolute;
-      left: 0.7rem;
-      top: 50%;
-      transform: translateY(-50%);
-      color: var(--text-secondary);
-      pointer-events: none;
-      font-size: 0.95rem;
-    }
-    .history-search-input {
-      width: 100%;
-      padding: 0.55rem 2.2rem 0.55rem 2.2rem;
-      border: 1px solid var(--border-color);
-      border-radius: 0.5rem;
-      font-size: 0.9rem;
-      background: var(--card-bg);
-      font-family: inherit;
-      box-sizing: border-box;
-      transition: border-color 0.15s, box-shadow 0.15s;
-    }
-    .history-search-input:focus {
-      outline: none;
-      border-color: var(--primary-color);
-      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
-    }
-    .history-search-clear {
-      position: absolute;
-      right: 0.4rem;
-      top: 50%;
-      transform: translateY(-50%);
-      background: transparent;
-      border: none;
-      color: var(--text-secondary);
-      cursor: pointer;
-      width: 24px;
-      height: 24px;
-      border-radius: 50%;
-      display: none;
-      align-items: center;
-      justify-content: center;
-      font-size: 1.1rem;
-      line-height: 1;
-      padding: 0;
-    }
-    .history-search-clear:hover {
-      background: #f1f5f9;
+    .ld-bar-meta strong {
       color: var(--text-primary);
-    }
-    .history-search-wrap.has-value .history-search-clear {
-      display: inline-flex;
-    }
-    .history-active-filters {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      flex-wrap: wrap;
-    }
-    .history-active-filters:empty { display: none; }
-    .history-filter-chip {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.45rem;
-      padding: 0.35rem 0.6rem 0.35rem 0.75rem;
-      background: #dbeafe;
-      color: #1d4ed8;
-      border-radius: 999px;
-      font-size: 0.8rem;
-      font-weight: 600;
-      border: 1px solid rgba(37, 99, 235, 0.2);
-    }
-    .history-filter-chip-clear {
-      background: rgba(255, 255, 255, 0.7);
-      border: none;
-      cursor: pointer;
-      color: inherit;
-      font-size: 0.95rem;
-      width: 18px;
-      height: 18px;
-      border-radius: 50%;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      line-height: 1;
-      padding: 0;
-    }
-    .history-filter-chip-clear:hover { background: #fff; }
-
-    /* 테이블 */
-    .history-table-wrap {
-      background: var(--card-bg);
-      border-radius: 0.75rem;
-      box-shadow: var(--shadow-md);
-      overflow-x: hidden;
-      overflow-y: auto;
-      border: 1px solid var(--border-color);
-    }
-    .history-table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 0.9rem;
-      table-layout: fixed;  /* 컬럼 너비 헤더 지정대로 고정 → 가로 스크롤 방지 */
-    }
-    /* 기본 셀: 가로 넘침 방지 (... 처리) */
-    .history-table td {
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-    .history-table th,
-    .history-table td {
-      padding: 0.7rem 0.85rem;
-      border-bottom: 1px solid var(--border-color);
-      text-align: left;
-      vertical-align: middle;
-    }
-    .history-table thead th {
-      background: #f5f5f5;
-      font-weight: 600;
-      color: var(--text-primary);
-      white-space: nowrap;
-      font-size: 0.85rem;
-      text-align: center;
-    }
-    .history-table tbody tr:hover {
-      background: #f8fafc;
-    }
-    .history-table .col-amount {
-      text-align: right;
-      font-weight: 600;
-      white-space: nowrap;
-    }
-    .history-table .col-status {
-      white-space: nowrap;
-    }
-    .history-empty {
-      text-align: center;
-      padding: 3rem 1rem;
-      color: var(--text-secondary);
-      font-size: 0.9rem;
-    }
-
-    /* 상태 배지 — projects.html 과 동일 */
-    .projects-badge { display: inline-block; padding: 0.2rem 0.5rem; border-radius: 0.35rem; font-size: 0.72rem; font-weight: 700; white-space: nowrap; }
-    .projects-badge--ongoing { background: #d1fae5; color: #047857; }              /* 수행 (계속) — 진한 초록 */
-    .projects-badge--ongoing-new { background: #ccfbf1; color: #0d9488; }          /* 수행 (신규) — 청록 */
-    .projects-badge--scheduled { background: #dbeafe; color: #1d4ed8; }
-    .projects-badge--waiting { background: #fef3c7; color: #b45309; }
-    .projects-badge--unselected { background: #fef2f2; color: #b91c1c; }           /* 미선정 — 톤다운 분홍 */
-    .projects-badge--unsubmitted { background: #f3f4f6; color: #6b7280; }          /* 미제출 — 라이트 회색 */
-    .projects-badge--other { background: #ecfccb; color: #65a30d; }                /* 선정(기타) — 라임 */
-    .projects-badge--end { background: #e5e7eb; color: #4b5563; }
-
-    /* 총 N건 + 분류 카드 (상단 통합) */
-    .division-card {
-      background: var(--card-bg);
-      border: 1px solid var(--border-color);
-      border-radius: 0.75rem;
-      padding: 1.25rem 1.5rem;
-      box-shadow: var(--shadow-sm);
-      margin-bottom: 1rem;
-    }
-    .division-card-header {
-      display: flex;
-      align-items: baseline;
-      gap: 0.6rem;
-      cursor: pointer;
-      user-select: none;
-      padding: 0.2rem 0.4rem;
-      margin: -0.2rem -0.4rem 0.6rem;
-      border-radius: 0.4rem;
-      transition: background 0.15s;
-      width: fit-content;
-    }
-    .division-card-header:hover {
-      background: #f1f5f9;
-    }
-    .division-card-label {
-      font-size: 0.85rem;
-      color: var(--text-secondary);
-      font-weight: 500;
-    }
-    .division-card-value {
-      font-size: 1.85rem;
-      font-weight: 800;
-      color: var(--primary-color);
-      line-height: 1;
-      letter-spacing: -0.02em;
-    }
-    .division-card-unit {
-      font-size: 0.95rem;
-      font-weight: 500;
-      color: var(--text-secondary);
-    }
-    .division-card-divider {
-      height: 1px;
-      background: var(--border-color);
-      margin: 0.5rem 0 0.85rem;
-    }
-    .division-pills {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.5rem;
-    }
-    .division-pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.4rem;
-      padding: 0.45rem 0.85rem;
-      background: #f8fafc;
-      border: 1px solid var(--border-color);
-      border-radius: 999px;
-      font-size: 0.85rem;
-      color: var(--text-primary);
-      cursor: pointer;
-      font-family: inherit;
-      font-weight: 600;
-      transition: all 0.15s ease;
-    }
-    .division-pill:hover {
-      background: #fff;
-      border-color: var(--primary-color);
-      transform: translateY(-1px);
-      box-shadow: 0 2px 6px rgba(37, 99, 235, 0.1);
-    }
-    .division-pill.is-active {
-      background: var(--primary-color);
-      border-color: var(--primary-color);
-      color: #fff;
-    }
-    .division-pill-count {
-      color: var(--text-secondary);
-      font-weight: 500;
-    }
-    .division-pill.is-active .division-pill-count {
-      color: rgba(255, 255, 255, 0.85);
-    }
-      /* 사이드바 그룹 구분선 */
-    .sidebar-divider {
-      height: 1px;
-      background: #e5e7eb;
-      margin: 0.75rem 1rem;
-      opacity: 0.7;
-    }
-
-    /* 페이지 전체 너비 고정 — 화면 크기와 무관 */
-    .container {
-      width: 1400px;
-      margin: 0 auto;
-    }
-
-    /* ===== 다운로드 컬럼 선택 모달 ===== */
-    .dl-modal-overlay {
-      position: fixed;
-      inset: 0;
-      background: rgba(15, 23, 42, 0.5);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      z-index: 1000;
-      padding: 1rem;
-    }
-    .dl-modal-panel {
-      background: #fff;
-      border-radius: 0.75rem;
-      width: 100%;
-      max-width: 460px;
-      max-height: 85vh;
-      display: flex;
-      flex-direction: column;
-      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
-      overflow: hidden;
-    }
-    .dl-modal-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 1rem 1.25rem;
-      border-bottom: 1px solid var(--border-color);
-    }
-    .dl-modal-title {
-      font-size: 1.05rem;
       font-weight: 700;
-      margin: 0;
-      color: var(--text-primary);
     }
-    .dl-modal-close {
-      background: transparent;
-      border: none;
-      font-size: 1.5rem;
-      line-height: 1;
-      color: var(--text-secondary);
-      cursor: pointer;
-      padding: 0.25rem 0.5rem;
-      border-radius: 0.35rem;
-    }
-    .dl-modal-close:hover {
-      background: #f1f5f9;
-      color: var(--text-primary);
-    }
-    .dl-modal-body {
-      padding: 1.25rem;
-      overflow-y: auto;
-    }
-    .dl-modal-desc {
-      font-size: 0.85rem;
-      color: var(--text-secondary);
-      margin: 0 0 1rem;
-    }
-    .dl-modal-section {
-      margin-bottom: 1.25rem;
-    }
-    .dl-modal-section:last-child {
-      margin-bottom: 0;
-    }
-    .dl-modal-section-title {
-      font-size: 0.8rem;
-      font-weight: 600;
-      color: var(--text-secondary);
-      margin-bottom: 0.5rem;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-    }
-    .dl-modal-base-cols {
-      background: #f8fafc;
-      border: 1px solid #e2e8f0;
-      border-radius: 0.45rem;
-      padding: 0.65rem 0.85rem;
-      font-size: 0.82rem;
-      color: var(--text-primary);
-      line-height: 1.5;
-    }
-    .dl-modal-options {
+
+    /* ===== 4) Person participation list (current month) ===== */
+    .ld-person-list { display: flex; flex-direction: column; gap: 0.5rem; }
+    .ld-person-row {
       display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 0.5rem 0.75rem;
-    }
-    .dl-modal-options label {
-      display: flex;
+      grid-template-columns: minmax(110px, 0.9fr) 1fr minmax(80px, auto) minmax(120px, auto);
+      gap: 0.7rem;
       align-items: center;
-      gap: 0.5rem;
-      padding: 0.5rem 0.65rem;
-      background: #f8fafc;
-      border: 1px solid #e2e8f0;
-      border-radius: 0.4rem;
-      font-size: 0.875rem;
-      cursor: pointer;
+      padding: 0.45rem 0.6rem;
+      border-radius: 0.5rem;
+      border: 1px solid transparent;
       transition: background 0.15s, border-color 0.15s;
     }
-    .dl-modal-options label:hover {
-      background: #eff6ff;
-      border-color: var(--primary-color);
+    .ld-person-row:hover {
+      background: #f8fafc;
+      border-color: var(--border-color);
     }
-    .dl-modal-options input[type="checkbox"] {
-      margin: 0;
-      cursor: pointer;
+    .ld-person-name {
+      font-size: 0.88rem;
+      font-weight: 600;
+      color: var(--text-primary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
-    .dl-modal-footer {
+    .ld-person-rate {
+      font-size: 0.85rem;
+      font-weight: 700;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+    .ld-person-rate--ok    { color: var(--success-color, #059669); }
+    .ld-person-rate--warn  { color: #b45309; }
+    .ld-person-rate--full  { color: var(--danger-color, #dc2626); }
+    .ld-person-projects {
+      font-size: 0.74rem;
+      color: var(--text-secondary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* ===== 5) New hires progress table ===== */
+    .ld-hire-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.875rem;
+    }
+    .ld-hire-table th,
+    .ld-hire-table td {
+      padding: 0.55rem 0.7rem;
+      text-align: left;
+      border-bottom: 1px solid var(--border-color);
+    }
+    .ld-hire-table th {
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      background: #f8fafc;
+    }
+    .ld-hire-table tbody tr:last-child td { border-bottom: none; }
+    .ld-hire-num {
+      text-align: center;
+      font-variant-numeric: tabular-nums;
+    }
+    .ld-hire-badge {
+      display: inline-block;
+      padding: 0.15rem 0.55rem;
+      border-radius: 999px;
+      font-size: 0.72rem;
+      font-weight: 600;
+    }
+    .ld-hire-badge--done {
+      background: #dcfce7;
+      color: #166534;
+    }
+    .ld-hire-badge--progress {
+      background: #fef3c7;
+      color: #92400e;
+    }
+    .ld-hire-badge--none {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+    .ld-hire-summary {
+      margin-top: 0.85rem;
+      padding: 0.65rem 0.85rem;
+      background: #f8fafc;
+      border-radius: 0.5rem;
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+    }
+    .ld-hire-summary strong { color: var(--text-primary); }
+
+    /* ===== 6) Company workforce utilization (split layout) ===== */
+    .ld-util-grid {
+      display: grid;
+      grid-template-columns: minmax(220px, 0.8fr) 1fr;
+      gap: 1.25rem;
+      align-items: stretch;
+    }
+    .ld-util-stats {
       display: flex;
-      justify-content: flex-end;
-      gap: 0.5rem;
-      padding: 0.85rem 1.25rem;
-      border-top: 1px solid var(--border-color);
-      background: #f9fafb;
+      flex-direction: column;
+      gap: 0.6rem;
     }
+    .ld-util-stat-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      padding: 0.55rem 0.75rem;
+      background: #f8fafc;
+      border-radius: 0.5rem;
+    }
+    .ld-util-stat-label {
+      font-size: 0.82rem;
+      color: var(--text-secondary);
+    }
+    .ld-util-stat-value {
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      font-variant-numeric: tabular-nums;
+    }
+    .ld-util-chart-wrap {
+      position: relative;
+      width: 100%;
+      min-height: 200px;
+    }
+
+    /* ===== 7) Action items ===== */
+    .ld-action-list { display: flex; flex-direction: column; gap: 0.5rem; }
+    .ld-action-row {
+      display: grid;
+      grid-template-columns: 80px 1fr auto;
+      gap: 0.75rem;
+      align-items: center;
+      padding: 0.65rem 0.85rem;
+      border-radius: 0.5rem;
+      border: 1px solid var(--border-color);
+      background: #fff;
+    }
+    .ld-action-level {
+      font-size: 0.72rem;
+      font-weight: 700;
+      padding: 0.2rem 0.55rem;
+      border-radius: 999px;
+      text-align: center;
+      letter-spacing: 0.02em;
+    }
+    .ld-action-level--urgent {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+    .ld-action-level--warn {
+      background: #fef3c7;
+      color: #92400e;
+    }
+    .ld-action-level--info {
+      background: #dbeafe;
+      color: #1e40af;
+    }
+    .ld-action-text {
+      font-size: 0.875rem;
+      color: var(--text-primary);
+    }
+    .ld-action-btn {
+      font-size: 0.78rem;
+      padding: 0.35rem 0.7rem;
+      border-radius: 0.4rem;
+      border: 1px solid var(--border-color);
+      background: #fff;
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .ld-action-btn:hover {
+      background: #f1f5f9;
+      color: var(--text-primary);
+    }
+
+    /* ===== Empty / loading states ===== */
+    .ld-empty {
+      padding: 1.5rem;
+      text-align: center;
+      color: var(--text-secondary);
+      font-size: 0.875rem;
+    }
+    .ld-empty-icon { font-size: 1.5rem; margin-bottom: 0.4rem; }
+    .ld-loading {
+      padding: 1.5rem;
+      text-align: center;
+      color: var(--text-secondary);
+      font-size: 0.85rem;
+    }
+
+    /* ===== Responsive =====
+       ※ 좁은 화면 대응은 전역 규칙(.container min-width + .main-area overflow:auto)에 위임.
+       페이지별로 그리드를 무너뜨리지 않습니다. */
   </style>
 </head>
-
 <body>
+  <script>
+    // 인증은 auth-guard.js 가 처리합니다
+  </script>
+
   <div class="dashboard">
     <aside class="sidebar" id="sidebar" aria-label="메인 메뉴">
       <div class="sidebar-header">
         <button type="button" class="sidebar-toggle" id="sidebar-toggle" aria-label="메뉴 접기/펼치기" title="메뉴 접기/펼치기">☰</button>
         <h1 class="sidebar-title">CI_R&DM</h1>
       </div>
-            <nav class="sidebar-nav">
+      <nav class="sidebar-nav">
         <a href="projects-history.html" class="sidebar-link" id="nav-history"><span class="sidebar-link-icon" aria-hidden="true">📜</span><span class="sidebar-link-text">수행 현황</span></a>
         <a href="index.html#/calendar" class="sidebar-link" id="nav-calendar"><span class="sidebar-link-icon" aria-hidden="true">📅</span><span class="sidebar-link-text">일정 관리</span></a>
         <div class="sidebar-divider" aria-hidden="true"></div>
@@ -759,42 +410,203 @@
         <a href="index.html#/participation" class="sidebar-link" id="nav-participation"><span class="sidebar-link-icon" aria-hidden="true">📊</span><span class="sidebar-link-text">참여율 관리</span></a>
         <div class="sidebar-divider" aria-hidden="true"></div>
         <a href="persons-master.html" class="sidebar-link" id="nav-persons-master"><span class="sidebar-link-icon" aria-hidden="true">👥</span><span class="sidebar-link-text">인력 마스터</span></a>
+        <a href="persons-detail.html" class="sidebar-link" id="nav-persons-detail"><span class="sidebar-link-icon" aria-hidden="true">📑</span><span class="sidebar-link-text">인력 상세</span></a>
         <a href="project-labor.html" class="sidebar-link" id="nav-project-labor"><span class="sidebar-link-icon" aria-hidden="true">📋</span><span class="sidebar-link-text">프로젝트별 인건비</span></a>
         <a href="labor-dashboard.html" class="sidebar-link active" id="nav-labor-dashboard"><span class="sidebar-link-icon" aria-hidden="true">📈</span><span class="sidebar-link-text">인건비 대시보드</span></a>
       </nav>
     </aside>
 
-
     <main class="main-area">
       <div class="container">
-        <header class="header">
-          <h1 class="header-title">📈 인건비 통합 대시보드</h1>
+        <header class="header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.75rem">
+          <h1 class="header-title">📈 인건비 대시보드</h1>
         </header>
 
-        <div style="background:#fff; border:1px solid #e5e7eb; border-radius:1rem; padding:3rem 2rem; text-align:center; margin-top:2rem;">
-          <div style="font-size:3rem; margin-bottom:1rem;">📈</div>
-          <h2 style="font-size:1.25rem; color:#1e293b; margin-bottom:0.75rem;">인건비 통합 대시보드</h2>
-          <p style="color:#64748b; font-size:0.95rem; line-height:1.6; max-width:520px; margin:0 auto 1.5rem;">
-            전 프로젝트 인건비 환급 현황, 회사 인력 활용도,<br>
-            신규 채용 진척, 액션 아이템을 한눈에 확인합니다.
-          </p>
-          <div style="display:inline-block; padding:0.5rem 1rem; background:#dcfce7; color:#166534; border-radius:9999px; font-size:0.875rem; font-weight:500;">
-            🚧 곧 만나요!
+        <!-- 컨트롤 바: 연도 + 기준 월 + 회사 -->
+        <div class="ld-toolbar">
+          <span class="ld-toolbar-label">기준 연도</span>
+          <select id="ld-year" class="ui-select">
+            <option value="2026" selected>2026년</option>
+            <option value="2025">2025년</option>
+            <option value="2024">2024년</option>
+            <option value="2023">2023년</option>
+          </select>
+          <span class="ld-toolbar-label">기준 월</span>
+          <select id="ld-month" class="ui-select">
+            <option value="1">1월</option><option value="2">2월</option>
+            <option value="3">3월</option><option value="4">4월</option>
+            <option value="5" selected>5월</option><option value="6">6월</option>
+            <option value="7">7월</option><option value="8">8월</option>
+            <option value="9">9월</option><option value="10">10월</option>
+            <option value="11">11월</option><option value="12">12월</option>
+          </select>
+          <span class="ld-toolbar-label" style="margin-left:0.5rem;">회사</span>
+          <div class="company-chips" id="ld-company-chips" role="group" aria-label="회사 필터">
+            <button type="button" class="company-chip is-active" data-company="">전체</button>
+            <button type="button" class="company-chip" data-company="식스티">식스티</button>
+            <button type="button" class="company-chip" data-company="굿뉴스">굿뉴스</button>
+            <button type="button" class="company-chip" data-company="패리티">패리티</button>
           </div>
+          <span class="ld-toolbar-meta" id="ld-updated-at">데이터 로드 중...</span>
         </div>
+
+        <!-- ============================================================
+             1) 상단 요약 카드 (4개)
+             ============================================================ -->
+        <section class="ld-stat-grid" aria-label="핵심 지표 요약">
+          <div class="ld-stat-card ld-stat-card--accent-blue">
+            <div class="ld-stat-label">🏢 회사 전체 인력</div>
+            <div class="ld-stat-value ld-stat-value--primary" id="ld-stat-total">-</div>
+            <div class="ld-stat-sub" id="ld-stat-total-sub">재직 - · 퇴직 -</div>
+          </div>
+          <div class="ld-stat-card ld-stat-card--accent-green">
+            <div class="ld-stat-label">📋 과제 등록 인원</div>
+            <div class="ld-stat-value ld-stat-value--success" id="ld-stat-assigned">-</div>
+            <div class="ld-stat-sub" id="ld-stat-assigned-sub">전체 재직 인력 중 -%</div>
+          </div>
+          <div class="ld-stat-card ld-stat-card--accent-amber">
+            <div class="ld-stat-label">⚡ 여유 가용 참여율</div>
+            <div class="ld-stat-value ld-stat-value--warning" id="ld-stat-capacity">-</div>
+            <div class="ld-stat-sub">합산 참여율 100% 기준 잔여</div>
+          </div>
+          <div class="ld-stat-card ld-stat-card--accent-rose">
+            <div class="ld-stat-label">🚨 100% 참여 인원</div>
+            <div class="ld-stat-value ld-stat-value--danger" id="ld-stat-full">-</div>
+            <div class="ld-stat-sub" id="ld-stat-full-sub">추가 참여 불가</div>
+          </div>
+        </section>
+
+        <!-- ============================================================
+             2) 월별 환급 추이 그래프
+             ============================================================ -->
+        <section class="ld-section" aria-label="월별 환급 추이">
+          <div class="ld-section-header">
+            <h2 class="ld-section-title">📊 월별 환급 추이</h2>
+            <span class="ld-section-sub" id="ld-trend-sub">연한 파랑 = 예상 · 진한 파랑 = 실제(시스템 등록 완료분)</span>
+          </div>
+          <div class="ld-chart-wrap">
+            <canvas id="ld-trend-chart" aria-label="월별 환급 추이 그래프"></canvas>
+          </div>
+        </section>
+
+        <!-- ============================================================
+             3) 프로젝트별 환급 진척
+             ============================================================ -->
+        <section class="ld-section" aria-label="프로젝트별 환급 진척">
+          <div class="ld-section-header">
+            <h2 class="ld-section-title">💰 프로젝트별 환급 진척</h2>
+            <span class="ld-section-sub">실제 환급액 / 연차 예산 기준</span>
+          </div>
+          <div id="ld-project-list" class="ld-bar-list">
+            <div class="ld-loading">불러오는 중...</div>
+          </div>
+        </section>
+
+        <!-- ============================================================
+             4) 인력 참여율 현황 (기준 월)
+             ============================================================ -->
+        <section class="ld-section" aria-label="인력 참여율 현황">
+          <div class="ld-section-header">
+            <h2 class="ld-section-title">👥 인력 참여율 현황</h2>
+            <span class="ld-section-sub" id="ld-person-sub">기준 월 · 합산 참여율 높은 순</span>
+          </div>
+          <div id="ld-person-list" class="ld-person-list">
+            <div class="ld-loading">불러오는 중...</div>
+          </div>
+        </section>
+
+        <!-- ============================================================
+             5) 신규 채용 필수 인력 진척
+             ============================================================ -->
+        <section class="ld-section" aria-label="신규 채용 필수 인력 진척">
+          <div class="ld-section-header">
+            <h2 class="ld-section-title">🆕 신규 채용 필수 인력 진척</h2>
+            <span class="ld-section-sub">과제 등록 시 설정한 신규/청년 필수 인원 기준</span>
+          </div>
+          <table class="ld-hire-table" id="ld-hire-table">
+            <thead>
+              <tr>
+                <th>프로젝트</th>
+                <th class="ld-hire-num">필수</th>
+                <th class="ld-hire-num">청년 필수</th>
+                <th class="ld-hire-num">진척</th>
+                <th>상태</th>
+              </tr>
+            </thead>
+            <tbody id="ld-hire-tbody">
+              <tr><td colspan="5" class="ld-loading">불러오는 중...</td></tr>
+            </tbody>
+          </table>
+          <div class="ld-hire-summary" id="ld-hire-summary">합계 - 명 채용 필요 · 현재 - 명 완료</div>
+        </section>
+
+        <!-- ============================================================
+             6) 회사 인력 활용도
+             ============================================================ -->
+        <section class="ld-section" aria-label="회사 인력 활용도">
+          <div class="ld-section-header">
+            <h2 class="ld-section-title">🏢 회사 인력 활용도</h2>
+            <span class="ld-section-sub">월별 과제 참여 인원 추이</span>
+          </div>
+          <div class="ld-util-grid">
+            <div class="ld-util-stats" id="ld-util-stats">
+              <div class="ld-util-stat-row">
+                <span class="ld-util-stat-label">재직 인력</span>
+                <span class="ld-util-stat-value" id="ld-util-active">-</span>
+              </div>
+              <div class="ld-util-stat-row">
+                <span class="ld-util-stat-label">과제 참여</span>
+                <span class="ld-util-stat-value" id="ld-util-participating">-</span>
+              </div>
+              <div class="ld-util-stat-row">
+                <span class="ld-util-stat-label">미참여</span>
+                <span class="ld-util-stat-value" id="ld-util-idle">-</span>
+              </div>
+              <div class="ld-util-stat-row">
+                <span class="ld-util-stat-label">청년 인력</span>
+                <span class="ld-util-stat-value" id="ld-util-youth">-</span>
+              </div>
+              <div class="ld-util-stat-row">
+                <span class="ld-util-stat-label">신규 인력</span>
+                <span class="ld-util-stat-value" id="ld-util-new">-</span>
+              </div>
+            </div>
+            <div class="ld-util-chart-wrap">
+              <canvas id="ld-util-chart" aria-label="월별 참여 인원 추이 그래프"></canvas>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============================================================
+             7) 액션 아이템 (주의 필요)
+             ============================================================ -->
+        <section class="ld-section" aria-label="액션 아이템">
+          <div class="ld-section-header">
+            <h2 class="ld-section-title">🔔 액션 아이템</h2>
+            <span class="ld-section-sub">주의가 필요한 항목 모음</span>
+          </div>
+          <div id="ld-action-list" class="ld-action-list">
+            <div class="ld-loading">분석 중...</div>
+          </div>
+        </section>
+
       </div>
     </main>
   </div>
 
-    <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-app-compat.js"></script>
+  <!-- Chart.js (projects.html 과 동일 버전) -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+  <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-firestore-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-auth-compat.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="firebase-config.example.js"></script>
   <script src="firebase-config.js"></script>
   <script src="firebase.js"></script>
   <script src="auth-guard.js"></script>
   <script src="firestore-service.js"></script>
+  <script src="sidebar.js"></script>
+  <script src="labor-dashboard.js"></script>
   <script src="floating-buttons.js"></script>
 </body>
 </html>
