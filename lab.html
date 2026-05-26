@@ -618,10 +618,7 @@
     }
 
     /* 페이지 전체 너비 고정 — 화면 크기와 무관 */
-    .container {
-      width: 1400px;
-      margin: 0 auto;
-    }
+    /* .container는 style.css의 전역 룰을 사용 */
 
     /* ===== 다운로드 컬럼 선택 모달 ===== */
     .dl-modal-overlay {
@@ -1504,12 +1501,7 @@
       gap: 1rem;
       align-items: flex-start;
     }
-    /* 좁은 화면에선 위아래로 */
-    @media (max-width: 1280px) {
-      .detail-layout {
-        grid-template-columns: 1fr;
-      }
-    }
+    /* 좁은 화면 대응: .container min-width + 가로 스크롤로 통일 (§0.5.1) */
 
     .detail-side-panel {
       background: var(--card-bg);
@@ -1522,7 +1514,7 @@
       max-height: calc(100vh - 2rem);
       overflow-y: auto;
     }
-    @media (max-width: 1280px) {
+    @media print {
       .detail-side-panel {
         position: static;
         max-height: none;
@@ -1982,12 +1974,8 @@
       text-decoration: line-through;
       cursor: help;
     }
-    /* 좁은 화면 대응 */
-    @media (max-width: 1100px) {
-      .lab-month-name-grid {
-        grid-template-columns: repeat(8, minmax(0, 1fr));
-      }
-    }
+    /* 좁은 화면 대응: .container min-width + 가로 스크롤로 통일 (§0.5.1) */
+    /* 아래 700px·500px 미디어 쿼리는 우리 정책상 사실상 비활성이지만 보존 (그룹 C) */
     @media (max-width: 700px) {
       /* 1열 모드일 때는 더 넓으니 10개로 다시 */
       .lab-month-name-grid {
@@ -2059,6 +2047,9 @@
                 <path d="M8 13h8M8 16h8M8 19h5" stroke="white" stroke-width="1" stroke-linecap="round" opacity="0.95"/>
               </svg>
               엑셀 업로드
+            </button>
+            <button type="button" class="ui-btn ui-btn--ghost" id="lab-delete-year-btn" title="현재 선택된 연도의 데이터만 삭제합니다" style="color:#dc2626;border-color:#fecaca">
+              🗑️ 연도 삭제
             </button>
             <button type="button" class="ui-btn ui-btn--ghost" id="lab-reset-btn" title="테스트용: 이 회사의 등록된 데이터를 모두 삭제합니다" style="color:#dc2626;border-color:#fecaca">
               🗑️ 전체 삭제

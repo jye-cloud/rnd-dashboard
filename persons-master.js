@@ -14,7 +14,8 @@
  *
  * - birthDate(생년월일)는 신규 등록 시 필수, 동명이인 구분에 사용 (이름+생년월일 조합 유일)
  * - 입사일/퇴사일/생년월일은 'YYYY-MM-DD' ISO 문자열로 저장
- * - annualSalary 입력 시 monthlySalary는 자동으로 (연봉/12)로 같이 저장됨
+ * - annualSalary 입력 시 monthlySalary는 자동으로 Math.ceil(연봉/12)로 같이 저장됨
+ *   (원 단위 무조건 올림. 예: 85,000,000 / 12 = 7,083,333.33 → 7,083,334)
  */
 (function () {
   'use strict';
@@ -31,6 +32,15 @@
     ageBucket: 'all',              // 'all' | '20' | '30' | '40' | '50' | 'unknown'
     youthOnly: false,              // true면 isYouth=true만
     missingBirthOnly: false        // true면 birthDate 없는 인력만 (마이그레이션 배너 클릭 시)
+  };
+
+  // 정렬 상태 (한 번에 한 컬럼만)
+  // key: 'age' | 'hireDate' | 'exitDate' | 'monthlySalary' | null(=정렬 없음)
+  // dir: 'asc' | 'desc'
+  // 클릭 사이클: 없음 → desc → asc → 없음
+  var _sort = {
+    key: null,
+    dir: 'desc'
   };
 
   // ====================================================================
@@ -61,6 +71,10 @@
     // 명부 업로드
     excelInput: null,
     excelUploadBtn: null,
+    // 일괄 다운로드/업로드 (현재 명부 기반)
+    bulkDownloadBtn: null,
+    bulkEditBtn: null,
+    bulkEditInput: null,
     // 마이그레이션 배너
     migrationBanner: null,
     migrationBannerText: null,
@@ -221,22 +235,21 @@
 
   /**
    * 겸직 키: 같은 사람을 회사 간 매칭하기 위한 키.
-   * 이름 + 생년월일 + ssnTail 첫 자리 (있는 경우만)
+   * 이름 + 생년월일
    * @returns {string | null} 키 또는 매칭에 사용 못할 데이터면 null
+   *
+   * 정책: 이름과 생년월일이 같으면 동일인으로 봄.
+   * - 주민번호 뒷자리는 회사별로 입력 누락이 있을 수 있어서 키에서 제외
+   * - 동명이인이 같은 생일을 가질 확률은 낮음 (만약 발생하면 메모로 구분)
    */
   function getMoonlightKey(person) {
     if (!person) return null;
     var name = (person.name || '').trim();
     if (!name) return null;
     var birth = person.birthDate || '';
-    var ssnFirst = '';
-    if (person.ssnTail) {
-      var s = String(person.ssnTail).replace(/[^0-9]/g, '');
-      ssnFirst = s.charAt(0) || '';
-    }
     // 생년월일이 있어야 매칭 가능 (이름만으로는 동명이인 위험)
     if (!birth) return null;
-    return name + '|' + birth + '|' + ssnFirst;
+    return name + '|' + birth;
   }
 
   /**
@@ -246,7 +259,7 @@
    *   { [moonlightKey]: {
    *       persons: [...],            // 같은 사람의 여러 인력 레코드
    *       companies: [...],          // 회사 목록 (중복 제거)
-   *       isAdminTransfer: bool      // true면 행정 이관 (퇴사일 = 다른 회사 입사일)
+   *       isAdminTransfer: bool      // true면 행정 이관 (메모에 '이동' 포함)
    *   } }
    */
   function computeMoonlightMap(persons) {
@@ -263,7 +276,7 @@
       map[key].persons.push(p);
       if (map[key].companies.indexOf(company) < 0) map[key].companies.push(company);
     }
-    // 2단계: 같은 키에 2명 이상이면 행정 이관 여부 검사
+    // 2단계: 같은 키에 2명 이상이면 행정 이관 여부 검사 (메모 기반)
     Object.keys(map).forEach(function (key) {
       var entry = map[key];
       if (entry.persons.length < 2) return;
@@ -274,32 +287,17 @@
 
   /**
    * 행정 이관 검사:
-   * 한 회사 퇴사일 == 다른 회사 입사일 이면 행정 이관으로 판단.
+   * 같은 사람 레코드 중 하나라도 메모에 '이동'이 포함되어 있으면 행정 이관으로 판단.
    *
-   * 예: 패리티 exitDate = 2025-04-01, 식스티 hireDate = 2025-04-01 → 행정 이관
-   *     → 겸직 표시 X
+   * 예: 식스티 김지혜의 메모 = "굿뉴스로 이동" → 행정 이관 → 겸직 표시 X
+   *
+   * 사용자가 메모에 명시적으로 '이동'이라고 적은 경우만 행정 이관으로 처리.
+   * 그 외에는 자동으로 모두 겸직으로 판단 (날짜 우연 일치 같은 자동 판별 X).
    */
   function checkAdminTransfer(personsOfSameKey) {
-    function normDate(d) {
-      if (!d) return '';
-      var s = String(d).slice(0, 10);
-      return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : '';
-    }
-    var exitInfos = [];   // [{ company, date }]
-    var hireInfos = [];   // [{ company, date }]
-    personsOfSameKey.forEach(function (p) {
-      var c = getCompany(p);
-      var h = normDate(p.hireDate);
-      var e = normDate(p.exitDate);
-      if (h) hireInfos.push({ company: c, date: h });
-      if (e) exitInfos.push({ company: c, date: e });
-    });
-    // 어떤 회사의 퇴사일이 다른 회사의 입사일과 같으면 → 행정 이관
-    for (var i = 0; i < exitInfos.length; i++) {
-      for (var j = 0; j < hireInfos.length; j++) {
-        if (exitInfos[i].company === hireInfos[j].company) continue;  // 같은 회사면 의미 없음
-        if (exitInfos[i].date === hireInfos[j].date) return true;
-      }
+    for (var i = 0; i < personsOfSameKey.length; i++) {
+      var memo = (personsOfSameKey[i] && personsOfSameKey[i].memo) || '';
+      if (memo.indexOf('이동') >= 0) return true;
     }
     return false;
   }
@@ -311,23 +309,49 @@
    * - 식스티가 모회사, 굿뉴스·패리티가 자회사
    * - 식스티 줄: 자회사에도 등록되어 있으면 → 겸직 표시
    * - 자회사 줄: 본업이므로 겸직 표시 안 함
-   * - 행정 이관 (퇴사일 = 다른 회사 입사일): 겸직 표시 X
+   * - 행정 이관 (메모에 '이동'): 겸직 표시 X
+   *
+   * 반환:
+   * {
+   *   isMoonlight: bool,           // 식스티 줄에서 겸직 관계가 있는가
+   *   others: string[],            // 같이 다니는 자회사 목록
+   *   selfActive: bool,            // 식스티 본인 레코드가 재직 상태인가
+   *   subsidiaryActive: bool       // 같은 사람의 자회사 레코드 중 하나라도 재직 중인가
+   * }
    */
   function getMoonlightInfo(person, moonlightMap) {
     var key = getMoonlightKey(person);
-    if (!key || !moonlightMap[key]) return { isMoonlight: false, others: [] };
+    if (!key || !moonlightMap[key]) return { isMoonlight: false, others: [], selfActive: false, subsidiaryActive: false };
     var entry = moonlightMap[key];
     var myCompany = getCompany(person);
-    if (!entry.companies || entry.companies.length < 2) return { isMoonlight: false, others: [] };
+    if (!entry.companies || entry.companies.length < 2) {
+      return { isMoonlight: false, others: [], selfActive: false, subsidiaryActive: false };
+    }
 
     // 행정 이관이면 겸직 아님
-    if (entry.isAdminTransfer) return { isMoonlight: false, others: [] };
+    if (entry.isAdminTransfer) return { isMoonlight: false, others: [], selfActive: false, subsidiaryActive: false };
 
     // 식스티(모회사) 줄에만 겸직 표시
-    if (myCompany !== '식스티') return { isMoonlight: false, others: [] };
+    if (myCompany !== '식스티') return { isMoonlight: false, others: [], selfActive: false, subsidiaryActive: false };
 
     var others = entry.companies.filter(function (c) { return c !== myCompany; });
-    return { isMoonlight: true, others: others };
+
+    // 본인(식스티 줄) 재직 여부
+    var selfActive = (person.status || 'active') !== 'exited';
+
+    // 같은 사람의 자회사 레코드 중 하나라도 재직 중인지
+    var subsidiaryActive = false;
+    for (var i = 0; i < entry.persons.length; i++) {
+      var rec = entry.persons[i];
+      if (!rec) continue;
+      if (getCompany(rec) === '식스티') continue;  // 식스티 외(=자회사)만 검사
+      if ((rec.status || 'active') !== 'exited') {
+        subsidiaryActive = true;
+        break;
+      }
+    }
+
+    return { isMoonlight: true, others: others, selfActive: selfActive, subsidiaryActive: subsidiaryActive };
   }
 
   /**
@@ -369,6 +393,61 @@
       }).catch(function (err) {
         console.error('[마이그레이션] 저장 실패:', err);
         _migrationDone = false;  // 실패하면 다시 시도할 수 있게
+      });
+    }
+    return updated;
+  }
+
+  /**
+   * 월급 계산 방식 마이그레이션:
+   * 과거 Math.round로 저장된 monthlySalary를 Math.ceil 기준으로 재계산.
+   * - annualSalary 있고, monthlySalary가 ceil 결과와 다른 인력만 대상
+   * - 1회만 실행 (_monthlySalaryMigrationDone 플래그)
+   * 페이지 로드 후 데이터 도착 시점에 1회 자동 실행됨.
+   */
+  var _monthlySalaryMigrationDone = false;
+  function migrateMonthlySalaryIfNeeded(persons) {
+    if (_monthlySalaryMigrationDone) return null;
+    if (!Array.isArray(persons) || persons.length === 0) {
+      _monthlySalaryMigrationDone = true;
+      return null;
+    }
+
+    var changedList = [];  // 마이그레이션 대상 (이름과 변경 전후 표시용)
+    var updated = persons.map(function (p) {
+      if (!p) return p;
+      if (p.annualSalary == null || isNaN(p.annualSalary)) return p;
+      var correctMonthly = Math.ceil(p.annualSalary / 12);
+      if (p.monthlySalary === correctMonthly) return p;  // 이미 맞음
+      // 다른 값이거나 누락된 경우 → 갱신
+      var newP = Object.assign({}, p);
+      var oldMonthly = p.monthlySalary;
+      newP.monthlySalary = correctMonthly;
+      newP.updatedAt = new Date().toISOString();
+      changedList.push({
+        name: p.name,
+        annual: p.annualSalary,
+        old: oldMonthly,
+        new: correctMonthly
+      });
+      return newP;
+    });
+
+    if (changedList.length === 0) {
+      _monthlySalaryMigrationDone = true;
+      return null;
+    }
+
+    _monthlySalaryMigrationDone = true;  // 더 이상 실행 안 되도록
+
+    var svc = window.firestoreService;
+    if (svc && typeof svc.savePersons === 'function') {
+      svc.savePersons(updated).then(function () {
+        console.log('[월급 마이그레이션] ' + changedList.length + '명의 monthlySalary를 Math.ceil 기준으로 재계산함');
+        console.table(changedList);
+      }).catch(function (err) {
+        console.error('[월급 마이그레이션] 저장 실패:', err);
+        _monthlySalaryMigrationDone = false;  // 실패하면 다시 시도할 수 있게
       });
     }
     return updated;
@@ -862,8 +941,16 @@
             if (mEntry.isAdminTransfer) return false;
           } else {
             // 일반 상태 필터 (재직/퇴직)
+            // 식스티 퇴사 + 자회사 재직인 경우 → "재직"으로 취급 (status 컬럼에 '겸직' 표시됨)
             var st = p.status || 'active';
-            if (st !== _filter.status) return false;
+            var effectiveStatus = st;
+            if (st === 'exited' && getCompany(p) === '식스티' && moonlightMap) {
+              var mInfo2 = getMoonlightInfo(p, moonlightMap);
+              if (mInfo2.isMoonlight && mInfo2.subsidiaryActive) {
+                effectiveStatus = 'active';
+              }
+            }
+            if (effectiveStatus !== _filter.status) return false;
           }
         }
       }
@@ -910,6 +997,93 @@
       }
 
       return true;
+    });
+  }
+
+  // ====================================================================
+  // 정렬 (만나이/입사일/퇴사일/월급)
+  // ====================================================================
+
+  /**
+   * 정렬 키별 값 추출. null/빈 값이면 null 반환.
+   * 정렬 시 null은 항상 맨 아래로 보냄 (오름·내림 둘 다).
+   */
+  function getSortValue(p, key) {
+    if (!p) return null;
+    if (key === 'age') {
+      var age = computeAge(p.birthDate);
+      return (age == null) ? null : age;
+    }
+    if (key === 'hireDate') {
+      return p.hireDate || null;  // 'YYYY-MM-DD' 문자열 비교로 충분
+    }
+    if (key === 'exitDate') {
+      return p.exitDate || null;
+    }
+    if (key === 'monthlySalary') {
+      // monthlySalary 우선, 없으면 annualSalary/12로 폴백
+      if (p.monthlySalary != null && !isNaN(p.monthlySalary)) return p.monthlySalary;
+      if (p.annualSalary != null && !isNaN(p.annualSalary)) return Math.ceil(p.annualSalary / 12);
+      return null;
+    }
+    return null;
+  }
+
+  /**
+   * 정렬 적용. _sort.key가 null이면 원본 순서 유지.
+   * null 값은 항상 맨 아래(방향 무관).
+   */
+  function applySort(list) {
+    if (!_sort.key) return list;
+    var key = _sort.key;
+    var dir = _sort.dir === 'asc' ? 1 : -1;
+
+    // 안정 정렬 위해 원본 인덱스 보존
+    var indexed = list.map(function (p, i) { return { p: p, i: i, v: getSortValue(p, key) }; });
+    indexed.sort(function (a, b) {
+      // null은 항상 뒤로
+      if (a.v == null && b.v == null) return a.i - b.i;
+      if (a.v == null) return 1;
+      if (b.v == null) return -1;
+      if (a.v < b.v) return -1 * dir;
+      if (a.v > b.v) return 1 * dir;
+      return a.i - b.i;  // 동일 값이면 원래 순서 유지 (안정 정렬)
+    });
+    return indexed.map(function (x) { return x.p; });
+  }
+
+  /**
+   * 정렬 헤더 클릭 처리.
+   * 같은 컬럼 반복 클릭: 없음 → desc → asc → 없음
+   * 다른 컬럼 클릭: 그 컬럼의 desc부터 시작
+   */
+  function onSortHeaderClick(key) {
+    if (!key) return;
+    if (_sort.key !== key) {
+      _sort.key = key;
+      _sort.dir = 'desc';
+    } else if (_sort.dir === 'desc') {
+      _sort.dir = 'asc';
+    } else {
+      // asc였으면 해제
+      _sort.key = null;
+      _sort.dir = 'desc';
+    }
+    render();
+  }
+
+  /**
+   * 헤더 상태 표시 갱신 (sort-asc / sort-desc 클래스 토글).
+   * render() 호출 후 호출됨.
+   */
+  function updateSortHeaderClasses() {
+    var ths = document.querySelectorAll('#persons-table th.th-sortable');
+    ths.forEach(function (th) {
+      th.classList.remove('sort-asc', 'sort-desc');
+      var k = th.getAttribute('data-sort-key');
+      if (k && k === _sort.key) {
+        th.classList.add(_sort.dir === 'asc' ? 'sort-asc' : 'sort-desc');
+      }
     });
   }
 
@@ -972,31 +1146,49 @@
     var isExited = (p.status === 'exited');
     var missingBirth = !p.birthDate;
 
-    // 행 배경: 퇴직이면 옅은 회색, 생년월일 미입력이면 옅은 노랑
+    // 겸직 정보 먼저 계산 (상태 뱃지/이름 뱃지/행 배경에 영향)
+    var mInfo = moonlightMap ? getMoonlightInfo(p, moonlightMap) : null;
+    // 식스티 퇴사 + 자회사 재직 = "실질 재직". 식스티 줄이지만 회색 처리하지 않고 겸직으로 표시.
+    var isMoonlightActiveOnSubsidiary = !!(mInfo && mInfo.isMoonlight && !mInfo.selfActive && mInfo.subsidiaryActive);
+
+    // 행 배경: 퇴직이면 옅은 회색, 단 자회사에서 재직 중이면 회색 처리 안 함
     var rowStyle = '';
-    if (isExited) rowStyle = 'style="color:#9ca3af;background:#fafafa"';
-    else if (missingBirth) rowStyle = 'style="background:#fffbeb"';
+    if (isExited && !isMoonlightActiveOnSubsidiary) {
+      rowStyle = 'style="color:#9ca3af;background:#fafafa"';
+    } else if (missingBirth) {
+      rowStyle = 'style="background:#fffbeb"';
+    }
 
     // 회사 뱃지
     var company = getCompany(p);
     var companyHtml = renderCompanyBadge(company);
 
-    // 상태 뱃지
-    var statusBadge = isExited
-      ? '<span class="projects-badge projects-badge--end">퇴직</span>'
-      : '<span class="projects-badge projects-badge--active">재직</span>';
+    // 상태 뱃지:
+    // - 식스티 퇴사 + 자회사 재직 → "겸직" (진한 노란색 글자, 배경 없음 — 재직/퇴직과 시각적 구분)
+    // - 그 외 → 재직/퇴직
+    var statusBadge;
+    if (isMoonlightActiveOnSubsidiary) {
+      var othersForStatus = mInfo.others.join(', ');
+      statusBadge = '<span class="projects-badge" style="color:#92400e;background:none;padding:0" title="' + escapeHtml(othersForStatus) + '에서 재직 중">겸직</span>';
+    } else if (isExited) {
+      statusBadge = '<span class="projects-badge projects-badge--end">퇴직</span>';
+    } else {
+      statusBadge = '<span class="projects-badge projects-badge--active">재직</span>';
+    }
 
     // 이름 + 생년월일 미입력 경고 + 겸직 뱃지
+    // 이름 옆 [겸직] 뱃지가 붙는 경우:
+    //  ① 식스티 본인이 재직 중 (자회사 상태 무관)
+    //  ② 식스티 퇴사 + 자회사도 퇴사 (양쪽 다 퇴사, 회색 행이지만 겸직 이력이 있었음을 표시)
+    // 안 붙는 경우:
+    //  ③ 식스티 퇴사 + 자회사 재직 → 상태 컬럼에 "겸직" 표시되므로 중복 X
     var nameContent = escapeHtml(p.name || '-');
     if (missingBirth) {
       nameContent += ' <span title="생년월일 미입력" style="color:#b45309;font-size:0.8rem">⚠️</span>';
     }
-    if (moonlightMap) {
-      var mInfo = getMoonlightInfo(p, moonlightMap);
-      if (mInfo.isMoonlight) {
-        var others = mInfo.others.join(', ');
-        nameContent += '<span class="moonlight-badge" title="' + escapeHtml(others) + '와(과) 겸직">겸직</span>';
-      }
+    if (mInfo && mInfo.isMoonlight && !isMoonlightActiveOnSubsidiary) {
+      var othersForBadge = mInfo.others.join(', ');
+      nameContent += '<span class="moonlight-badge" title="' + escapeHtml(othersForBadge) + '와(과) 겸직">겸직</span>';
     }
 
     // 성별 뱃지
@@ -1017,7 +1209,7 @@
     // 월급: monthlySalary 우선, 없으면 annualSalary/12
     var monthly = (p.monthlySalary != null && !isNaN(p.monthlySalary))
       ? p.monthlySalary
-      : (p.annualSalary != null && !isNaN(p.annualSalary) ? Math.round(p.annualSalary / 12) : null);
+      : (p.annualSalary != null && !isNaN(p.annualSalary) ? Math.ceil(p.annualSalary / 12) : null);
 
     // 날짜들 (생년월일은 테이블에서 제거됨 — 주민번호 앞자리에 이미 포함되어 있음)
     var hireHtml  = p.hireDate  ? escapeHtml(formatDate(p.hireDate))  : '<span style="color:#cbd5e1">-</span>';
@@ -1093,6 +1285,7 @@
     var moonlightMap = computeMoonlightMap(_persons);
 
     var filtered = applyFilter(_persons, moonlightMap);
+    filtered = applySort(filtered);  // 정렬 적용 (정렬 없으면 그대로)
     var totalCount = _persons.length;
     var filteredCount = filtered.length;
 
@@ -1125,27 +1318,33 @@
     if (el.tableWrap) el.tableWrap.style.display = '';
     if (el.empty) el.empty.style.display = 'none';
 
-    // 정렬: 입사일 빠른 순 (오래된 사람이 위, 최근 입사자가 아래)
-    // - 입사일 없으면 가장 뒤로
-    // - 입사일 같으면 등록된 순서(createdAt)로
-    // → 명부 업로드 시 명부 순서가 자연스럽게 유지됨
-    var sorted = filtered.slice().sort(function (a, b) {
-      var ah = a.hireDate || '';
-      var bh = b.hireDate || '';
-      // 둘 다 있으면 날짜 비교
-      if (ah && bh) {
-        if (ah !== bh) return ah < bh ? -1 : 1;
-      } else if (ah && !bh) {
-        return -1;  // 입사일 있는 사람이 위
-      } else if (!ah && bh) {
-        return 1;
-      }
-      // tie-breaker: createdAt (먼저 등록된 사람이 위)
-      var ac = a.createdAt || '';
-      var bc = b.createdAt || '';
-      if (ac && bc && ac !== bc) return ac < bc ? -1 : 1;
-      return 0;
-    });
+    // 정렬:
+    // - 사용자가 헤더 클릭으로 정렬을 선택했으면(_sort.key 있음) → 위쪽 applySort 결과를 그대로 사용 (기본 정렬 스킵)
+    // - 선택 안 했으면 → 기본 정렬(입사일 오래된 순, tie-breaker는 등록순) 적용
+    //   → 명부 업로드 시 명부 순서가 자연스럽게 유지됨
+    var sorted;
+    if (_sort.key) {
+      // 이미 위에서 applySort가 적용됨 — 그대로 사용
+      sorted = filtered;
+    } else {
+      sorted = filtered.slice().sort(function (a, b) {
+        var ah = a.hireDate || '';
+        var bh = b.hireDate || '';
+        // 둘 다 있으면 날짜 비교
+        if (ah && bh) {
+          if (ah !== bh) return ah < bh ? -1 : 1;
+        } else if (ah && !bh) {
+          return -1;  // 입사일 있는 사람이 위
+        } else if (!ah && bh) {
+          return 1;
+        }
+        // tie-breaker: createdAt (먼저 등록된 사람이 위)
+        var ac = a.createdAt || '';
+        var bc = b.createdAt || '';
+        if (ac && bc && ac !== bc) return ac < bc ? -1 : 1;
+        return 0;
+      });
+    }
 
     var html = '';
     for (var i = 0; i < sorted.length; i++) {
@@ -1160,6 +1359,9 @@
         el.countHint.textContent = filteredCount + '명 / 전체 ' + totalCount + '명';
       }
     }
+
+    // 정렬 헤더 시각 표시 갱신 (sort-asc / sort-desc 클래스)
+    updateSortHeaderClasses();
   }
 
   // ====================================================================
@@ -1404,7 +1606,7 @@
     if (!el.annualSalaryHint || !el.formAnnualSalary) return;
     var v = Number(el.formAnnualSalary.value);
     if (!isNaN(v) && v > 0) {
-      var monthly = Math.round(v / 12);
+      var monthly = Math.ceil(v / 12);
       el.annualSalaryHint.innerHTML =
         '월급 환산: <strong>' + monthly.toLocaleString('ko-KR') + '원/월</strong> (자동 저장됨)';
       el.annualSalaryHint.style.color = '#047857';
@@ -1501,7 +1703,7 @@
         return null;
       }
       annualSalary = Math.round(n);
-      monthlySalary = Math.round(annualSalary / 12);
+      monthlySalary = Math.ceil(annualSalary / 12);
     }
 
     var memo = (el.formMemo.value || '').trim();
@@ -1788,8 +1990,477 @@
   }
 
   // ====================================================================
-  // 마이그레이션 배너
+  // 일괄 다운로드 (현재 명부)
   // ====================================================================
+
+  // 다운로드/업로드 컬럼 정의 (순서 = 엑셀 컬럼 순서)
+  // key는 내부 식별자, header는 엑셀에 보이는 헤더, width는 컬럼 너비(px)
+  var BULK_COLUMNS = [
+    { key: 'no',         header: 'No',              width: 5  },
+    { key: 'id',         header: 'id (수정금지)',    width: 22 },
+    { key: 'company',    header: '회사',             width: 10 },
+    { key: 'name',       header: '이름',             width: 12 },
+    { key: 'birthDate',  header: '생년월일',          width: 12 },
+    { key: 'gender',     header: '성별',             width: 6  },
+    { key: 'ssnTail',    header: '주민번호 뒷자리',    width: 18 },
+    { key: 'hireDate',   header: '입사일',           width: 12 },
+    { key: 'exitDate',   header: '퇴사일',           width: 12 },
+    { key: 'annualSalary', header: '연봉(원)',       width: 14 },
+    { key: 'isYouth',    header: '청년(Y/N)',        width: 10 },
+    { key: 'memo',       header: '메모',             width: 25 }
+  ];
+
+  function formatGenderForExcel(g) {
+    if (g === 'M') return '남';
+    if (g === 'F') return '여';
+    return '';
+  }
+
+  function parseGenderFromExcel(s) {
+    var v = String(s == null ? '' : s).trim();
+    if (!v) return null;
+    if (v === '남' || v === 'M' || v === 'm' || v === '남성') return 'M';
+    if (v === '여' || v === 'F' || v === 'f' || v === '여성') return 'F';
+    return null;
+  }
+
+  function formatBoolForExcel(b) {
+    return b ? 'Y' : 'N';
+  }
+
+  function parseBoolFromExcel(s) {
+    var v = String(s == null ? '' : s).trim().toLowerCase();
+    if (!v) return false;
+    if (v === 'y' || v === 'yes' || v === 'true' || v === '1' || v === '예' || v === 'o' || v === '청년') return true;
+    return false;
+  }
+
+  function buildBulkRows(persons) {
+    // 회사/이름 순 정렬 (보기 편하게)
+    var sorted = (persons || []).slice().sort(function (a, b) {
+      var ca = (a && a.company) || '~';
+      var cb = (b && b.company) || '~';
+      if (ca !== cb) return ca < cb ? -1 : 1;
+      var na = (a && a.name) || '';
+      var nb = (b && b.name) || '';
+      return na < nb ? -1 : (na > nb ? 1 : 0);
+    });
+
+    return sorted.map(function (p, idx) {
+      return {
+        no: idx + 1,
+        id: p.id || '',
+        company: p.company || '',
+        name: p.name || '',
+        birthDate: p.birthDate || '',
+        gender: formatGenderForExcel(p.gender),
+        ssnTail: p.ssnTail || '',
+        hireDate: p.hireDate || '',
+        exitDate: p.exitDate || '',
+        annualSalary: (p.annualSalary != null && !isNaN(p.annualSalary)) ? p.annualSalary : '',
+        isYouth: formatBoolForExcel(!!p.isYouth),
+        memo: p.memo || ''
+      };
+    });
+  }
+
+  function downloadBulkExcel() {
+    if (typeof XLSX === 'undefined') {
+      alert('엑셀 라이브러리를 불러올 수 없습니다. 페이지를 새로고침 후 다시 시도해 주세요.');
+      return;
+    }
+
+    var rows = buildBulkRows(_persons);
+    if (!rows.length) {
+      alert('다운로드할 인력이 없습니다.');
+      return;
+    }
+
+    // 2D 배열로 변환 (헤더 + 데이터)
+    var headers = BULK_COLUMNS.map(function (c) { return c.header; });
+    var data = [headers];
+    rows.forEach(function (r) {
+      data.push(BULK_COLUMNS.map(function (c) { return r[c.key]; }));
+    });
+
+    var ws = XLSX.utils.aoa_to_sheet(data);
+
+    // 컬럼 너비 설정
+    ws['!cols'] = BULK_COLUMNS.map(function (c) { return { wch: c.width }; });
+
+    // 연봉 컬럼(annualSalary)을 숫자 형식으로 (천단위 콤마)
+    var annualColIdx = -1;
+    for (var i = 0; i < BULK_COLUMNS.length; i++) {
+      if (BULK_COLUMNS[i].key === 'annualSalary') { annualColIdx = i; break; }
+    }
+    if (annualColIdx >= 0) {
+      for (var r = 1; r < data.length; r++) {
+        var cellAddr = XLSX.utils.encode_cell({ r: r, c: annualColIdx });
+        var cell = ws[cellAddr];
+        if (cell && typeof cell.v === 'number') {
+          cell.t = 'n';
+          cell.z = '#,##0';
+        }
+      }
+    }
+
+    var wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, '인력 마스터');
+
+    // 파일명: 인력_마스터_YYYYMMDD.xlsx
+    var d = new Date();
+    var ymd = d.getFullYear()
+      + String(d.getMonth() + 1).padStart(2, '0')
+      + String(d.getDate()).padStart(2, '0');
+    XLSX.writeFile(wb, '인력_마스터_' + ymd + '.xlsx');
+  }
+
+  // ====================================================================
+  // 일괄 업데이트 (다운로드한 엑셀로 다시 올리기)
+  // ====================================================================
+  function parseBulkEditFile(file) {
+    return new Promise(function (resolve, reject) {
+      if (typeof XLSX === 'undefined') {
+        reject(new Error('엑셀 라이브러리를 불러올 수 없습니다.'));
+        return;
+      }
+      var reader = new FileReader();
+      reader.onload = function (e) {
+        try {
+          var data = new Uint8Array(e.target.result);
+          var workbook = XLSX.read(data, { type: 'array', cellDates: true });
+          var firstSheet = workbook.SheetNames[0];
+          if (!firstSheet) { resolve([]); return; }
+          var sheet = workbook.Sheets[firstSheet];
+          var rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+          if (!rows.length) { resolve([]); return; }
+
+          // 헤더 행에서 컬럼 인덱스 매핑 (헤더 텍스트로 찾음 - 컬럼 순서 바뀌어도 OK)
+          var headerRow = rows[0];
+          var colIdx = {};
+          BULK_COLUMNS.forEach(function (c) {
+            colIdx[c.key] = -1;
+          });
+          headerRow.forEach(function (cell, idx) {
+            var h = String(cell == null ? '' : cell).trim();
+            BULK_COLUMNS.forEach(function (c) {
+              if (colIdx[c.key] < 0 && c.header === h) {
+                colIdx[c.key] = idx;
+              }
+            });
+          });
+
+          // 필수 컬럼 확인: id, 이름
+          if (colIdx.id < 0 || colIdx.name < 0) {
+            reject(new Error(
+              '엑셀 형식이 올바르지 않습니다.\n\n' +
+              '"id (수정금지)"와 "이름" 컬럼이 필요해요.\n' +
+              '"전체 다운로드" 버튼으로 받은 양식을 사용해 주세요.'
+            ));
+            return;
+          }
+
+          var result = [];
+          for (var r = 1; r < rows.length; r++) {
+            var row = rows[r];
+            if (!row || !Array.isArray(row)) continue;
+            var name = String(row[colIdx.name] != null ? row[colIdx.name] : '').trim();
+            if (!name) continue;
+
+            var id = String(row[colIdx.id] != null ? row[colIdx.id] : '').trim();
+
+            // 연봉 파싱 (콤마/공백 제거)
+            var annualSalary = null;
+            if (colIdx.annualSalary >= 0) {
+              var rawSalary = row[colIdx.annualSalary];
+              if (rawSalary !== '' && rawSalary != null) {
+                var salaryStr = String(rawSalary).replace(/[,\s원]/g, '');
+                var n = Number(salaryStr);
+                if (!isNaN(n) && n >= 0) {
+                  annualSalary = Math.round(n);
+                }
+              }
+            }
+
+            // 주민번호 뒷자리 (숫자만 추출)
+            var ssnTail = null;
+            if (colIdx.ssnTail >= 0) {
+              var rawSsn = row[colIdx.ssnTail];
+              if (rawSsn !== '' && rawSsn != null) {
+                var ssnStr = String(rawSsn).replace(/[^0-9]/g, '');
+                if (ssnStr) ssnTail = ssnStr;
+              }
+            }
+
+            result.push({
+              id: id || null,
+              name: name,
+              company: colIdx.company >= 0 ? String(row[colIdx.company] || '').trim() || null : null,
+              birthDate: colIdx.birthDate >= 0 ? normalizeBirthFromExcel(row[colIdx.birthDate]) : null,
+              gender: colIdx.gender >= 0 ? parseGenderFromExcel(row[colIdx.gender]) : null,
+              ssnTail: ssnTail,
+              hireDate: colIdx.hireDate >= 0 ? normalizeExcelDate(row[colIdx.hireDate]) : null,
+              exitDate: colIdx.exitDate >= 0 ? normalizeExcelDate(row[colIdx.exitDate]) : null,
+              annualSalary: annualSalary,
+              isYouth: colIdx.isYouth >= 0 ? parseBoolFromExcel(row[colIdx.isYouth]) : false,
+              memo: colIdx.memo >= 0 ? String(row[colIdx.memo] || '').trim() : '',
+              _rowNum: r + 1  // 사용자가 엑셀에서 보는 행 번호 (에러 메시지용)
+            });
+          }
+          resolve(result);
+        } catch (err) {
+          reject(err);
+        }
+      };
+      reader.onerror = function () { reject(new Error('파일을 읽을 수 없습니다.')); };
+      reader.readAsArrayBuffer(file);
+    });
+  }
+
+  /**
+   * 일괄 업데이트 병합:
+   * - id 있는 행 → 해당 id의 인력 업데이트 (덮어쓰기)
+   * - id 없는 행 → 신규 추가 (회사·이름·생년월일 모두 있어야 함)
+   * - 변경 없는 행은 skip
+   */
+  function buildBulkUpdateList(editedRows, current) {
+    var list = (current || []).slice();
+    var idToPerson = {};
+    list.forEach(function (p) { if (p && p.id) idToPerson[p.id] = p; });
+
+    var updated = 0, added = 0, skipped = 0, errors = [];
+    var addedNames = [];
+
+    editedRows.forEach(function (row) {
+      if (row.id) {
+        // 업데이트 경로
+        var existing = idToPerson[row.id];
+        if (!existing) {
+          errors.push('행 ' + row._rowNum + ': id "' + row.id + '"에 해당하는 인력을 찾을 수 없어요.');
+          return;
+        }
+
+        var changed = false;
+        // 이름 변경 (드물지만 가능)
+        if (row.name && row.name !== existing.name) {
+          existing.name = row.name;
+          changed = true;
+        }
+        // 회사
+        if (row.company && row.company !== existing.company) {
+          existing.company = row.company;
+          changed = true;
+        }
+        // 생년월일
+        if (row.birthDate && row.birthDate !== existing.birthDate) {
+          existing.birthDate = row.birthDate;
+          changed = true;
+        }
+        // 성별
+        if (row.gender && row.gender !== existing.gender) {
+          existing.gender = row.gender;
+          changed = true;
+        }
+        // 주민번호 뒷자리 (★ 핵심: 빈 값 아닌 경우만 덮어씀)
+        if (row.ssnTail && row.ssnTail !== existing.ssnTail) {
+          existing.ssnTail = row.ssnTail;
+          changed = true;
+        }
+        // 입사일
+        if (row.hireDate && row.hireDate !== existing.hireDate) {
+          existing.hireDate = row.hireDate;
+          changed = true;
+        }
+        // 퇴사일 (빈 값으로 만드는 것도 허용 — 재직 복귀)
+        var newExit = row.exitDate || null;
+        if (newExit !== (existing.exitDate || null)) {
+          existing.exitDate = newExit;
+          existing.status = newExit ? 'exited' : 'active';
+          changed = true;
+        }
+        // 연봉 (★ 핵심: 빈 값 아닌 경우만 덮어씀, salaryHistory 보류)
+        if (row.annualSalary != null && row.annualSalary !== existing.annualSalary) {
+          existing.annualSalary = row.annualSalary;
+          existing.monthlySalary = Math.ceil(row.annualSalary / 12);
+          changed = true;
+        }
+        // 청년
+        if (row.isYouth !== !!existing.isYouth) {
+          existing.isYouth = !!row.isYouth;
+          changed = true;
+        }
+        // 메모 (빈 메모로 덮는 것도 허용)
+        if ((row.memo || '') !== (existing.memo || '')) {
+          existing.memo = row.memo || '';
+          changed = true;
+        }
+
+        if (changed) {
+          existing.updatedAt = new Date().toISOString();
+          updated++;
+        } else {
+          skipped++;
+        }
+      } else {
+        // 신규 추가 경로 — id가 비어있음
+        // 필수 검증: 회사, 이름, 생년월일
+        if (!row.company) {
+          errors.push('행 ' + row._rowNum + ' (' + row.name + '): 신규 추가 행은 "회사"가 필요해요.');
+          return;
+        }
+        if (!row.birthDate) {
+          errors.push('행 ' + row._rowNum + ' (' + row.name + '): 신규 추가 행은 "생년월일"이 필요해요.');
+          return;
+        }
+        // 회사값이 우리가 아는 회사인지 확인
+        if (row.company !== '식스티' && row.company !== '굿뉴스' && row.company !== '패리티') {
+          errors.push('행 ' + row._rowNum + ' (' + row.name + '): 회사는 "식스티", "굿뉴스", "패리티" 중 하나여야 해요.');
+          return;
+        }
+        // 같은 회사 내 이름+생년월일 중복 검사
+        var dup = false;
+        for (var i = 0; i < list.length; i++) {
+          var p = list[i];
+          if (!p) continue;
+          if ((p.name || '') === row.name && p.birthDate === row.birthDate && p.company === row.company) {
+            dup = true;
+            break;
+          }
+        }
+        if (dup) {
+          errors.push('행 ' + row._rowNum + ' (' + row.name + '): "' + row.company + '" 회사에 이미 같은 이름+생년월일의 인력이 있어요.');
+          return;
+        }
+
+        var now = new Date().toISOString();
+        var newPerson = {
+          id: makeLocalPersonId(),
+          name: row.name,
+          company: row.company,
+          birthDate: row.birthDate,
+          gender: row.gender || null,
+          ssnTail: row.ssnTail || null,
+          hireDate: row.hireDate || null,
+          exitDate: row.exitDate || null,
+          isYouth: !!row.isYouth,
+          annualSalary: row.annualSalary,
+          monthlySalary: row.annualSalary != null ? Math.ceil(row.annualSalary / 12) : null,
+          memo: row.memo || '',
+          status: row.exitDate ? 'exited' : 'active',
+          createdAt: now,
+          updatedAt: now
+        };
+        list.push(newPerson);
+        idToPerson[newPerson.id] = newPerson;
+        added++;
+        addedNames.push(row.name);
+      }
+    });
+
+    return {
+      list: list,
+      summary: {
+        updated: updated,
+        added: added,
+        skipped: skipped,
+        total: editedRows.length,
+        addedNames: addedNames,
+        errors: errors
+      }
+    };
+  }
+
+  function onBulkDownloadClick() {
+    downloadBulkExcel();
+  }
+
+  function onBulkEditBtnClick() {
+    if (!el.bulkEditInput) return;
+    el.bulkEditInput.value = '';  // 같은 파일 다시 올려도 동작하게
+    el.bulkEditInput.click();
+  }
+
+  function onBulkEditFileChange(e) {
+    var file = e.target && e.target.files && e.target.files[0];
+    if (!file) return;
+    handleBulkEditUpload(file);
+  }
+
+  function handleBulkEditUpload(file) {
+    var svc = window.firestoreService;
+    if (!svc || typeof svc.savePersons !== 'function') {
+      alert('firestoreService 가 없어요. 새로고침 후 다시 시도해 주세요.');
+      return;
+    }
+
+    if (el.bulkEditBtn) {
+      el.bulkEditBtn.disabled = true;
+      el.bulkEditBtn.textContent = '업로드 중…';
+    }
+
+    parseBulkEditFile(file).then(function (rows) {
+      if (!rows.length) {
+        throw new Error('엑셀에서 인력 데이터를 찾지 못했어요. 파일을 확인해 주세요.');
+      }
+
+      var merged = buildBulkUpdateList(rows, _persons);
+      var s = merged.summary;
+
+      // 미리보기 메시지
+      var msgParts = [];
+      msgParts.push('총 ' + s.total + '개 행을 읽었어요.');
+      if (s.updated) msgParts.push('• 업데이트: ' + s.updated + '명');
+      if (s.added) {
+        msgParts.push('• 신규 추가: ' + s.added + '명');
+        if (s.addedNames && s.addedNames.length) {
+          var preview = s.addedNames.slice(0, 5).join(', ');
+          if (s.addedNames.length > 5) preview += ' 외 ' + (s.addedNames.length - 5) + '명';
+          msgParts.push('   (' + preview + ')');
+        }
+      }
+      if (s.skipped) msgParts.push('• 변경 없음(건너뜀): ' + s.skipped + '명');
+      if (s.errors && s.errors.length) {
+        msgParts.push('');
+        msgParts.push('⚠️ ' + s.errors.length + '개 행에 문제가 있어요:');
+        s.errors.slice(0, 10).forEach(function (er) { msgParts.push('  - ' + er); });
+        if (s.errors.length > 10) msgParts.push('  ... 외 ' + (s.errors.length - 10) + '건');
+      }
+
+      if (s.updated === 0 && s.added === 0) {
+        msgParts.push('');
+        msgParts.push('적용할 변경사항이 없어서 저장하지 않았어요.');
+        alert(msgParts.join('\n'));
+        return null;
+      }
+
+      msgParts.push('');
+      msgParts.push('저장할까요?');
+
+      if (!confirm(msgParts.join('\n'))) {
+        return null;
+      }
+
+      return svc.savePersons(merged.list).then(function () {
+        var resultParts = ['일괄 업데이트 완료'];
+        if (s.updated) resultParts.push('  업데이트 ' + s.updated + '명');
+        if (s.added) resultParts.push('  신규 추가 ' + s.added + '명');
+        alert(resultParts.join('\n'));
+      });
+    }).catch(function (err) {
+      console.error('일괄 업데이트 실패:', err);
+      alert((err && err.message) ? err.message : '일괄 업데이트에 실패했어요.');
+    }).then(function () {
+      if (el.bulkEditBtn) {
+        el.bulkEditBtn.disabled = false;
+        el.bulkEditBtn.innerHTML = BULK_EDIT_BTN_INNER_HTML;
+      }
+    });
+  }
+
+  // 버튼 innerHTML 백업 (업로드 중 텍스트 변경 후 복원용 — init에서 채워짐)
+  var BULK_EDIT_BTN_INNER_HTML = '';
+
+
   function onMigrationBannerClick() {
     _filter.missingBirthOnly = !_filter.missingBirthOnly;
     if (el.migrationBanner) {
@@ -1877,6 +2548,23 @@
     if (el.tbody)          el.tbody.addEventListener('click', onTableClick);
     if (el.excelUploadBtn) el.excelUploadBtn.addEventListener('click', onExcelUploadClick);
     if (el.excelInput)     el.excelInput.addEventListener('change', onExcelFileChange);
+    if (el.bulkDownloadBtn) el.bulkDownloadBtn.addEventListener('click', onBulkDownloadClick);
+    if (el.bulkEditBtn)     el.bulkEditBtn.addEventListener('click', onBulkEditBtnClick);
+    if (el.bulkEditInput)   el.bulkEditInput.addEventListener('change', onBulkEditFileChange);
+
+    // 정렬 헤더 (만나이/입사일/퇴사일/월급) — 클릭 및 키보드(Enter/Space)
+    var sortHeaders = document.querySelectorAll('#persons-table th.th-sortable');
+    sortHeaders.forEach(function (th) {
+      var key = th.getAttribute('data-sort-key');
+      if (!key) return;
+      th.addEventListener('click', function () { onSortHeaderClick(key); });
+      th.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onSortHeaderClick(key);
+        }
+      });
+    });
 
     // 회사 선택 모달 이벤트
     if (el.companySelectClose) {
@@ -1936,6 +2624,14 @@
 
     el.excelInput     = $('excel-input');
     el.excelUploadBtn = $('excel-upload-btn');
+    el.bulkDownloadBtn = $('bulk-download-btn');
+    el.bulkEditBtn     = $('bulk-edit-btn');
+    el.bulkEditInput   = $('bulk-edit-input');
+
+    // 일괄 업데이트 버튼 innerHTML 백업 (업로드 중 텍스트 바꿨다가 복원하기 위함)
+    if (el.bulkEditBtn) {
+      BULK_EDIT_BTN_INNER_HTML = el.bulkEditBtn.innerHTML;
+    }
 
     el.migrationBanner     = $('migration-banner');
     el.migrationBannerText = $('migration-banner-text');
@@ -1988,11 +2684,122 @@
       _persons = Array.isArray(list) ? list : [];
       // 마이그레이션: company 없는 인력을 자동으로 식스티로 채움 (한 번만)
       migrateCompanyIfNeeded(_persons);
+      // 마이그레이션: 과거 Math.round로 저장된 monthlySalary를 Math.ceil로 재계산 (한 번만)
+      migrateMonthlySalaryIfNeeded(_persons);
       render();
     });
 
     render();
   }
+
+  // ====================================================================
+  // 겸직 진단 도구 (콘솔에서 사용)
+  // 사용법: 콘솔에서 debugMoonlight() 호출
+  // ====================================================================
+  window.debugMoonlight = function () {
+    console.log('==========================================');
+    console.log('겸직 진단 시작 — 전체 인력:', _persons.length, '명');
+    console.log('==========================================');
+
+    // 1) 키 생성 진단
+    var keyStats = { hasKey: 0, noKey: 0, noBirth: 0, noName: 0, noCompany: 0 };
+    var nullKeyPersons = [];
+    _persons.forEach(function (p) {
+      if (!p) return;
+      if (!p.name) { keyStats.noName++; return; }
+      if (!p.birthDate) {
+        keyStats.noBirth++;
+        nullKeyPersons.push({ name: p.name, company: p.company, reason: '생년월일 없음' });
+        return;
+      }
+      if (!getCompany(p)) { keyStats.noCompany++; return; }
+      var k = getMoonlightKey(p);
+      if (k) keyStats.hasKey++;
+      else keyStats.noKey++;
+    });
+    console.log('[1] 키 생성 통계:', keyStats);
+    if (nullKeyPersons.length) {
+      console.log('[1-a] 생년월일 없어서 키 못 만든 인력 (겸직 매칭 불가):');
+      console.table(nullKeyPersons);
+    }
+
+    // 2) 키별 그룹화
+    var map = computeMoonlightMap(_persons);
+    var keys = Object.keys(map);
+    console.log('[2] 만들어진 키 수:', keys.length);
+
+    // 3) 같은 키에 2명 이상인 그룹 찾기 (= 겸직 후보)
+    var groups = [];
+    keys.forEach(function (k) {
+      var entry = map[k];
+      if (entry.persons.length >= 2) {
+        groups.push({
+          key: k,
+          count: entry.persons.length,
+          companies: entry.companies.join(','),
+          isAdminTransfer: entry.isAdminTransfer,
+          persons: entry.persons.map(function (p) {
+            return p.company + '(입:' + (p.hireDate || '-') + ', 퇴:' + (p.exitDate || '-') + ', 메모:"' + (p.memo || '') + '")';
+          }).join(' | ')
+        });
+      }
+    });
+    console.log('[3] 같은 키에 2명 이상 묶인 그룹 (겸직 후보):', groups.length);
+    if (groups.length) {
+      console.table(groups);
+    }
+
+    // 4) 현재 뱃지가 표시되는 인력 (식스티 줄, 행정이관 아님, 회사 2개 이상)
+    var showing = [];
+    _persons.forEach(function (p) {
+      if (!p) return;
+      var info = getMoonlightInfo(p, map);
+      if (info.isMoonlight) {
+        showing.push({ name: p.name, company: p.company, others: info.others.join(',') });
+      }
+    });
+    console.log('[4] 실제 화면에 뱃지가 뜨는 인력:', showing.length);
+    if (showing.length) {
+      console.table(showing);
+    }
+
+    // 5) 같은 이름인데 키가 달라서 매칭 못 한 케이스 찾기 (의심 케이스)
+    var byName = {};
+    _persons.forEach(function (p) {
+      if (!p || !p.name || !p.company) return;
+      if (!byName[p.name]) byName[p.name] = [];
+      byName[p.name].push(p);
+    });
+    var sameName = [];
+    Object.keys(byName).forEach(function (name) {
+      var arr = byName[name];
+      if (arr.length < 2) return;
+      // 같은 이름인데 회사가 둘 이상
+      var companies = {};
+      arr.forEach(function (p) { companies[p.company] = true; });
+      if (Object.keys(companies).length < 2) return;
+      // 그런데 키로 묶이지 않은 경우
+      var keys = arr.map(getMoonlightKey);
+      var uniqueKeys = {};
+      keys.forEach(function (k) { uniqueKeys[k || '(null)'] = true; });
+      if (Object.keys(uniqueKeys).length > 1) {
+        sameName.push({
+          name: name,
+          records: arr.map(function (p, i) {
+            return p.company + ' [생:' + (p.birthDate || '-') + ', 뒷:' + (p.ssnTail || '-') + '] → 키:' + (keys[i] || '(null)');
+          }).join('\n')
+        });
+      }
+    });
+    console.log('[5] 같은 이름·다른 회사인데 키가 달라서 매칭 실패한 의심 케이스:', sameName.length);
+    if (sameName.length) {
+      console.table(sameName);
+      console.log('   → 위 사람들은 같은 사람일 가능성이 있어요. 생년월일/주민번호 뒷자리를 양쪽 모두 채워야 겸직으로 인식됩니다.');
+    }
+
+    console.log('==========================================');
+    console.log('진단 끝. 자세히 보고 싶은 그룹이 있으면 알려주세요.');
+  };
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);

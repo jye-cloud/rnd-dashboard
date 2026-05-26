@@ -908,10 +908,7 @@
     }
 
     /* 페이지 전체 너비 고정 — 화면 크기와 무관 */
-    .container {
-      width: 1400px;
-      margin: 0 auto;
-    }
+    /* .container는 style.css의 전역 룰을 사용 */
   </style>
 </head>
 <body>
@@ -1043,19 +1040,19 @@
             <div class="detail-form-grid" style="grid-template-columns: repeat(4, minmax(180px, 1fr));">
               <div class="detail-form-group">
                 <label class="detail-form-label">과제 속성</label>
-                <div class="detail-checkbox-group">
-                  <label><input type="checkbox" id="project-isRd"> R&amp;D 여부 (체크 시 목록에 [R&amp;D] 뱃지 표시)</label>
-                  <label style="margin-top:0.4rem;">
-                    <input type="checkbox" id="project-laborManaged">
-                    인건비 관리 대상
-                  </label>
+                <div class="detail-checkbox-group" style="display:grid; grid-template-columns: max-content 1fr; align-items:center; gap:0.5rem 0.5rem; padding:0.35rem 0;">
+                  <input type="checkbox" id="project-isRd">
+                  <label for="project-isRd" style="cursor:pointer; font-size:0.88rem; color:var(--text-primary); user-select:none;">R&amp;D 여부 (체크 시 목록에 [R&amp;D] 뱃지 표시)</label>
+                  <input type="checkbox" id="project-laborManaged">
+                  <label for="project-laborManaged" style="cursor:pointer; font-size:0.88rem; color:var(--text-primary); user-select:none;">인건비 관리 대상</label>
                 </div>
-                <!-- 인건비 관리 대상 체크 시: 환급 여부 바로 아래 표시 -->
+                <!-- 인건비 관리 대상 체크 시: 관리 방식 바로 아래 표시 -->
                 <div id="project-labor-refund-wrap" style="margin-top:0.6rem; display:none;">
-                  <label class="detail-form-label" style="margin-bottom:0.3rem;">인건비 환급 여부</label>
-                  <div class="detail-radio-group">
-                    <label><input type="radio" name="project-laborRefund" value="true" checked> 환급됨</label>
-                    <label><input type="radio" name="project-laborRefund" value="false"> 환급 없음 (참여율만 관리)</label>
+                  <label class="detail-form-label" style="margin-bottom:0.3rem;">인건비 관리 방식</label>
+                  <div class="detail-radio-group" style="flex-direction:column; gap:0.35rem;">
+                    <label><input type="radio" name="project-laborMode" value="refund_participation" checked> 환급 O &nbsp;+&nbsp; 참여율 관리 O</label>
+                    <label><input type="radio" name="project-laborMode" value="refund_only"> 환급 O &nbsp;+&nbsp; 참여율 관리 X</label>
+                    <label><input type="radio" name="project-laborMode" value="participation_only"> 환급 X &nbsp;+&nbsp; 참여율만 관리</label>
                   </div>
                 </div>
               </div>
@@ -1336,14 +1333,14 @@
       //
       // [저장 시 추가할 코드 - project-detail.js formToData 함수 안]
       //   laborManaged: document.getElementById('project-laborManaged').checked,
-      //   laborRefund:  document.querySelector('[name="project-laborRefund"]:checked')?.value === 'true',
+      //   laborMode: document.querySelector('[name="project-laborMode"]:checked')?.value ?? 'refund_participation',
       //
       // [불러올 시 추가할 코드 - project-detail.js dataToForm/fillForm 함수 안]
       //   document.getElementById('project-laborManaged').checked = !!data.laborManaged;
       //   document.getElementById('project-laborManaged').dispatchEvent(new Event('change'));
-      //   var refundVal = data.laborRefund === false ? 'false' : 'true';
-      //   var refundRadio = document.querySelector('[name="project-laborRefund"][value="' + refundVal + '"]');
-      //   if (refundRadio) refundRadio.checked = true;
+      //   var modeVal = data.laborMode ?? (data.laborRefund === false ? 'participation_only' : 'refund_participation');
+      //   var modeRadio = document.querySelector('[name="project-laborMode"][value="' + modeVal + '"]');
+      //   if (modeRadio) modeRadio.checked = true;
     })();
   </script>
 </body>

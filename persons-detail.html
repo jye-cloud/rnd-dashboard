@@ -619,10 +619,7 @@
     }
 
     /* 페이지 전체 너비 고정 — 화면 크기와 무관 */
-    .container {
-      width: 1400px;
-      margin: 0 auto;
-    }
+    /* .container는 style.css의 전역 룰을 사용 */
 
     /* ===== 다운로드 컬럼 선택 모달 ===== */
     .dl-modal-overlay {
@@ -1484,16 +1481,11 @@
     /* ============================================================ */
     .detail-layout {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) 360px;
+      grid-template-columns: minmax(0, 2fr) minmax(460px, 1fr);
       gap: 1rem;
       align-items: flex-start;
     }
-    /* 좁은 화면에선 위아래로 */
-    @media (max-width: 1280px) {
-      .detail-layout {
-        grid-template-columns: 1fr;
-      }
-    }
+    /* 좁은 화면 대응: .container min-width + 가로 스크롤로 통일 (§0.5.1) */
 
     .detail-side-panel {
       background: var(--card-bg);
@@ -1505,12 +1497,6 @@
       top: 1rem;
       max-height: calc(100vh - 2rem);
       overflow-y: auto;
-    }
-    @media (max-width: 1280px) {
-      .detail-side-panel {
-        position: static;
-        max-height: none;
-      }
     }
 
     /* 비어있을 때 (인력 미선택 상태) */
@@ -1571,6 +1557,48 @@
     .detail-edit-btn:hover {
       transform: translateY(-1px);
       box-shadow: 0 4px 10px rgba(37, 99, 235, 0.3);
+    }
+    .detail-close-btn {
+      background: #f1f5f9;
+      color: #64748b;
+      border: 1px solid #e2e8f0;
+      border-radius: 0.5rem;
+      width: 30px;
+      height: 30px;
+      padding: 0;
+      font-size: 1rem;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: all 0.15s;
+      font-family: inherit;
+      line-height: 1;
+    }
+    .detail-close-btn:hover {
+      background: #e2e8f0;
+      color: #1e293b;
+    }
+    .detail-header-actions {
+      display: flex;
+      gap: 0.4rem;
+      align-items: center;
+      flex-shrink: 0;
+    }
+
+    /* 겸직 뱃지 (master와 동일한 정의 — 페이지간 일관성 유지) */
+    .moonlight-badge {
+      display: inline-block;
+      padding: 0.1rem 0.45rem;
+      margin-left: 0.35rem;
+      background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+      color: #92400e;
+      border-radius: 0.3rem;
+      font-size: 0.7rem;
+      font-weight: 700;
+      vertical-align: middle;
+      cursor: help;
     }
 
     /* 상세 정보 그리드 */
@@ -1875,8 +1903,15 @@
       <div class="container">
         <header class="header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.75rem">
           <h1 class="header-title">📑 인력 상세</h1>
-          <div style="display:flex;gap:0.5rem;align-items:center">
-            <span style="font-size:0.85rem;color:var(--text-secondary)">새 인력 등록은</span>
+          <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+            <button type="button" id="bulk-download-btn" class="ui-btn ui-btn--ghost" title="현재 인력의 상세 정보를 엑셀로 다운로드">
+              ⬇️ 전체 다운로드
+            </button>
+            <button type="button" id="bulk-edit-btn" class="ui-btn ui-btn--ghost" title="다운로드한 엑셀로 일괄 업데이트">
+              ⬆️ 일괄 업데이트
+            </button>
+            <input type="file" id="bulk-edit-input" accept=".xlsx,.xls" style="display:none">
+            <span style="font-size:0.85rem;color:var(--text-secondary);margin-left:0.5rem">새 인력 등록은</span>
             <a href="persons-master.html" class="ui-btn ui-btn--ghost" title="인력 마스터에서 명부 업로드 또는 직접 추가">
               👥 인력 마스터에서
             </a>
@@ -1894,11 +1929,6 @@
             <div class="projects-stat-label">정보 입력 완료</div>
             <div class="projects-stat-value projects-stat--success" id="stat-hr-complete">0</div>
             <div class="projects-stat-sub-hint" id="stat-hr-complete-sub">재직 인력 중</div>
-          </div>
-          <div class="projects-stat-card projects-stat-card--narrow">
-            <div class="projects-stat-label">연구자번호 보유</div>
-            <div class="projects-stat-value" id="stat-researcher" style="color:#2563eb">0</div>
-            <div class="projects-stat-sub-hint">정부 R&D 등록</div>
           </div>
           <div class="projects-stat-card projects-stat-card--narrow">
             <div class="projects-stat-label">연구소 등록</div>
@@ -1946,10 +1976,6 @@
               </select>
             </label>
             <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.875rem;color:var(--text-secondary)">
-              <input type="checkbox" id="filter-researcher" style="margin:0;cursor:pointer">
-              연구자번호 보유
-            </label>
-            <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.875rem;color:var(--text-secondary)">
               <input type="checkbox" id="filter-lab" style="margin:0;cursor:pointer">
               연구소 등록
             </label>
@@ -1971,9 +1997,8 @@
                   <tr>
                     <th style="width:40px">No</th>
                     <th style="width:75px">회사</th>
-                    <th>상태</th>
+                    <th style="width:70px">상태</th>
                     <th>이름</th>
-                    <th>소속</th>
                     <th>직급</th>
                     <th>최종학위</th>
                     <th>연구자번호</th>
@@ -2076,11 +2101,11 @@
             <select id="form-final-degree" class="ui-select">
               <option value="">선택</option>
               <option value="박사">박사</option>
-              <option value="박사수료">박사수료</option>
+              <option value="박사수료">박사(수료)</option>
               <option value="석사">석사</option>
-              <option value="석사수료">석사수료</option>
+              <option value="석사수료">석사(수료)</option>
               <option value="학사">학사</option>
-              <option value="학사재학">학사재학</option>
+              <option value="학사재학">학사(재학)</option>
               <option value="전문학사">전문학사</option>
               <option value="기타">기타</option>
             </select>

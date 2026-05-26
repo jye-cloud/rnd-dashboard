@@ -45,7 +45,9 @@
 
   var APP_TITLE = 'CI_R&DM';
   var COLLAPSED_KEY = 'rnd-sidebar-collapsed';   // 사용자가 수동 토글한 상태: '1' | '0' | null(미설정)
-  var AUTO_COLLAPSE_BREAKPOINT = 1200;            // 이 너비 미만이면 자동 접힘
+  var AUTO_COLLAPSE_BREAKPOINT = 1400;            // 이 너비 미만이면 자동 접힘
+  // ※ 1400 선정 이유: 사이드바 펼침(220px) + .container min-width(1200px) = 1420px
+  //   1400px 미만에선 사이드바를 접어야 본문이 가로 스크롤 없이 들어감.
 
   // ====================================================================
   // 현재 페이지 감지

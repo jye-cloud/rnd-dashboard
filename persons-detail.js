@@ -29,7 +29,6 @@
     status: 'active',             // 'all' | 'active' | 'exited'
     company: 'all',               // 'all' | '식스티' | '굿뉴스' | '패리티'
     degree: 'all',                // 'all' | '박사' | '석사' | '학사' | '기타' | 'unset'
-    researcherOnly: false,        // true면 연구자번호 보유자만
     labOnly: false                // true면 연구소 등록자만
   };
 
@@ -52,15 +51,17 @@
     filterStatus: null,
     filterCompany: null,
     filterDegree: null,
-    filterResearcher: null,
     filterLab: null,
     // 카드
     statTotal: null,
     statTotalSub: null,
     statHrComplete: null,
     statHrCompleteSub: null,
-    statResearcher: null,
     statLab: null,
+    // 일괄 다운로드/업로드
+    bulkDownloadBtn: null,
+    bulkEditBtn: null,
+    bulkEditInput: null,
     // 테이블
     tbody: null,
     tableWrap: null,
@@ -144,6 +145,155 @@
     return String(s).slice(0, 10);
   }
 
+  /**
+   * 학위 표시 라벨 (저장값 → 화면 표시값)
+   * 데이터는 그대로 두고 화면 표시만 괄호 형태로.
+   */
+  function formatDegree(raw) {
+    if (!raw) return '';
+    var map = {
+      '박사수료': '박사(수료)',
+      '석사수료': '석사(수료)',
+      '학사재학': '학사(재학)'
+    };
+    return map[raw] || raw;
+  }
+
+  /**
+   * 학위 필터 그룹 — 박사 선택 시 박사+박사수료, 석사 선택 시 석사+석사수료, 학사 선택 시 학사+학사재학
+   * 그 외 옵션('전문학사', '기타', 'unset')은 정확히 일치.
+   */
+  function degreeMatchesFilter(personDegree, filterValue) {
+    if (filterValue === 'all') return true;
+    if (filterValue === 'unset') return !personDegree;
+    if (!personDegree) return false;
+    var groups = {
+      '박사': ['박사', '박사수료'],
+      '석사': ['석사', '석사수료'],
+      '학사': ['학사', '학사재학']
+    };
+    var allowed = groups[filterValue] || [filterValue];
+    return allowed.indexOf(personDegree) >= 0;
+  }
+
+  /**
+   * 학위 정렬 우선순위 (작을수록 위)
+   * 본 학위가 위, 수료/재학이 아래로 가도록.
+   *   박사 → 박사수료 → 석사 → 석사수료 → 학사 → 학사재학 → 전문학사 → 기타 → (미입력)
+   */
+  function degreeSortKey(raw) {
+    var order = {
+      '박사': 1, '박사수료': 2,
+      '석사': 3, '석사수료': 4,
+      '학사': 5, '학사재학': 6,
+      '전문학사': 7,
+      '기타': 8
+    };
+    if (!raw) return 99;
+    return order[raw] != null ? order[raw] : 50;
+  }
+
+  /**
+   * 엑셀 업로드 시 학위 입력값 정규화
+   * 사용자가 '박사(수료)', '박사수료', '박사 수료' 등 다양하게 입력할 수 있음.
+   * 모두 저장값 '박사수료'로 통일.
+   */
+  function normalizeDegreeInput(raw) {
+    if (!raw) return '';
+    var s = String(raw).trim();
+    if (!s) return '';
+    // 괄호 형태: '박사(수료)' → '박사수료'
+    var m = s.match(/^(박사|석사|학사)\s*\((수료|재학)\)$/);
+    if (m) {
+      var combo = m[1] + m[2];
+      // '학사(수료)'·'박사(재학)' 같은 어색한 조합은 그대로 두지 않고 무효화
+      if (combo === '박사수료' || combo === '석사수료' || combo === '학사재학') return combo;
+    }
+    // 공백 있는 형태: '박사 수료' → '박사수료'
+    var sNoSpace = s.replace(/\s+/g, '');
+    if (sNoSpace === '박사수료' || sNoSpace === '석사수료' || sNoSpace === '학사재학') return sNoSpace;
+    // 그 외 (박사/석사/학사/전문학사/기타 또는 미정의 값)
+    return s;
+  }
+
+  /**
+   * 학위 표기 일회성 정규화 (마이그레이션)
+   * 옛 저장값('박사(수료)', '석사(수료)', '학사(재학)' 등)을
+   * 통일된 형태('박사수료', '석사수료', '학사재학')로 일괄 변환.
+   * 페이지 로드 시 1회만 실행 (localStorage 플래그).
+   */
+  var DEGREE_NORMALIZATION_FLAG = '_degreeNormalizationDone_v1';
+
+  function migrateDegreeNormalization(persons) {
+    if (!Array.isArray(persons) || persons.length === 0) return;
+    try {
+      if (localStorage.getItem(DEGREE_NORMALIZATION_FLAG) === '1') return;
+    } catch (e) { /* localStorage 접근 실패 — 무시하고 진행 */ }
+
+    var changed = [];
+    var updated = persons.map(function (p) {
+      if (!p || !p.finalDegree) return p;
+      var normalized = normalizeDegreeInput(p.finalDegree);
+      if (normalized !== p.finalDegree) {
+        changed.push({ name: p.name, before: p.finalDegree, after: normalized });
+        return Object.assign({}, p, { finalDegree: normalized, updatedAt: new Date().toISOString() });
+      }
+      return p;
+    });
+
+    if (changed.length === 0) {
+      // 변환할 것 없음 — 플래그만 세팅하고 종료
+      try { localStorage.setItem(DEGREE_NORMALIZATION_FLAG, '1'); } catch (e) {}
+      return;
+    }
+
+    console.log('[학위 정규화] ' + changed.length + '건 변환 예정:');
+    console.table(changed);
+
+    var svc = window.firestoreService;
+    if (!svc || typeof svc.savePersons !== 'function') {
+      console.warn('[학위 정규화] firestoreService.savePersons 가 없어서 저장 실패');
+      return;
+    }
+
+    svc.savePersons(updated).then(function () {
+      console.log('[학위 정규화] ' + changed.length + '건 저장 완료');
+      try { localStorage.setItem(DEGREE_NORMALIZATION_FLAG, '1'); } catch (e) {}
+    }).catch(function (err) {
+      console.error('[학위 정규화] 저장 실패:', err);
+      // 플래그 세팅 안 함 — 다음 로드 시 재시도
+    });
+  }
+
+  /**
+   * 만나이 계산 (한국 기준).
+   * 오늘 날짜 기준으로 생일이 지났으면 (올해-생년), 안 지났으면 (올해-생년-1)
+   * ※ persons-master.js의 computeAge와 동일한 로직 — 두 페이지에서 같은 결과 보장.
+   *
+   * @param {string} birthDateIso - 'YYYY-MM-DD' 형식
+   * @returns {number | null} 만나이, 또는 null (생년월일 없음/잘못됨)
+   */
+  function computeAge(birthDateIso) {
+    if (!birthDateIso) return null;
+    var parts = String(birthDateIso).split('-');
+    if (parts.length < 3) return null;
+    var by = parseInt(parts[0], 10);
+    var bm = parseInt(parts[1], 10);
+    var bd = parseInt(parts[2], 10);
+    if (isNaN(by) || isNaN(bm) || isNaN(bd)) return null;
+
+    var today = new Date();
+    var ty = today.getFullYear();
+    var tm = today.getMonth() + 1;
+    var td = today.getDate();
+
+    var age = ty - by;
+    if (tm < bm || (tm === bm && td < bd)) age--;
+
+    if (age < 0 || age > 150) return null;
+    return age;
+  }
+
   function pad2(v) { return String(v || '').padStart(2, '0'); }
 
   function buildDateString(y, m, d) {
@@ -216,6 +366,111 @@
     }
     return '<span class="company-badge company-badge--unset">미지정</span>';
   }
+
+  // ====================================================================
+  // 겸직 (persons-master.js와 동일한 로직)
+  // - 키: 이름 + 생년월일
+  // - 식스티 줄에만 [겸직] 표시 (자회사가 본업)
+  // - 메모에 '이동' 포함되어 있으면 행정 이관 → 겸직 표시 안 함
+  // ====================================================================
+
+  function getMoonlightKey(person) {
+    if (!person) return null;
+    var name = (person.name || '').trim();
+    if (!name) return null;
+    var birth = person.birthDate || '';
+    if (!birth) return null;
+    return name + '|' + birth;
+  }
+
+  function checkAdminTransfer(personsOfSameKey) {
+    for (var i = 0; i < personsOfSameKey.length; i++) {
+      var memo = (personsOfSameKey[i] && personsOfSameKey[i].memo) || '';
+      if (memo.indexOf('이동') >= 0) return true;
+    }
+    return false;
+  }
+
+  function computeMoonlightMap(persons) {
+    var map = {};
+    for (var i = 0; i < persons.length; i++) {
+      var p = persons[i];
+      if (!p) continue;
+      var key = getMoonlightKey(p);
+      if (!key) continue;
+      var company = getCompany(p);
+      if (!company) continue;
+      if (!map[key]) map[key] = { persons: [], companies: [], isAdminTransfer: false };
+      map[key].persons.push(p);
+      if (map[key].companies.indexOf(company) < 0) map[key].companies.push(company);
+    }
+    Object.keys(map).forEach(function (key) {
+      var entry = map[key];
+      if (entry.persons.length < 2) return;
+      entry.isAdminTransfer = checkAdminTransfer(entry.persons);
+    });
+    return map;
+  }
+
+  /**
+   * master와 동일한 정책: 식스티 줄에서만 겸직 정보 반환.
+   * 자회사 줄에는 isMoonlight=false (자회사가 본업).
+   *
+   * 테이블 렌더링에서 사용 — 표의 규칙대로:
+   *   - 식스티 재직 + 자회사 재직/퇴사 → 재직 + [겸직] 뱃지
+   *   - 식스티 퇴사 + 자회사 재직 → 상태 컬럼에 "겸직"(노란글자), 행 회색 X
+   *   - 식스티 퇴사 + 자회사 퇴사 → 퇴직 + [겸직] 뱃지, 행 회색
+   *   - 메모 '이동' → 일반 처리
+   *   - 자회사끼리만 → 일반 (사실상 케이스 없음)
+   */
+  function getMoonlightInfo(person, moonlightMap) {
+    var empty = { isMoonlight: false, others: [], selfActive: false, subsidiaryActive: false };
+    var key = getMoonlightKey(person);
+    if (!key || !moonlightMap || !moonlightMap[key]) return empty;
+    var entry = moonlightMap[key];
+    var myCompany = getCompany(person);
+    if (!entry.companies || entry.companies.length < 2) return empty;
+    if (entry.isAdminTransfer) return empty;
+    if (myCompany !== '식스티') return empty;
+
+    var others = entry.companies.filter(function (c) { return c !== myCompany; });
+    var selfActive = (person.status || 'active') !== 'exited';
+    var subsidiaryActive = false;
+    for (var i = 0; i < entry.persons.length; i++) {
+      var rec = entry.persons[i];
+      if (!rec) continue;
+      if (getCompany(rec) === '식스티') continue;
+      if ((rec.status || 'active') !== 'exited') {
+        subsidiaryActive = true;
+        break;
+      }
+    }
+    return { isMoonlight: true, others: others, selfActive: selfActive, subsidiaryActive: subsidiaryActive };
+  }
+
+  /**
+   * 인력 상세 패널 전용: 모든 회사 줄에서 "다른 회사 등록" 정보 반환.
+   * 자회사 줄을 클릭해서 상세를 봤을 때도 "[겸직: 식스티]" 정보를 표시하기 위함.
+   * (테이블 표시 규칙은 master 그대로 — getMoonlightInfo가 담당)
+   *
+   * 반환: { hasOthers: bool, others: string[] }
+   * 행정 이관(메모 '이동')은 hasOthers=false
+   */
+  function getCrossCompanyInfo(person, moonlightMap) {
+    var empty = { hasOthers: false, others: [] };
+    var key = getMoonlightKey(person);
+    if (!key || !moonlightMap || !moonlightMap[key]) return empty;
+    var entry = moonlightMap[key];
+    var myCompany = getCompany(person);
+    if (!entry.companies || entry.companies.length < 2) return empty;
+    if (entry.isAdminTransfer) return empty;
+    var others = entry.companies.filter(function (c) { return c !== myCompany; });
+    if (others.length === 0) return empty;
+    return { hasOthers: true, others: others };
+  }
+
+  // 모듈 스코프: 매 render마다 한 번 계산해서 캐시
+  var _moonlightMap = null;
 
   // ====================================================================
   // 부서(소속) 옵션 동적 수집 + 드롭다운 갱신
@@ -384,17 +639,8 @@
         if (c !== _filter.company) return false;
       }
 
-      // 학위
-      if (_filter.degree !== 'all') {
-        if (_filter.degree === 'unset') {
-          if (p.finalDegree) return false;
-        } else {
-          if (p.finalDegree !== _filter.degree) return false;
-        }
-      }
-
-      // 연구자번호 보유
-      if (_filter.researcherOnly && !hasResearcher(p)) return false;
+      // 학위 (박사/석사/학사는 (수료)·(재학)도 같이 통과)
+      if (!degreeMatchesFilter(p.finalDegree, _filter.degree)) return false;
 
       // 연구소 등록
       if (_filter.labOnly && !hasLabRegistered(p)) return false;
@@ -413,8 +659,21 @@
   }
 
   function sortPersons(filtered) {
-    // 입사일 빠른 순 (인력 마스터와 동일)
+    // 학위 필터가 박사/석사/학사일 때만: 본 학위가 위, (수료)/(재학)이 아래로.
+    // 그 외에는 평상시처럼 입사일 순.
+    var degreeFilter = _filter.degree;
+    var pushDownInFilterMode = (degreeFilter === '박사' || degreeFilter === '석사' || degreeFilter === '학사');
+    var subValues = { '박사수료': true, '석사수료': true, '학사재학': true };
+
     return filtered.slice().sort(function (a, b) {
+      // 필터 모드에서만 (수료)/(재학)을 뒤로
+      if (pushDownInFilterMode) {
+        var aSub = !!subValues[a.finalDegree];
+        var bSub = !!subValues[b.finalDegree];
+        if (aSub !== bSub) return aSub ? 1 : -1;
+      }
+
+      // 입사일 빠른 순 (인력 마스터와 동일)
       var ah = a.hireDate || '';
       var bh = b.hireDate || '';
       if (ah && bh) {
@@ -435,7 +694,6 @@
     var total = _persons.length;
     var active = 0, exited = 0;
     var hrComplete = 0;
-    var researcherCount = 0;
     var labCount = 0;
 
     _persons.forEach(function (p) {
@@ -447,7 +705,6 @@
         active++;
         if (isHrComplete(p)) hrComplete++;
       }
-      if (hasResearcher(p)) researcherCount++;
       if (hasLabRegistered(p)) labCount++;
     });
 
@@ -459,7 +716,6 @@
         ? '재직 ' + active + '명 중 ' + Math.round(hrComplete / active * 100) + '%'
         : '재직 인력 중';
     }
-    if (el.statResearcher)   el.statResearcher.textContent = researcherCount;
     if (el.statLab)          el.statLab.textContent = labCount;
   }
 
@@ -471,22 +727,47 @@
     var isSelected = (p.id === _selectedPersonId);
     var rowClass = isSelected ? 'class="selected"' : '';
 
-    // 행 배경 (퇴직)
+    // === 겸직 정보 계산 (master 표 규칙) ===
+    // master 정책: 식스티 줄에서만 겸직 처리, 자회사 줄은 일반.
+    var mInfo = _moonlightMap ? getMoonlightInfo(p, _moonlightMap) : null;
+    // 식스티 퇴사 + 자회사 재직 = "실질 재직". 식스티 줄이지만 회색 처리하지 않고 상태 컬럼에 "겸직" 표시.
+    var isMoonlightActiveOnSubsidiary = !!(mInfo && mInfo.isMoonlight && !mInfo.selfActive && mInfo.subsidiaryActive);
+
+    // 행 배경: 퇴직이면 회색, 단 식스티 퇴사+자회사 재직이면 회색 처리 안 함
     var rowStyle = '';
-    if (isExited && !isSelected) rowStyle = 'style="color:#9ca3af;background:#fafafa"';
+    if (isExited && !isSelected && !isMoonlightActiveOnSubsidiary) {
+      rowStyle = 'style="color:#9ca3af;background:#fafafa"';
+    }
 
     var companyHtml = renderCompanyBadge(getCompany(p));
-    var statusBadge = isExited
-      ? '<span class="projects-badge projects-badge--end">퇴직</span>'
-      : '<span class="projects-badge projects-badge--active">재직</span>';
+
+    // 상태 뱃지 (master 표 규칙):
+    //  - 식스티 퇴사 + 자회사 재직 → "겸직" (노란글자, 배경 없음)
+    //  - 그 외 퇴직 → 회색
+    //  - 그 외 → 재직 (파랑)
+    var statusBadge;
+    if (isMoonlightActiveOnSubsidiary) {
+      var othersForStatus = mInfo.others.join(', ');
+      statusBadge = '<span class="projects-badge" style="color:#92400e;background:none;padding:0" title="' + escapeHtml(othersForStatus) + '에서 재직 중">겸직</span>';
+    } else if (isExited) {
+      statusBadge = '<span class="projects-badge projects-badge--end">퇴직</span>';
+    } else {
+      statusBadge = '<span class="projects-badge projects-badge--active">재직</span>';
+    }
+
+    // 이름 + [겸직] 뱃지 (master 표 규칙):
+    //  - 식스티 재직 + 자회사 등록 → [겸직] O
+    //  - 식스티 퇴사 + 자회사 퇴사 → [겸직] O (이력 표시)
+    //  - 식스티 퇴사 + 자회사 재직 → [겸직] X (상태 컬럼에 "겸직" 이미 표시되므로)
     var name = escapeHtml(p.name || '-');
+    if (mInfo && mInfo.isMoonlight && !isMoonlightActiveOnSubsidiary) {
+      var othersForBadge = mInfo.others.join(', ');
+      name += '<span class="moonlight-badge" title="' + escapeHtml(othersForBadge) + '와(과) 겸직">겸직</span>';
+    }
 
     var emptyDash = '<span style="color:#cbd5e1">-</span>';
-    var department = p.department ? escapeHtml(p.department) : emptyDash;
     var position = p.position ? escapeHtml(p.position) : emptyDash;
-    var degree = p.finalDegree
-      ? '<span class="projects-badge" style="background:#e0e7ff;color:#3730a3">' + escapeHtml(p.finalDegree) + '</span>'
-      : emptyDash;
+    var degree = p.finalDegree ? escapeHtml(formatDegree(p.finalDegree)) : emptyDash;
     var researcherId = p.researcherId
       ? '<span style="font-size:0.8rem">' + escapeHtml(p.researcherId) + '</span>'
       : emptyDash;
@@ -506,7 +787,6 @@
         + '<td>' + companyHtml + '</td>'
         + '<td>' + statusBadge + '</td>'
         + '<td style="font-weight:600">' + name + '</td>'
-        + '<td>' + department + '</td>'
         + '<td>' + position + '</td>'
         + '<td>' + degree + '</td>'
         + '<td>' + researcherId + '</td>'
@@ -527,6 +807,9 @@
     updateSummary();
     collectDepartmentOptions();
     collectPositionOptions();
+
+    // 겸직 맵을 매 렌더마다 한 번 계산 (renderRow/renderDetailPanel에서 공유)
+    _moonlightMap = computeMoonlightMap(_persons);
 
     var filtered = applyFilter(_persons);
     var sorted = sortPersons(filtered);
@@ -579,9 +862,28 @@
 
     var company = getCompany(p);
     var companyBadge = renderCompanyBadge(company);
-    var statusBadge = (p.status === 'exited')
-      ? '<span class="projects-badge projects-badge--end">퇴직</span>'
-      : '<span class="projects-badge projects-badge--active">재직</span>';
+
+    // 상태 뱃지 — 테이블과 동일한 규칙 (master 표)
+    var mInfoDetail = _moonlightMap ? getMoonlightInfo(p, _moonlightMap) : null;
+    var isMoonlightActiveOnSubsidiaryDetail = !!(mInfoDetail && mInfoDetail.isMoonlight && !mInfoDetail.selfActive && mInfoDetail.subsidiaryActive);
+    var statusBadge;
+    if (isMoonlightActiveOnSubsidiaryDetail) {
+      var subStatusOthers = mInfoDetail.others.join(', ');
+      statusBadge = '<span class="projects-badge" style="color:#92400e;background:none;padding:0" title="' + escapeHtml(subStatusOthers) + '에서 재직 중">겸직</span>';
+    } else if (p.status === 'exited') {
+      statusBadge = '<span class="projects-badge projects-badge--end">퇴직</span>';
+    } else {
+      statusBadge = '<span class="projects-badge projects-badge--active">재직</span>';
+    }
+
+    // 겸직 뱃지: 다른 회사에도 등록된 경우 (식스티 줄·자회사 줄 양쪽 다 표시).
+    // 단 식스티 퇴사 + 자회사 재직 케이스에선 상태 컬럼이 이미 "겸직: 굿뉴스"를 가리키므로 중복 표시 안 함.
+    var moonlightBadge = '';
+    var crossInfoDetail = _moonlightMap ? getCrossCompanyInfo(p, _moonlightMap) : null;
+    if (crossInfoDetail && crossInfoDetail.hasOthers && !isMoonlightActiveOnSubsidiaryDetail) {
+      var othersText = crossInfoDetail.others.join(', ');
+      moonlightBadge = '<span class="moonlight-badge" title="' + escapeHtml(othersText) + '에서도 재직">겸직: ' + escapeHtml(othersText) + '</span>';
+    }
 
     function fld(label, value, fallback) {
       var hasValue = value != null && value !== '' && value !== false;
@@ -685,17 +987,30 @@
       + '<div class="detail-header">'
       +   '<div>'
       +     '<h3 class="detail-name">' + escapeHtml(p.name || '-') + '</h3>'
-      +     '<div class="detail-name-sub">' + companyBadge + statusBadge + '</div>'
+      +     '<div class="detail-name-sub">' + companyBadge + statusBadge + moonlightBadge + '</div>'
       +   '</div>'
-      +   '<button type="button" class="detail-edit-btn" data-action="edit-from-detail" data-person-id="' + escapeHtml(p.id || '') + '">'
-      +     '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">'
-      +       '<path d="M12 20h9"/>'
-      +       '<path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>'
-      +     '</svg> 수정'
-      +   '</button>'
+      +   '<div class="detail-header-actions">'
+      +     '<button type="button" class="detail-edit-btn" data-action="edit-from-detail" data-person-id="' + escapeHtml(p.id || '') + '">'
+      +       '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">'
+      +         '<path d="M12 20h9"/>'
+      +         '<path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>'
+      +       '</svg> 수정'
+      +     '</button>'
+      +     '<button type="button" class="detail-close-btn" data-action="close-detail" title="닫기" aria-label="상세 닫기">✕</button>'
+      +   '</div>'
       + '</div>'
 
       + '<div class="detail-fields">'
+
+      // 기본 정보 (인력 마스터에서 가져옴 — 읽기 전용)
+      +   '<div class="detail-section-title">기본 정보 <span style="font-weight:400;color:#94a3b8;font-size:0.7rem">(인력 마스터에서 관리)</span></div>'
+      +   fld('생년월일', (function () {
+            if (!p.birthDate) return null;
+            var age = computeAge(p.birthDate);
+            return formatDate(p.birthDate) + (age != null ? ' (만 ' + age + '세)' : '');
+          })())
+      +   fld('입사일', p.hireDate ? formatDate(p.hireDate) : null)
+      +   fld('퇴사일', p.exitDate ? formatDate(p.exitDate) : null, '재직 중')
 
       // 조직
       +   '<div class="detail-section-title">조직 정보</div>'
@@ -704,7 +1019,7 @@
 
       // 학력
       +   '<div class="detail-section-title">학력</div>'
-      +   fld('최종학위', p.finalDegree)
+      +   fld('최종학위', p.finalDegree ? formatDegree(p.finalDegree) : null)
       +   fld('학교', p.school)
       +   fld('학과/전공', p.major)
       +   fld('학위번호', p.degreeNumber)
@@ -1919,6 +2234,432 @@
   }
 
   // ====================================================================
+  // 일괄 다운로드 / 업로드 (상세 정보 전용)
+  // ====================================================================
+  //
+  // 정책:
+  // - 다운로드는 마스터 정보(회사·이름·생년월일·입사일·퇴사일)를 읽기 전용 참고용으로 같이 표시
+  // - 업로드 시 마스터 필드는 절대 덮어쓰지 않음 (persons-master 책임)
+  // - 매칭은 id 기준. id 없는 행은 무시 (신규 인력 추가는 persons-master에서)
+  // - 빈 셀은 기존 값 유지 (덮어쓰지 않음).
+  //   ※ 단 메모/주소/이메일/핸드폰처럼 사용자가 의도적으로 비울 수 있는 필드는
+  //     "셀이 명시적으로 빈 문자열"이면 빈값 저장 — persons-master 패턴과 동일
+  // - 자격증은 콤마로 구분된 이름 문자열 ("정보처리기사, 정보보안기사")
+  //   → 기존 자격증과 합치지 않고 통째로 교체 (URL/메모는 자격증 페이지나 모달에서 따로 입력)
+
+  var DETAIL_BULK_COLUMNS = [
+    { key: 'no',           header: 'No',                width: 5,  readonly: true },
+    { key: 'id',           header: 'id (수정금지)',      width: 22, readonly: true },
+    // 참고용 (마스터 정보)
+    { key: 'company',      header: '회사',               width: 10, readonly: true },
+    { key: 'name',         header: '이름',               width: 12, readonly: true },
+    { key: 'birthDate',    header: '생년월일',           width: 12, readonly: true },
+    { key: 'hireDate',     header: '입사일',             width: 12, readonly: true },
+    { key: 'exitDate',     header: '퇴사일',             width: 12, readonly: true },
+    // 수정 대상 (상세 정보)
+    { key: 'department',   header: '소속',               width: 14 },
+    { key: 'position',     header: '직급',               width: 12 },
+    { key: 'finalDegree',  header: '최종학위',           width: 10 },
+    { key: 'school',       header: '학교',               width: 18 },
+    { key: 'major',        header: '전공',               width: 18 },
+    { key: 'degreeNumber', header: '학위번호',           width: 16 },
+    { key: 'degreeDate',   header: '학위 수여일',         width: 12 },
+    { key: 'researcherId', header: '연구자번호',         width: 16 },
+    { key: 'phone',        header: '핸드폰',             width: 14 },
+    { key: 'email',        header: '이메일',             width: 22 },
+    { key: 'address',      header: '주소',               width: 30 },
+    { key: 'certificates', header: '자격증(콤마 구분)',   width: 30 },
+    { key: 'hrMemo',       header: '메모',               width: 25 }
+  ];
+
+  /**
+   * 자격증 배열 → 콤마 구분 문자열 (다운로드용)
+   * "정보처리기사, 정보보안기사, AWS SAA"
+   */
+  function certsToCommaString(certs) {
+    if (!Array.isArray(certs)) return '';
+    return certs
+      .filter(function (c) { return c && c.name; })
+      .map(function (c) { return String(c.name).trim(); })
+      .filter(function (n) { return !!n; })
+      .join(', ');
+  }
+
+  /**
+   * 콤마 구분 문자열 → 자격증 배열 (업로드용)
+   * "정보처리기사, 정보보안기사" → [{id, name, url:null, memo:null, createdAt}, ...]
+   * 빈 문자열이나 공백뿐인 항목은 제외.
+   * 같은 이름이 여러 번 나오면 중복 제거.
+   */
+  function commaStringToCerts(s) {
+    if (s == null) return [];
+    var str = String(s).trim();
+    if (!str) return [];
+    var nowIso = new Date().toISOString();
+    var seen = {};
+    var result = [];
+    str.split(',').forEach(function (raw) {
+      var name = String(raw).trim();
+      if (!name) return;
+      if (seen[name]) return;
+      seen[name] = true;
+      result.push({
+        id: 'cert_' + Date.now() + '_' + Math.floor(Math.random() * 100000) + '_' + result.length,
+        name: name,
+        url: null,
+        memo: null,
+        createdAt: nowIso
+      });
+    });
+    return result;
+  }
+
+  /**
+   * 현재 _persons 리스트를 다운로드용 행으로 변환.
+   * 회사 → 이름 순 정렬.
+   */
+  function buildDetailBulkRows(persons) {
+    var companyOrder = { '식스티': 0, '굿뉴스': 1, '패리티': 2 };
+    var sorted = (persons || []).slice().sort(function (a, b) {
+      var ca = companyOrder[a && a.company] != null ? companyOrder[a.company] : 99;
+      var cb = companyOrder[b && b.company] != null ? companyOrder[b.company] : 99;
+      if (ca !== cb) return ca - cb;
+      var na = (a && a.name) || '';
+      var nb = (b && b.name) || '';
+      return na.localeCompare(nb, 'ko');
+    });
+
+    return sorted.map(function (p, idx) {
+      return {
+        no: idx + 1,
+        id: p.id || '',
+        company: p.company || '',
+        name: p.name || '',
+        birthDate: p.birthDate || '',
+        hireDate: p.hireDate || '',
+        exitDate: p.exitDate || '',
+        department: p.department || '',
+        position: p.position || '',
+        finalDegree: p.finalDegree || '',
+        school: p.school || '',
+        major: p.major || '',
+        degreeNumber: p.degreeNumber || '',
+        degreeDate: p.degreeDate || '',
+        researcherId: p.researcherId || '',
+        phone: p.phone || '',
+        email: p.email || '',
+        address: p.address || '',
+        certificates: certsToCommaString(p.certificates),
+        hrMemo: p.hrMemo || ''
+      };
+    });
+  }
+
+  function downloadDetailBulkExcel() {
+    if (typeof XLSX === 'undefined') {
+      alert('엑셀 라이브러리를 불러올 수 없습니다. 페이지를 새로고침 후 다시 시도해 주세요.');
+      return;
+    }
+
+    var rows = buildDetailBulkRows(_persons);
+    if (!rows.length) {
+      alert('다운로드할 인력이 없습니다.');
+      return;
+    }
+
+    var headers = DETAIL_BULK_COLUMNS.map(function (c) { return c.header; });
+    var data = [headers];
+    rows.forEach(function (r) {
+      data.push(DETAIL_BULK_COLUMNS.map(function (c) { return r[c.key]; }));
+    });
+
+    var ws = XLSX.utils.aoa_to_sheet(data);
+    ws['!cols'] = DETAIL_BULK_COLUMNS.map(function (c) { return { wch: c.width }; });
+
+    var wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, '인력 상세');
+
+    var d = new Date();
+    var ymd = d.getFullYear()
+      + String(d.getMonth() + 1).padStart(2, '0')
+      + String(d.getDate()).padStart(2, '0');
+    XLSX.writeFile(wb, '인력_상세_' + ymd + '.xlsx');
+  }
+
+  /**
+   * 업로드 파일 파싱 → row 배열
+   * 헤더 텍스트로 컬럼 인덱스 매핑하므로 컬럼 순서가 바뀌어도 OK.
+   */
+  function parseDetailBulkFile(file) {
+    return new Promise(function (resolve, reject) {
+      if (typeof XLSX === 'undefined') {
+        reject(new Error('엑셀 라이브러리를 불러올 수 없습니다.'));
+        return;
+      }
+      var reader = new FileReader();
+      reader.onload = function (e) {
+        try {
+          var data = new Uint8Array(e.target.result);
+          var workbook = XLSX.read(data, { type: 'array', cellDates: true });
+          var firstSheet = workbook.SheetNames[0];
+          if (!firstSheet) { resolve([]); return; }
+          var sheet = workbook.Sheets[firstSheet];
+          var rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+          if (!rows.length) { resolve([]); return; }
+
+          // 헤더 매핑
+          var headerRow = rows[0];
+          var colIdx = {};
+          DETAIL_BULK_COLUMNS.forEach(function (c) { colIdx[c.key] = -1; });
+          headerRow.forEach(function (cell, idx) {
+            var h = String(cell == null ? '' : cell).trim();
+            DETAIL_BULK_COLUMNS.forEach(function (c) {
+              if (colIdx[c.key] < 0 && c.header === h) colIdx[c.key] = idx;
+            });
+          });
+
+          if (colIdx.id < 0) {
+            reject(new Error(
+              '엑셀 형식이 올바르지 않습니다.\n\n' +
+              '"id (수정금지)" 컬럼이 필요해요.\n' +
+              '"전체 다운로드" 버튼으로 받은 양식을 사용해 주세요.'
+            ));
+            return;
+          }
+
+          var getCell = function (row, key) {
+            if (colIdx[key] < 0) return '';
+            var v = row[colIdx[key]];
+            return v == null ? '' : String(v);
+          };
+          var getCellTrimmed = function (row, key) { return getCell(row, key).trim(); };
+
+          var result = [];
+          for (var r = 1; r < rows.length; r++) {
+            var row = rows[r];
+            if (!row || !Array.isArray(row)) continue;
+            var id = getCellTrimmed(row, 'id');
+            if (!id) continue;  // id 없는 행은 무시
+
+            // 학위 수여일: 엑셀 날짜 또는 'YYYY-MM-DD' 문자열 가능
+            var degreeDate = null;
+            var rawDeg = colIdx.degreeDate >= 0 ? row[colIdx.degreeDate] : null;
+            if (rawDeg instanceof Date && !isNaN(rawDeg.getTime())) {
+              degreeDate = rawDeg.getFullYear() + '-'
+                + String(rawDeg.getMonth() + 1).padStart(2, '0') + '-'
+                + String(rawDeg.getDate()).padStart(2, '0');
+            } else if (rawDeg) {
+              var s = String(rawDeg).trim();
+              // YYYY-MM-DD 형식만 인정 (그 외엔 그냥 trim된 문자열로 — 사용자가 형식 맞춰서 넣어야)
+              if (/^\d{4}-\d{2}-\d{2}/.test(s)) degreeDate = s.slice(0, 10);
+            }
+
+            result.push({
+              id: id,
+              _rowNum: r + 1,
+              department:   getCellTrimmed(row, 'department'),
+              position:     getCellTrimmed(row, 'position'),
+              finalDegree:  normalizeDegreeInput(getCellTrimmed(row, 'finalDegree')),
+              school:       getCellTrimmed(row, 'school'),
+              major:        getCellTrimmed(row, 'major'),
+              degreeNumber: getCellTrimmed(row, 'degreeNumber'),
+              degreeDate:   degreeDate,
+              researcherId: getCellTrimmed(row, 'researcherId'),
+              phone:        getCellTrimmed(row, 'phone'),
+              email:        getCellTrimmed(row, 'email'),
+              address:      getCellTrimmed(row, 'address'),
+              certificates: getCell(row, 'certificates'),  // 콤마 구분 문자열 그대로 (trim은 분리할 때)
+              hrMemo:       getCellTrimmed(row, 'hrMemo'),
+              // 셀이 비어있었는지 추적 (빈 셀은 기존값 유지하기 위함)
+              _isEmpty: (function () {
+                var map = {};
+                ['department','position','finalDegree','school','major','degreeNumber',
+                 'researcherId','phone','email','address','hrMemo','certificates'].forEach(function (k) {
+                  map[k] = !getCellTrimmed(row, k);
+                });
+                map.degreeDate = !degreeDate;
+                return map;
+              })()
+            });
+          }
+          resolve(result);
+        } catch (err) {
+          reject(err);
+        }
+      };
+      reader.onerror = function () { reject(new Error('파일을 읽을 수 없습니다.')); };
+      reader.readAsArrayBuffer(file);
+    });
+  }
+
+  /**
+   * 업로드 행을 _persons에 머지
+   * - id로 매칭. 없는 id는 에러로 표시
+   * - 빈 셀은 기존값 유지
+   * - 자격증은 빈 셀이면 유지, 비어있지 않으면 콤마 분리해서 교체
+   */
+  function buildDetailBulkUpdateList(editedRows, current) {
+    var list = (current || []).slice();
+    var idToPerson = {};
+    list.forEach(function (p) { if (p && p.id) idToPerson[p.id] = p; });
+
+    var updated = 0, skipped = 0, errors = [];
+
+    editedRows.forEach(function (row) {
+      var existing = idToPerson[row.id];
+      if (!existing) {
+        errors.push('행 ' + row._rowNum + ': id "' + row.id + '"에 해당하는 인력을 찾을 수 없어요.');
+        return;
+      }
+
+      var changed = false;
+
+      // 일반 텍스트 필드 — 빈 셀이면 유지, 값 있으면 덮어쓰기
+      ['department','position','finalDegree','school','major','degreeNumber',
+       'researcherId','phone','email','address','hrMemo'].forEach(function (k) {
+        if (row._isEmpty[k]) return;
+        if ((existing[k] || '') !== row[k]) {
+          existing[k] = row[k];
+          changed = true;
+        }
+      });
+
+      // 학위 수여일
+      if (!row._isEmpty.degreeDate) {
+        if ((existing.degreeDate || '') !== row.degreeDate) {
+          existing.degreeDate = row.degreeDate;
+          changed = true;
+        }
+      }
+
+      // 자격증 — 콤마 구분 문자열 → 배열로 교체
+      if (!row._isEmpty.certificates) {
+        var newCerts = commaStringToCerts(row.certificates);
+        var oldCertNames = certsToCommaString(existing.certificates);
+        var newCertNames = certsToCommaString(newCerts);
+        if (oldCertNames !== newCertNames) {
+          // 기존 자격증 중 같은 이름이 있으면 URL/memo는 살리고 createdAt도 보존
+          var oldByName = {};
+          (existing.certificates || []).forEach(function (c) {
+            if (c && c.name) oldByName[c.name] = c;
+          });
+          newCerts = newCerts.map(function (nc) {
+            var old = oldByName[nc.name];
+            if (old) {
+              return {
+                id: old.id || nc.id,
+                name: nc.name,
+                url: old.url || null,
+                memo: old.memo || null,
+                createdAt: old.createdAt || nc.createdAt
+              };
+            }
+            return nc;
+          });
+          existing.certificates = newCerts;
+          changed = true;
+        }
+      }
+
+      if (changed) {
+        existing.updatedAt = new Date().toISOString();
+        updated++;
+      } else {
+        skipped++;
+      }
+    });
+
+    return {
+      list: list,
+      summary: {
+        updated: updated,
+        skipped: skipped,
+        total: editedRows.length,
+        errors: errors
+      }
+    };
+  }
+
+  function onBulkDownloadClick() {
+    downloadDetailBulkExcel();
+  }
+
+  // 일괄 업데이트 버튼 — 파일 선택 input을 트리거
+  var BULK_EDIT_BTN_INNER_HTML = '';
+  function onBulkEditBtnClick() {
+    if (!el.bulkEditInput) return;
+    el.bulkEditInput.value = '';
+    el.bulkEditInput.click();
+  }
+
+  function onBulkEditFileChange(e) {
+    var file = e.target && e.target.files && e.target.files[0];
+    if (!file) return;
+    handleBulkEditUpload(file);
+  }
+
+  function handleBulkEditUpload(file) {
+    var svc = window.firestoreService;
+    if (!svc || typeof svc.savePersons !== 'function') {
+      alert('firestoreService 가 없어요. 새로고침 후 다시 시도해 주세요.');
+      return;
+    }
+
+    if (el.bulkEditBtn) {
+      el.bulkEditBtn.disabled = true;
+      el.bulkEditBtn.textContent = '업로드 중…';
+    }
+
+    parseDetailBulkFile(file).then(function (rows) {
+      if (!rows.length) {
+        throw new Error('엑셀에서 인력 데이터를 찾지 못했어요. id 컬럼이 채워져 있는지 확인해 주세요.');
+      }
+
+      var merged = buildDetailBulkUpdateList(rows, _persons);
+      var s = merged.summary;
+
+      var msgParts = [];
+      msgParts.push('총 ' + s.total + '개 행을 읽었어요.');
+      if (s.updated) msgParts.push('• 업데이트: ' + s.updated + '명');
+      if (s.skipped) msgParts.push('• 변경 없음(건너뜀): ' + s.skipped + '명');
+      if (s.errors && s.errors.length) {
+        msgParts.push('');
+        msgParts.push('⚠️ ' + s.errors.length + '개 행에 문제가 있어요:');
+        s.errors.slice(0, 10).forEach(function (er) { msgParts.push('  - ' + er); });
+        if (s.errors.length > 10) msgParts.push('  ... 외 ' + (s.errors.length - 10) + '건');
+      }
+
+      if (s.updated === 0) {
+        msgParts.push('');
+        msgParts.push('적용할 변경사항이 없어서 저장하지 않았어요.');
+        alert(msgParts.join('\n'));
+        return null;
+      }
+
+      msgParts.push('');
+      msgParts.push('저장할까요?');
+
+      if (!confirm(msgParts.join('\n'))) {
+        return null;
+      }
+
+      return svc.savePersons(merged.list).then(function () {
+        var resultParts = ['일괄 업데이트 완료'];
+        if (s.updated) resultParts.push('  업데이트 ' + s.updated + '명');
+        alert(resultParts.join('\n'));
+      });
+    }).catch(function (err) {
+      console.error('일괄 업데이트 실패:', err);
+      alert((err && err.message) ? err.message : '일괄 업데이트에 실패했어요.');
+    }).then(function () {
+      if (el.bulkEditBtn) {
+        el.bulkEditBtn.disabled = false;
+        el.bulkEditBtn.innerHTML = BULK_EDIT_BTN_INNER_HTML || '⬆️ 일괄 업데이트';
+      }
+    });
+  }
+
+  // ====================================================================
   // 이벤트 핸들러 (검색/필터/테이블)
   // ====================================================================
   function onSearchInput() {
@@ -1946,10 +2687,6 @@
   }
   function onFilterDegreeChange() {
     _filter.degree = el.filterDegree.value || 'all';
-    render();
-  }
-  function onFilterResearcherChange() {
-    _filter.researcherOnly = !!el.filterResearcher.checked;
     render();
   }
   function onFilterLabChange() {
@@ -1980,6 +2717,19 @@
   }
 
   function onDetailPanelClick(e) {
+    // 우측 패널의 "닫기" 버튼 — 선택 해제
+    var closeBtn = e.target.closest && e.target.closest('button[data-action="close-detail"]');
+    if (closeBtn) {
+      // 테이블 행의 selected 클래스도 지움
+      if (el.tbody) {
+        var rows = el.tbody.querySelectorAll('tr.selected');
+        rows.forEach(function (tr) { tr.classList.remove('selected'); });
+      }
+      _selectedPersonId = null;
+      renderDetailPanel();
+      return;
+    }
+
     // 우측 패널의 "수정" 버튼
     var btn = e.target.closest && e.target.closest('button[data-action="edit-from-detail"]');
     if (btn) {
@@ -1995,10 +2745,12 @@
     if (el.filterStatus)   el.filterStatus.addEventListener('change', onFilterStatusChange);
     if (el.filterCompany)  el.filterCompany.addEventListener('change', onFilterCompanyChange);
     if (el.filterDegree)   el.filterDegree.addEventListener('change', onFilterDegreeChange);
-    if (el.filterResearcher) el.filterResearcher.addEventListener('change', onFilterResearcherChange);
     if (el.filterLab)      el.filterLab.addEventListener('change', onFilterLabChange);
     if (el.tbody)          el.tbody.addEventListener('click', onTableClick);
     if (el.detailPanel)    el.detailPanel.addEventListener('click', onDetailPanelClick);
+    if (el.bulkDownloadBtn) el.bulkDownloadBtn.addEventListener('click', onBulkDownloadClick);
+    if (el.bulkEditBtn)     el.bulkEditBtn.addEventListener('click', onBulkEditBtnClick);
+    if (el.bulkEditInput)   el.bulkEditInput.addEventListener('change', onBulkEditFileChange);
   }
 
   // ====================================================================
@@ -2013,15 +2765,18 @@
     el.filterStatus     = $('filter-status');
     el.filterCompany    = $('filter-company');
     el.filterDegree     = $('filter-degree');
-    el.filterResearcher = $('filter-researcher');
     el.filterLab        = $('filter-lab');
 
     el.statTotal         = $('stat-total');
     el.statTotalSub      = $('stat-total-sub');
     el.statHrComplete    = $('stat-hr-complete');
     el.statHrCompleteSub = $('stat-hr-complete-sub');
-    el.statResearcher    = $('stat-researcher');
     el.statLab           = $('stat-lab');
+
+    el.bulkDownloadBtn = $('bulk-download-btn');
+    el.bulkEditBtn     = $('bulk-edit-btn');
+    el.bulkEditInput   = $('bulk-edit-input');
+    if (el.bulkEditBtn) BULK_EDIT_BTN_INNER_HTML = el.bulkEditBtn.innerHTML;
 
     el.tbody       = $('persons-tbody');
     el.tableWrap   = $('persons-table-wrap');
@@ -2093,8 +2848,14 @@
 
     // Firestore 구독
     if (window.firestoreService && typeof window.firestoreService.subscribePersons === 'function') {
+      var _migrationDone = false;
       window.firestoreService.subscribePersons(function (list) {
         _persons = Array.isArray(list) ? list : [];
+        // 첫 로드 시 1회 마이그레이션 (학위 표기 정규화)
+        if (!_migrationDone && _persons.length > 0) {
+          _migrationDone = true;
+          migrateDegreeNormalization(_persons);
+        }
         render();
       });
     } else {

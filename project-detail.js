@@ -1297,9 +1297,12 @@
       laborManaged.checked = !!item.laborManaged;
       laborManaged.dispatchEvent(new Event('change')); // 환급 여부 wrap 토글
     }
-    var laborRefundVal = item.laborRefund === false ? 'false' : 'true';
-    var laborRefundRadio = document.querySelector('input[name="project-laborRefund"][value="' + laborRefundVal + '"]');
-    if (laborRefundRadio) laborRefundRadio.checked = true;
+    // laborMode 복원 (구 데이터는 laborRefund 필드로 하위 호환)
+    var modeVal = item.laborMode
+      ? item.laborMode
+      : (item.laborRefund === false ? 'participation_only' : 'refund_participation');
+    var modeRadio = document.querySelector('input[name="project-laborMode"][value="' + modeVal + '"]');
+    if (modeRadio) modeRadio.checked = true;
 
     setRadio('project-division1', item.division1 || item['구분1']);
     setRadio('project-company',   item.company);
@@ -1423,8 +1426,10 @@
     var status      = (document.getElementById('project-status')      || {}).value || '';
     var isRd        = (document.getElementById('project-isRd')        || {}).checked || false;
     var laborManaged = (document.getElementById('project-laborManaged') || {}).checked || false;
-    var laborRefundEl = document.querySelector('input[name="project-laborRefund"]:checked');
-    var laborRefund  = laborRefundEl ? laborRefundEl.value !== 'false' : true;
+    var laborModeEl = document.querySelector('input[name="project-laborMode"]:checked');
+    var laborMode  = laborModeEl ? laborModeEl.value : 'refund_participation';
+    // 하위 호환: laborRefund 필드도 같이 저장 (환급 O 모드이면 true)
+    var laborRefund = laborMode !== 'participation_only';
     var submitDate  = (document.getElementById('project-submit-date') || {}).value || '';
     var unsubReason = (document.getElementById('project-unsubmitted-reason') || {}).value || '';
     var charge      = (document.getElementById('project-charge')      || {}).value || '';
@@ -1496,6 +1501,7 @@
       consortiumTotalBudget: consortiumTotalBudget,
       isRd: isRd,
       laborManaged: laborManaged,
+      laborMode: laborMode,
       laborRefund: laborRefund,
       division1: division1,
       company: company,

@@ -215,7 +215,7 @@ body:has(#page-calendar:not([hidden])) {
 .page {
   display: none;
   min-height: 100%;
-  min-width: 1400px;
+  min-width: 1200px;
   width: 100%;
 }
 
@@ -952,11 +952,33 @@ body:has(#page-calendar:not([hidden])) {
   padding-right: 0.85rem;
 }
 
+/* ========================================================
+   .container — 모든 페이지 본문 wrapper의 전역 기본값
+   ========================================================
+   원칙 ① 본문은 모니터 폭에 관계없이 꽉 찬다.
+   원칙 ② 좁아져도 콘텐츠를 무리하게 압축하지 않는다.
+          1200px 미만으로 줄어들면 .main-area에서 가로 스크롤로 도망간다.
+   원칙 ③ 1400px 미만에선 사이드바가 자동 collapse (sidebar.js).
+          → 1260~1400px 구간은 사이드바가 접혀서 본문이 충분히 보임.
+
+   - width: 100%      → .main-area 폭 전체 사용
+   - max-width: none  → 페이지에서 max-width로 가운데 정렬하는 거 금지
+   - min-width: 1200px → 좁은 화면(<1200px)에선 가로 스크롤로 콘텐츠 보호
+   - !important: 페이지 인라인 <style>에서 실수로 덮어쓰는 것 방지
+                  (과거 width:1400px; margin:0 auto 패턴이 페이지마다 박혀있던 이슈 대응)
+   - @media print 블록 안의 .container는 !important specificity 동률이라
+     인쇄/PDF 출력용 오버라이드는 그대로 동작함.
+
+   ⚠️ 페이지에서 절대 하지 말 것:
+   - .container { width: 1400px; margin: 0 auto; } 같은 인라인 재정의
+   - @media (max-width: 1100~1400px) 안에서 grid-template-columns 변경
+     (좁은 화면 대응은 .container min-width + .main-area overflow:auto 로 통일)
+   ======================================================== */
 .container {
-  width: 100%;
-  max-width: none;
-  min-width: 1400px;
-  margin: 0 auto;
+  width: 100% !important;
+  max-width: none !important;
+  min-width: 1200px;
+  margin: 0 !important;       /* auto 정렬 금지 (width:100%이므로 의미 없음에도 안전장치) */
   padding: 20px 30px 2rem 80px; /* 상단 20px: 카드·헤더 여유, 우측 80px: 퀵링크 침범 방지 */
   box-sizing: border-box;
 }
@@ -2334,7 +2356,7 @@ body:has(#page-calendar:not([hidden])) {
 @media (max-width: 768px) {
   .container {
     padding: 2rem 30px 2rem 80px;
-    min-width: 1400px;
+    min-width: 1200px;
   }
 
   .top-grid {
@@ -2473,7 +2495,7 @@ body:has(#page-calendar:not([hidden])) {
 @media (max-width: 480px) {
   .container {
     padding: 2rem 30px 2rem 80px;
-    min-width: 1400px;
+    min-width: 1200px;
   }
 
   .header {
@@ -3566,7 +3588,7 @@ body:has(#page-calendar:not([hidden])) {
   min-height: 0;
   max-width: none;
   width: 100%;
-  min-width: 1400px;
+  min-width: 1200px;
   padding: 20px 30px 2rem 80px;
   overflow-x: initial !important;
 }

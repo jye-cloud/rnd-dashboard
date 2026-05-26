@@ -1,7 +1,7 @@
 /* ========================================================
    sidebar.css
    모든 페이지에서 공통으로 사용하는 사이드바 스타일.
-   디자인 1 (어두운 네이비) 기준으로 통일.
+   디자인: 라이트 슬레이트 (밝은 계열 / 부드러운 블루톤)
 
    - !important 사용으로 style.css나 인라인 스타일을 확실히 덮어씀
    - 메뉴가 많아도 한 화면에 들어가도록 컴팩트하게
@@ -10,8 +10,8 @@
 .sidebar {
   width: 220px !important;
   flex-shrink: 0 !important;
-  background: #1e293b !important;
-  color: #e2e8f0 !important;
+  background: #eef2f7 !important;
+  color: #475569 !important;
   display: flex !important;
   flex-direction: column !important;
   min-height: 100vh !important;
@@ -44,13 +44,13 @@
   align-items: center !important;
   gap: 0.5rem !important;
   padding: 0.85rem 0.85rem !important;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
-  background: #0f172a !important;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.07) !important;
+  background: #dde4ee !important;
 }
 .sidebar .sidebar-title {
   font-size: 1.05rem !important;
   font-weight: 700 !important;
-  color: #f1f5f9 !important;
+  color: #0f172a !important;
   margin: 0 !important;
   letter-spacing: 0.02em !important;
   white-space: nowrap !important;
@@ -63,7 +63,7 @@
   min-width: 32px !important;
   padding: 0 !important;
   background: transparent !important;
-  color: #cbd5e1 !important;
+  color: #475569 !important;
   border: none !important;
   border-radius: 0.35rem !important;
   cursor: pointer !important;
@@ -76,8 +76,8 @@
   transition: background 0.15s, color 0.15s !important;
 }
 .sidebar .sidebar-toggle:hover {
-  background: rgba(255, 255, 255, 0.08) !important;
-  color: #fff !important;
+  background: rgba(0, 0, 0, 0.06) !important;
+  color: #0f172a !important;
 }
 
 /* 메뉴 영역 */
@@ -95,7 +95,7 @@
   align-items: center !important;
   gap: 0.7rem !important;
   padding: 0.55rem 1rem !important;
-  color: #cbd5e1 !important;
+  color: #475569 !important;
   text-decoration: none !important;
   font-size: 0.9rem !important;
   font-weight: 500 !important;
@@ -106,13 +106,13 @@
   background: transparent !important;
 }
 .sidebar .sidebar-link:hover {
-  background: rgba(255, 255, 255, 0.05) !important;
-  color: #fff !important;
+  background: rgba(0, 0, 0, 0.04) !important;
+  color: #0f172a !important;
 }
 .sidebar .sidebar-link.active {
-  background: #334155 !important;
-  color: #f1f5f9 !important;
-  border-left-color: #60a5fa !important;
+  background: #d0dff5 !important;
+  color: #1e40af !important;
+  border-left-color: #3b82f6 !important;
   font-weight: 600 !important;
 }
 
@@ -133,7 +133,7 @@
 /* 구분선 */
 .sidebar .sidebar-divider {
   height: 1px !important;
-  background: rgba(255, 255, 255, 0.08) !important;
+  background: rgba(0, 0, 0, 0.08) !important;
   margin: 0.35rem 0.85rem !important;
   border: none !important;
   opacity: 1 !important;

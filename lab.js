@@ -31,6 +31,7 @@
     excelUploadBtn: null,
     excelInput: null,
     resetBtn: null,
+    deleteYearBtn: null,
     // 업데이트 정보
     updateInfo: null,
     updateInfoText: null,
@@ -554,6 +555,79 @@
   }
 
   // ====================================================================
+  // 연도별 삭제
+  //
+  // 현재 선택된 회사 + 선택된 연도의 월 등록 데이터만 삭제.
+  // 두 번 확인받음:
+  //  1) "정말 삭제하시겠어요?" (confirm)
+  //  2) 연도 입력 (정확히 일치해야 진행)
+  // ====================================================================
+  function onDeleteYearClick() {
+    var company = _selectedCompany;
+    var year = String(_selectedYear);
+    if (!company || !year) return;
+
+    var yearRegs = getCompanyRegs(company).filter(function (r) {
+      return r && r.yearMonth && r.yearMonth.slice(0, 4) === year;
+    });
+
+    if (yearRegs.length === 0) {
+      alert(company + ' · ' + year + '년 데이터가 없어요.');
+      return;
+    }
+
+    var msg = '⚠️ 정말 삭제할까요?\n\n'
+      + company + ' 회사의 ' + year + '년 연구소 등록 데이터\n'
+      + '(' + yearRegs.length + '개월치) 를 삭제합니다.\n\n'
+      + '※ 이 작업은 되돌릴 수 없어요.';
+
+    if (!confirm(msg)) return;
+
+    var typed = window.prompt(
+      '확인을 위해 연도를 정확히 입력해 주세요:\n(예: ' + year + ')',
+      ''
+    );
+    if (!typed || typed.trim() !== year) {
+      alert('연도가 일치하지 않아요. 삭제를 취소했습니다.');
+      return;
+    }
+
+    var svc = window.firestoreService;
+    if (!svc || typeof svc.saveLabRegistrations !== 'function') {
+      alert('firestoreService 가 없어요.');
+      return;
+    }
+
+    // 해당 회사+연도 제외한 나머지만 남김
+    var remaining = _labRegs.filter(function (r) {
+      if (!r) return false;
+      if (r.company !== company) return true;          // 다른 회사 → 유지
+      if (!r.yearMonth) return true;
+      return r.yearMonth.slice(0, 4) !== year;          // 다른 연도 → 유지
+    });
+
+    if (el.deleteYearBtn) {
+      el.deleteYearBtn.disabled = true;
+      el.deleteYearBtn.textContent = '🗑️ 삭제 중…';
+    }
+
+    svc.saveLabRegistrations(remaining).then(function () {
+      alert('✅ ' + company + ' · ' + year + '년 데이터 ' + yearRegs.length + '개월치를 삭제했어요.');
+      if (el.deleteYearBtn) {
+        el.deleteYearBtn.disabled = false;
+        el.deleteYearBtn.innerHTML = '🗑️ 연도 삭제';
+      }
+    }).catch(function (err) {
+      console.error('연도 데이터 삭제 실패:', err);
+      alert('삭제에 실패했어요.\n' + (err && err.message ? err.message : ''));
+      if (el.deleteYearBtn) {
+        el.deleteYearBtn.disabled = false;
+        el.deleteYearBtn.innerHTML = '🗑️ 연도 삭제';
+      }
+    });
+  }
+
+  // ====================================================================
   // 전체 삭제 (테스트용)
   //
   // 현재 선택된 회사의 모든 월 등록 데이터를 삭제.
@@ -1031,6 +1105,7 @@
     if (el.excelUploadBtn)  el.excelUploadBtn.addEventListener('click', onExcelUploadClick);
     if (el.excelInput)      el.excelInput.addEventListener('change', onExcelFileChange);
     if (el.resetBtn)        el.resetBtn.addEventListener('click', onResetClick);
+    if (el.deleteYearBtn)   el.deleteYearBtn.addEventListener('click', onDeleteYearClick);
 
     // 현황표 토글
     if (el.historyToggle)   el.historyToggle.addEventListener('click', onHistoryToggle);
@@ -1060,6 +1135,7 @@
     el.excelUploadBtn  = $('lab-excel-upload-btn');
     el.excelInput      = $('lab-excel-input');
     el.resetBtn        = $('lab-reset-btn');
+    el.deleteYearBtn   = $('lab-delete-year-btn');
 
     el.updateInfo      = $('lab-update-info');
     el.updateInfoText  = $('lab-update-info-text');

@@ -306,6 +306,7 @@
         months: ybMeta.months,
       } : { startDate: '', endDate: '', months: 0 },
       budgetCash: 0,
+      budgetSelfCash: 0,
       budgetInkind: 0,
     };
     state.yearsData[yi] = fresh;
@@ -353,6 +354,20 @@
   // ====================================================================
   // 계산
   // ====================================================================
+  // ====================================================================
+  // 표시 라벨 (데이터 키는 그대로, 사용자에게 보이는 문구만 변경)
+  // ====================================================================
+  // 데이터 모델: cashOrInkind = '현금' | '자부담현금' | '현물'
+  // 표시 라벨:   지원금 / 현금 / 현물
+  // (※ "현금"이라는 단어가 라벨에서 자부담현금을 가리키게 됩니다.
+  //   값 비교/저장은 항상 데이터 키(`'현금'` 등)로 합니다.)
+  var FUND_TYPE_LABELS = {
+    '현금': '지원금',
+    '자부담현금': '현금',
+    '현물': '현물'
+  };
+  function fundTypeLabel(v) { return FUND_TYPE_LABELS[v] || v; }
+
   function calcRowTotal(row) {
     // 총액 = 실지급액 * (참여율/100) * 참여개월
     var actual = parseNum(row.actualPay);
@@ -365,18 +380,23 @@
     return row.cashOrInkind === '현금' ? calcRowTotal(row) : 0;
   }
 
+  function calcRowSelfCash(row) {
+    return row.cashOrInkind === '자부담현금' ? calcRowTotal(row) : 0;
+  }
+
   function calcRowInkind(row) {
     return row.cashOrInkind === '현물' ? calcRowTotal(row) : 0;
   }
 
   function calcTotals(yd) {
-    var sumTotal = 0, sumCash = 0, sumInkind = 0;
+    var sumTotal = 0, sumCash = 0, sumSelfCash = 0, sumInkind = 0;
     yd.rows.forEach(function (r) {
       sumTotal += calcRowTotal(r);
       sumCash += calcRowCash(r);
+      sumSelfCash += calcRowSelfCash(r);
       sumInkind += calcRowInkind(r);
     });
-    return { total: sumTotal, cash: sumCash, inkind: sumInkind };
+    return { total: sumTotal, cash: sumCash, selfCash: sumSelfCash, inkind: sumInkind };
   }
 
   // ====================================================================
@@ -388,6 +408,8 @@
     var wrapEl = document.getElementById('pb-table-wrap');
     var summaryEl = document.getElementById('pb-budget-summary');
     var titleText = document.getElementById('pb-title-text');
+    var optionsEl = document.getElementById('pb-project-options');
+    var selfCashCb = document.getElementById('pb-has-self-cash');
 
     var project = getProject();
     if (!project) {
@@ -395,8 +417,13 @@
       if (titleEl) titleEl.style.display = 'none';
       if (wrapEl) wrapEl.style.display = 'none';
       if (summaryEl) summaryEl.style.display = 'none';
+      if (optionsEl) optionsEl.style.display = 'none';
       return;
     }
+
+    // 과제 선택됨 → 옵션 박스 표시 + 체크박스 값 동기화
+    if (optionsEl) optionsEl.style.display = 'flex';
+    if (selfCashCb) selfCashCb.checked = !!project.hasSelfCash;
 
     var years = getProjectYears(project);
     if (years.length === 0) {
@@ -451,14 +478,15 @@
       '<col class="col-months">' +
       '<col class="col-total">' +
       '<col class="col-cash">' +
+      '<col class="col-selfcash">' +
       '<col class="col-inkind">' +
       '<col class="col-action">' +
       '</colgroup>';
 
-    // 헤더
+    // 헤더 (라벨: 지원금/현금/현물, 데이터 키와 다름 주의)
     html += '<thead><tr>' +
       '<th>기존/신규</th>' +
-      '<th>현금/현물</th>' +
+      '<th>재원구분</th>' +
       '<th>성명</th>' +
       '<th>역할</th>' +
       '<th>3책5공</th>' +
@@ -468,8 +496,9 @@
       '<th class="th-input">참여율</th>' +
       '<th class="th-input">참여개월</th>' +
       '<th>총액</th>' +
-      '<th>현금</th>' +
-      '<th>현물</th>' +
+      '<th>' + fundTypeLabel('현금') + '</th>' +
+      '<th>' + fundTypeLabel('자부담현금') + '</th>' +
+      '<th>' + fundTypeLabel('현물') + '</th>' +
       '<th></th>' +
       '</tr></thead>';
 
@@ -481,7 +510,7 @@
       html += renderRow(r);
     });
     // + 일반 인력 추가
-    html += '<tr class="pb-row-add"><td colspan="14">' +
+    html += '<tr class="pb-row-add"><td colspan="15">' +
       '<div class="pb-row-add-buttons">' +
         '<button type="button" class="pb-add-btn" data-add-type="normal">+ 일반 인력 추가</button>' +
         '<button type="button" class="pb-add-btn pb-add-btn--youth" data-add-type="youth_required">+ 청년 필수 추가</button>' +
@@ -503,6 +532,9 @@
 
     // tfoot - 합계
     var totals = calcTotals(yd);
+    var project = getProject();
+    var hasSelfCash = !!(project && project.hasSelfCash);
+    var tfootSelfCashCls = hasSelfCash ? '' : ' pb-cell-selfcash-disabled';
     html += '<tfoot><tr class="pb-tfoot-sum">' +
       '<td class="td-label" colspan="6">직접비 · 인건비 합계</td>' +
       '<td></td>' +
@@ -511,6 +543,7 @@
       '<td></td>' +
       '<td>' + fmtMoneyFull(totals.total) + '</td>' +
       '<td>' + fmtMoneyFull(totals.cash) + '</td>' +
+      '<td class="' + tfootSelfCashCls.trim() + '">' + fmtMoneyFull(totals.selfCash) + '</td>' +
       '<td>' + fmtMoneyFull(totals.inkind) + '</td>' +
       '<td></td>' +
     '</tr></tfoot>';
@@ -556,7 +589,16 @@
     var nameDisplay = r.personName || '';
     var rowTotal = calcRowTotal(r);
     var rowCash = calcRowCash(r);
+    var rowSelfCash = calcRowSelfCash(r);
     var rowInkind = calcRowInkind(r);
+
+    // hasSelfCash=false면 자부담현금 옵션/셀을 비활성 시각
+    // (단, 행이 이미 '자부담현금' 값을 갖고 있으면 옵션은 살려두기 — 모순 방지)
+    var project = getProject();
+    var hasSelfCash = !!(project && project.hasSelfCash);
+    var allowSelfCashOption = hasSelfCash || r.cashOrInkind === '자부담현금';
+    var selfCashDisabledAttr = allowSelfCashOption ? '' : ' disabled';
+    var selfCashCellCls = hasSelfCash ? '' : ' pb-cell-selfcash-disabled';
 
     var nameCell = '<input type="text" class="pb-cell-text" data-row="' + r.id + '" data-field="personName" value="' + escapeHtml(nameDisplay) + '" placeholder="' +
       (r.type === 'youth_required' ? '청년 필수 ' + (labelPrefix ? '1' : '') :
@@ -579,11 +621,12 @@
           '<option value="신규"' + (r.newOrExisting === '신규' ? ' selected' : '') + '>신규</option>' +
         '</select>' +
       '</td>' +
-      // 현금/현물
+      // 재원구분 (데이터 키: 현금/자부담현금/현물 → 라벨: 지원금/현금/현물)
       '<td>' +
         '<select class="pb-cell-select" data-row="' + r.id + '" data-field="cashOrInkind">' +
-          '<option value="현금"' + (r.cashOrInkind === '현금' ? ' selected' : '') + '>현금</option>' +
-          '<option value="현물"' + (r.cashOrInkind === '현물' ? ' selected' : '') + '>현물</option>' +
+          '<option value="현금"' + (r.cashOrInkind === '현금' ? ' selected' : '') + '>' + fundTypeLabel('현금') + '</option>' +
+          '<option value="자부담현금"' + (r.cashOrInkind === '자부담현금' ? ' selected' : '') + selfCashDisabledAttr + '>' + fundTypeLabel('자부담현금') + '</option>' +
+          '<option value="현물"' + (r.cashOrInkind === '현물' ? ' selected' : '') + '>' + fundTypeLabel('현물') + '</option>' +
         '</select>' +
       '</td>' +
       // 성명
@@ -604,8 +647,10 @@
       '<td class="td-input"><input type="text" class="pb-cell-number" data-row="' + r.id + '" data-field="participMonths" value="' + (r.participMonths || '') + '" placeholder="0" inputmode="numeric"></td>' +
       // 총액 (계산)
       '<td><div class="pb-cell-readonly">' + fmtMoneyFull(rowTotal) + '</div></td>' +
-      // 현금 (계산)
+      // 지원금 (계산, 데이터 키: 현금)
       '<td><div class="pb-cell-readonly">' + fmtMoneyFull(rowCash) + '</div></td>' +
+      // 현금 (계산, 데이터 키: 자부담현금) — hasSelfCash=false면 회색
+      '<td class="' + selfCashCellCls.trim() + '"><div class="pb-cell-readonly">' + fmtMoneyFull(rowSelfCash) + '</div></td>' +
       // 현물 (계산)
       '<td><div class="pb-cell-readonly">' + fmtMoneyFull(rowInkind) + '</div></td>' +
       // 삭제
@@ -680,20 +725,22 @@
     var tr = document.querySelector('tr[data-row-id="' + rowId + '"]');
     if (!tr) return;
     var readonlyCells = tr.querySelectorAll('.pb-cell-readonly');
-    // 순서: 총액, 현금, 현물
+    // 순서: 총액, 지원금(현금), 현금(자부담현금), 현물
     if (readonlyCells[0]) readonlyCells[0].textContent = fmtMoneyFull(calcRowTotal(row));
     if (readonlyCells[1]) readonlyCells[1].textContent = fmtMoneyFull(calcRowCash(row));
-    if (readonlyCells[2]) readonlyCells[2].textContent = fmtMoneyFull(calcRowInkind(row));
+    if (readonlyCells[2]) readonlyCells[2].textContent = fmtMoneyFull(calcRowSelfCash(row));
+    if (readonlyCells[3]) readonlyCells[3].textContent = fmtMoneyFull(calcRowInkind(row));
   }
 
   function updateFooterTotals() {
     var yd = getCurrentYearData();
     var totals = calcTotals(yd);
     var tfootCells = document.querySelectorAll('#pb-table tfoot tr.pb-tfoot-sum td');
-    // 인덱스: 0(label colspan), 1~4 빈칸, 5 총액, 6 현금, 7 현물, 8 빈칸
+    // 인덱스: 0(label colspan=6), 1~4 빈칸, 5 총액, 6 지원금, 7 현금(자부담현금), 8 현물, 9 빈칸
     if (tfootCells[5]) tfootCells[5].textContent = fmtMoneyFull(totals.total);
     if (tfootCells[6]) tfootCells[6].textContent = fmtMoneyFull(totals.cash);
-    if (tfootCells[7]) tfootCells[7].textContent = fmtMoneyFull(totals.inkind);
+    if (tfootCells[7]) tfootCells[7].textContent = fmtMoneyFull(totals.selfCash);
+    if (tfootCells[8]) tfootCells[8].textContent = fmtMoneyFull(totals.inkind);
   }
 
   // ====================================================================
@@ -703,23 +750,44 @@
     var yd = getCurrentYearData();
     var totals = calcTotals(yd);
 
+    // hasSelfCash 토글에 따라 자부담현금 칼럼 활성/비활성
+    var project = getProject();
+    var hasSelfCash = !!(project && project.hasSelfCash);
+    var selfCashCols = document.querySelectorAll('.pb-budget-selfcash-col');
+    selfCashCols.forEach(function (el) {
+      el.classList.toggle('is-disabled', !hasSelfCash);
+    });
+
     var cashInput = document.getElementById('pb-budget-cash');
+    var selfCashInput = document.getElementById('pb-budget-selfcash');
     var inkindInput = document.getElementById('pb-budget-inkind');
     var diffCashEl = document.getElementById('pb-diff-cash');
+    var diffSelfCashEl = document.getElementById('pb-diff-selfcash');
     var diffInkindEl = document.getElementById('pb-diff-inkind');
+
+    // 자부담현금 input의 disabled 동기화
+    if (selfCashInput) selfCashInput.disabled = !hasSelfCash;
 
     if (cashInput && document.activeElement !== cashInput) {
       cashInput.value = yd.budgetCash ? fmtMoneyFull(yd.budgetCash) : '';
+    }
+    if (selfCashInput && document.activeElement !== selfCashInput) {
+      selfCashInput.value = yd.budgetSelfCash ? fmtMoneyFull(yd.budgetSelfCash) : '';
     }
     if (inkindInput && document.activeElement !== inkindInput) {
       inkindInput.value = yd.budgetInkind ? fmtMoneyFull(yd.budgetInkind) : '';
     }
 
     var diffCash = (yd.budgetCash || 0) - totals.cash;
+    var diffSelfCash = (yd.budgetSelfCash || 0) - totals.selfCash;
     var diffInkind = (yd.budgetInkind || 0) - totals.inkind;
     if (diffCashEl) {
       diffCashEl.textContent = fmtMoneyFull(diffCash);
       diffCashEl.classList.toggle('is-ok', diffCash >= 0);
+    }
+    if (diffSelfCashEl) {
+      diffSelfCashEl.textContent = fmtMoneyFull(diffSelfCash);
+      diffSelfCashEl.classList.toggle('is-ok', diffSelfCash >= 0);
     }
     if (diffInkindEl) {
       diffInkindEl.textContent = fmtMoneyFull(diffInkind);
@@ -729,8 +797,9 @@
 
   function bindBudgetInputs() {
     var cashInput = document.getElementById('pb-budget-cash');
+    var selfCashInput = document.getElementById('pb-budget-selfcash');
     var inkindInput = document.getElementById('pb-budget-inkind');
-    [cashInput, inkindInput].forEach(function (inp) {
+    [cashInput, selfCashInput, inkindInput].forEach(function (inp) {
       if (!inp) return;
       inp.addEventListener('focus', function () {
         var v = parseNum(inp.value);
@@ -741,16 +810,23 @@
         var yd = getCurrentYearData();
         var v = parseNum(inp.value);
         if (inp.id === 'pb-budget-cash') yd.budgetCash = v;
+        else if (inp.id === 'pb-budget-selfcash') yd.budgetSelfCash = v;
         else yd.budgetInkind = v;
         // 차액만 갱신
         var totals = calcTotals(yd);
         var diffCash = (yd.budgetCash || 0) - totals.cash;
+        var diffSelfCash = (yd.budgetSelfCash || 0) - totals.selfCash;
         var diffInkind = (yd.budgetInkind || 0) - totals.inkind;
         var diffCashEl = document.getElementById('pb-diff-cash');
+        var diffSelfCashEl = document.getElementById('pb-diff-selfcash');
         var diffInkindEl = document.getElementById('pb-diff-inkind');
         if (diffCashEl) {
           diffCashEl.textContent = fmtMoneyFull(diffCash);
           diffCashEl.classList.toggle('is-ok', diffCash >= 0);
+        }
+        if (diffSelfCashEl) {
+          diffSelfCashEl.textContent = fmtMoneyFull(diffSelfCash);
+          diffSelfCashEl.classList.toggle('is-ok', diffSelfCash >= 0);
         }
         if (diffInkindEl) {
           diffInkindEl.textContent = fmtMoneyFull(diffInkind);
@@ -792,6 +868,7 @@
               startDate: y.startDate, endDate: y.endDate, months: y.months,
             },
             budgetCash: d.budgetCash || 0,
+            budgetSelfCash: d.budgetSelfCash || 0,
             budgetInkind: d.budgetInkind || 0,
           };
         }
@@ -850,6 +927,7 @@
         },
         rows: yd.rows || [],
         budgetCash: yd.budgetCash || 0,
+        budgetSelfCash: yd.budgetSelfCash || 0,
         budgetInkind: yd.budgetInkind || 0,
         updatedAt: new Date().toISOString(),
       });
@@ -922,6 +1000,7 @@
       };
     });
     yd.budgetCash = prev.budgetCash || 0;
+    yd.budgetSelfCash = prev.budgetSelfCash || 0;
     yd.budgetInkind = prev.budgetInkind || 0;
     renderTable();
     scheduleSave();
@@ -987,11 +1066,15 @@
         var monthsToFill = Math.min(participMonths, ymList.length);
         var rate = parseNum(r.rate);
         var monthlyCash = 0;
+        var monthlySelfCash = 0;
         var monthlyInkind = 0;
+        var monthlyAmount = Math.round(parseNum(r.actualPay) * (rate / 100));
         if (r.cashOrInkind === '현금') {
-          monthlyCash = Math.round(parseNum(r.actualPay) * (rate / 100));
+          monthlyCash = monthlyAmount;
+        } else if (r.cashOrInkind === '자부담현금') {
+          monthlySelfCash = monthlyAmount;
         } else {
-          monthlyInkind = Math.round(parseNum(r.actualPay) * (rate / 100));
+          monthlyInkind = monthlyAmount;
         }
 
         for (var i = 0; i < monthsToFill; i++) {
@@ -1000,6 +1083,7 @@
           cells[key] = {
             rate: rate,
             cash: monthlyCash,
+            selfCash: monthlySelfCash,
             inkind: monthlyInkind,
             memo: cells[key] && cells[key].memo ? cells[key].memo : '',
           };
@@ -1232,6 +1316,36 @@
 
     var saveBtn = document.getElementById('pb-save-btn');
     if (saveBtn) saveBtn.addEventListener('click', saveBudgetDataExplicit);
+
+    // 자부담 현금 사용 체크박스 (과제별 설정, 즉시 저장)
+    var selfCashCb = document.getElementById('pb-has-self-cash');
+    if (selfCashCb) {
+      selfCashCb.addEventListener('change', function () {
+        var project = getProject();
+        if (!project) return;
+        var next = !!selfCashCb.checked;
+        if (!!project.hasSelfCash === next) return; // 변화 없음
+
+        // _allProjects 안의 객체 직접 mutate (filteredProjects와 동일 참조)
+        project.hasSelfCash = next;
+
+        // 예산표 + 행 단위(드롭다운 옵션/합계 셀) 모두 갱신
+        renderTable();
+
+        if (window.firestoreService && typeof window.firestoreService.saveProjects === 'function') {
+          window.firestoreService.saveProjects(_allProjects, {
+            reason: 'project-budget: hasSelfCash toggled to ' + next + ' (projectId=' + project.id + ')'
+          }).catch(function (e) {
+            console.error('hasSelfCash 저장 실패:', e);
+            // 실패 시 UI 롤백
+            project.hasSelfCash = !next;
+            selfCashCb.checked = !next;
+            renderTable();
+            alert('자부담 현금 설정 저장에 실패했습니다.');
+          });
+        }
+      });
+    }
 
     // 인력 검색 모달
     var modalClose = document.getElementById('pb-modal-close');

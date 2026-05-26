@@ -40,9 +40,7 @@
       grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 1.25rem;
     }
-    @media (max-width: 1200px) {
-      .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    }
+    /* 좁은 화면 대응: .container min-width + 가로 스크롤로 통일 (§0.5.1) */
 
     /* 개별 카드 */
     .summary-card {
@@ -183,10 +181,7 @@
       border: 1px dashed #e5e7eb;
     }
 
-    .container {
-      width: 1400px;
-      margin: 0 auto;
-    }
+    /* .container는 style.css의 전역 룰을 사용 */
     /* 사이드바 그룹 구분선 */
     .sidebar-divider {
       height: 1px;

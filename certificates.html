@@ -79,6 +79,10 @@
       color: #334155;
       cursor: pointer;
       transition: all 0.15s;
+      user-select: none;
+    }
+    .cert-type-chip-label {
+      cursor: pointer;
     }
     .cert-type-chip:hover {
       border-color: var(--primary-color);
@@ -107,6 +111,66 @@
       font-size: 0.85rem;
       color: #94a3b8;
       font-style: italic;
+    }
+
+    /* 즐겨찾기 별 아이콘 (칩 안) */
+    .cert-type-chip-star {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 18px;
+      height: 18px;
+      border: none;
+      background: transparent;
+      cursor: pointer;
+      padding: 0;
+      font-size: 0.9rem;
+      line-height: 1;
+      color: #cbd5e1;
+      transition: color 0.15s, transform 0.1s;
+      flex-shrink: 0;
+    }
+    .cert-type-chip-star:hover {
+      transform: scale(1.2);
+    }
+    .cert-type-chip-star.favorited {
+      color: #f59e0b;
+    }
+    .cert-type-chip.active .cert-type-chip-star {
+      color: rgba(255,255,255,0.5);
+    }
+    .cert-type-chip.active .cert-type-chip-star.favorited {
+      color: #fde047;
+    }
+
+    /* 칩 모드 토글 (즐겨찾기만 / 전체) */
+    .cert-type-mode-toggle {
+      display: inline-flex;
+      gap: 0;
+      border: 1px solid #cbd5e1;
+      border-radius: 0.5rem;
+      overflow: hidden;
+      margin-left: 0.5rem;
+    }
+    .cert-type-mode-btn {
+      padding: 0.3rem 0.7rem;
+      background: #fff;
+      border: none;
+      font-size: 0.78rem;
+      color: #64748b;
+      cursor: pointer;
+      font-family: inherit;
+      transition: background 0.15s;
+    }
+    .cert-type-mode-btn + .cert-type-mode-btn {
+      border-left: 1px solid #cbd5e1;
+    }
+    .cert-type-mode-btn:hover {
+      background: #f1f5f9;
+    }
+    .cert-type-mode-btn.active {
+      background: var(--primary-color);
+      color: #fff;
     }
 
     /* 툴바: 검색 + 회사 필터 */
@@ -195,6 +259,7 @@
       width: 100%;
       border-collapse: collapse;
       font-size: 0.88rem;
+      table-layout: fixed;
     }
     .cert-table thead {
       background: #f8fafc;
@@ -233,29 +298,16 @@
 
     .cert-name-cell {
       font-weight: 500;
+      text-align: center;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
-    .cert-memo-cell {
-      color: #64748b;
-      font-size: 0.85rem;
-      max-width: 280px;
-    }
-    .cert-link-btn {
-      display: inline-block;
-      padding: 0.3rem 0.7rem;
-      background: #e0f2fe;
-      color: #0369a1;
-      border-radius: 0.4rem;
-      text-decoration: none;
-      font-size: 0.8rem;
-      font-weight: 500;
-      transition: background 0.15s;
-    }
-    .cert-link-btn:hover {
-      background: #bae6fd;
-    }
-    .cert-link-empty {
+    .cert-name-cell--empty {
       color: #cbd5e1;
-      font-size: 0.85rem;
+    }
+    .cert-name-cell--highlight {
+      background: #fef3c7;
     }
 
     /* 빈 상태 */
@@ -307,6 +359,10 @@
           <div class="cert-type-summary-title">
             자격증별 보유자 수
             <span style="color:#94a3b8;font-weight:400">(클릭해서 필터)</span>
+            <span class="cert-type-mode-toggle" role="group" aria-label="칩 표시 모드">
+              <button type="button" class="cert-type-mode-btn active" data-mode="favorites" title="별표 매긴 자격증만 표시">⭐ 즐겨찾기만</button>
+              <button type="button" class="cert-type-mode-btn" data-mode="all" title="모든 자격증 표시">전체</button>
+            </span>
             <span class="cert-type-summary-meta" id="cert-people-meta"></span>
           </div>
           <div class="cert-type-chips" id="cert-type-chips"></div>
@@ -327,30 +383,20 @@
             <button type="button" class="cert-company-btn" data-company="패리티">패리티</button>
           </div>
 
-          <div class="cert-meta" id="cert-meta">자격증 0건</div>
+          <div class="cert-meta" id="cert-meta">0명</div>
         </div>
 
-        <!-- 테이블 -->
+        <!-- 테이블: 헤더와 본문 모두 JS가 동적으로 렌더링 (자격증 컬럼 수가 가변) -->
         <div class="cert-table-wrap">
           <table class="cert-table" id="cert-table">
-            <thead>
-              <tr>
-                <th style="width:90px">회사</th>
-                <th style="width:120px">이름</th>
-                <th>자격증</th>
-                <th>메모</th>
-                <th style="width:90px; text-align:center">증빙</th>
-              </tr>
-            </thead>
-            <tbody id="cert-tbody">
-              <!-- JS가 동적으로 렌더링 -->
-            </tbody>
+            <thead id="cert-thead"></thead>
+            <tbody id="cert-tbody"></tbody>
           </table>
 
           <!-- 빈 상태 -->
           <div class="cert-empty-state" id="cert-empty-state" hidden>
             <div class="cert-empty-state-icon">📋</div>
-            <div class="cert-empty-state-title">등록된 자격증이 없습니다</div>
+            <div class="cert-empty-state-title">표시할 자격증이 없습니다</div>
             <div class="cert-empty-state-text">
               자격증은 <a href="persons-detail.html">인력 상세</a> 페이지에서 등록할 수 있어요.
             </div>
