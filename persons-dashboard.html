@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>[60hz] 인력 대시보드</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="sidebar.css">
+  <style>
+    /* ========== 인증 게이트 (auth-guard.js 와 함께 동작) ========== */
+    html:not(.auth-bypass) .dashboard { visibility: hidden !important; }
+    html.auth-bypass .dashboard { visibility: visible; }
+    .auth-overlay {
+      position: fixed !important; top: 0 !important; left: 0 !important; right: 0 !important; bottom: 0 !important;
+      width: 100% !important; height: 100% !important; z-index: 2147483647 !important;
+      display: flex !important; align-items: center; justify-content: center;
+      background: linear-gradient(135deg, #f8fafc 0%, #eff6ff 50%, #e0f2fe 100%);
+      visibility: visible !important; opacity: 1 !important;
+    }
+    html.auth-bypass .auth-overlay { display: none !important; }
+    .auth-modal {
+      width: 90%; max-width: 400px; background: #fff; border-radius: 1rem;
+      box-shadow: 0 25px 50px -12px rgb(15 23 42 / 0.25); padding: 2rem; text-align: center;
+    }
+    .auth-modal-logo { font-size: 1.5rem; font-weight: 700; color: #2563eb; margin-bottom: 0.5rem; }
+    .auth-modal-title { font-size: 1rem; color: #64748b; margin-bottom: 1.5rem; line-height: 1.5; }
+    .auth-modal .auth-error {
+      margin-top: 0.75rem; font-size: 0.875rem; color: #ef4444; display: none;
+    }
+    .auth-modal .auth-error.visible { display: block; }
+    body { display: none !important; }
+    body.body-ready { display: block !important; }
+    /* ========== 인증 게이트 끝 ========== */
+
+    /* ============================================================
+       인력 대시보드 전용 스타일
+       - 기존 projects-stat-card 디자인 토큰을 재사용
+       - 3사 회사 색상 (style.css와 일치)
+       ============================================================ */
+
+    /* 기본 카드 그리드 (projects-stats-grid와 동일 패턴) */
+    .pd-stats-grid {
+      display: flex;
+      flex-wrap: nowrap;
+      gap: 0.75rem;
+      margin-bottom: 1.5rem;
+    }
+    .pd-stat-card {
+      flex: 1 1 0;
+      min-width: 0;
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 0.75rem;
+      padding: 0.85rem 1rem;
+      box-shadow: var(--shadow-sm);
+      overflow: hidden;
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+    .pd-stat-card.is-clickable {
+      cursor: pointer;
+    }
+    .pd-stat-card.is-clickable:hover {
+      transform: translateY(-1px);
+      box-shadow: var(--shadow-md);
+    }
+    .pd-stat-label {
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      margin-bottom: 0.35rem;
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+    .pd-stat-value {
+      font-size: 1.4rem;
+      font-weight: 700;
+      color: var(--text-primary);
+    }
+    .pd-stat-value-unit {
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: var(--text-secondary);
+      margin-left: 0.15rem;
+    }
+    .pd-stat-sub-hint {
+      font-size: 0.7rem;
+      color: #9ca3af;
+      margin-top: 0.3rem;
+    }
+
+    /* 회사별 카드 (좌측 보더로 식별성) */
+    .pd-stat-card--sixty   { border-left: 4px solid #4f46e5; }
+    .pd-stat-card--goodnews { border-left: 4px solid #ea580c; }
+    .pd-stat-card--parity  { border-left: 4px solid #059669; }
+
+    .pd-stat-card--sixty .pd-stat-label   { color: #4338ca; font-weight: 600; }
+    .pd-stat-card--goodnews .pd-stat-label { color: #c2410c; font-weight: 600; }
+    .pd-stat-card--parity .pd-stat-label  { color: #047857; font-weight: 600; }
+
+    /* 큰 강조 숫자 (재직/전체) */
+    .pd-stat-card--accent {
+      background: linear-gradient(135deg, #eff6ff 0%, #f8fafc 100%);
+      border-color: #bfdbfe;
+    }
+    .pd-stat-card--accent .pd-stat-value { color: var(--primary-color); }
+
+    /* 퇴직 카드 */
+    .pd-stat-card--exited .pd-stat-value { color: #6b7280; }
+
+    /* 청년 강조 */
+    .pd-stat-card--youth {
+      background: linear-gradient(135deg, #faf5ff 0%, #fff 100%);
+      border-color: #e9d5ff;
+    }
+    .pd-stat-card--youth .pd-stat-value { color: #7c3aed; }
+
+    /* 섹션 박스 (2단 영역의 큰 박스) */
+    .pd-section-box {
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 0.75rem;
+      padding: 1rem 1.25rem;
+      box-shadow: var(--shadow-sm);
+      display: flex;
+      flex-direction: column;
+      gap: 0.85rem;
+    }
+    .pd-section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+    }
+    .pd-section-title {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+    .pd-section-meta {
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+    }
+
+    /* 2단 그리드 (입퇴사 + 시점조회) */
+    .pd-row-2col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.75rem;
+      margin-bottom: 1.5rem;
+    }
+    @media (max-width: 1100px) {
+      .pd-row-2col { grid-template-columns: 1fr; }
+    }
+
+    /* 입퇴사 큰 숫자 묶음 */
+    .pd-jl-mainrow {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.5rem;
+    }
+    .pd-jl-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 0.6rem 0.75rem;
+      border-radius: 0.6rem;
+      background: #f8fafc;
+    }
+    .pd-jl-item--joined { background: #ecfdf5; }
+    .pd-jl-item--left   { background: #fef3f2; }
+    .pd-jl-num {
+      font-size: 1.8rem;
+      font-weight: 800;
+      line-height: 1.1;
+    }
+    .pd-jl-item--joined .pd-jl-num { color: #047857; }
+    .pd-jl-item--left .pd-jl-num   { color: #dc2626; }
+    .pd-jl-cap {
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+      margin-top: 0.2rem;
+    }
+
+    /* 회사별 미니 분해 (입퇴사 하단) */
+    .pd-jl-bycompany {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+      align-items: center;
+    }
+    .pd-jl-bycompany-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      padding: 0.15rem 0.5rem;
+      border-radius: 999px;
+      background: #f1f5f9;
+      font-weight: 500;
+    }
+    .pd-jl-bycompany-chip strong { color: var(--text-primary); font-weight: 700; }
+
+    /* 컨트롤 영역 (연도/월 셀렉트 + 버튼) */
+    .pd-controls {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+      flex-wrap: wrap;
+      font-size: 0.85rem;
+    }
+    .pd-controls label {
+      color: var(--text-secondary);
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+    .pd-controls select {
+      padding: 0.3rem 0.5rem;
+      border: 1px solid var(--border-color);
+      border-radius: 0.4rem;
+      background: #fff;
+      font-size: 0.85rem;
+      color: var(--text-primary);
+    }
+    .pd-controls button {
+      padding: 0.35rem 0.75rem;
+      border: 1px solid var(--border-color);
+      border-radius: 0.4rem;
+      background: #fff;
+      cursor: pointer;
+      font-size: 0.8rem;
+      color: var(--text-primary);
+      transition: background 0.15s ease;
+    }
+    .pd-controls button:hover {
+      background: #f1f5f9;
+    }
+    .pd-controls button.is-primary {
+      background: var(--primary-color);
+      color: #fff;
+      border-color: var(--primary-color);
+    }
+    .pd-controls button.is-primary:hover {
+      background: var(--primary-hover);
+    }
+
+    /* 시점 조회 결과 박스 */
+    .pd-snapshot-main {
+      text-align: center;
+      padding: 1rem;
+      background: linear-gradient(135deg, #f0f9ff 0%, #f8fafc 100%);
+      border-radius: 0.6rem;
+      border: 1px solid #e0f2fe;
+    }
+    .pd-snapshot-bignum {
+      font-size: 2.4rem;
+      font-weight: 800;
+      color: var(--primary-color);
+      line-height: 1.1;
+    }
+    .pd-snapshot-bignum-unit {
+      font-size: 1rem;
+      font-weight: 500;
+      color: var(--text-secondary);
+      margin-left: 0.25rem;
+    }
+    .pd-snapshot-cap {
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+      margin-top: 0.3rem;
+    }
+    .pd-snapshot-bycompany {
+      display: flex;
+      justify-content: space-around;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      padding: 0.5rem 0;
+    }
+    .pd-snapshot-bycompany-item {
+      flex: 1;
+      min-width: 0;
+      text-align: center;
+      padding: 0.5rem;
+      border-radius: 0.5rem;
+    }
+    .pd-snapshot-bycompany-item--sixty   { background: #eef2ff; }
+    .pd-snapshot-bycompany-item--goodnews { background: #fff7ed; }
+    .pd-snapshot-bycompany-item--parity  { background: #ecfdf5; }
+    .pd-snapshot-bycompany-label {
+      font-size: 0.72rem;
+      color: var(--text-secondary);
+      margin-bottom: 0.2rem;
+      font-weight: 600;
+    }
+    .pd-snapshot-bycompany-item--sixty .pd-snapshot-bycompany-label   { color: #4338ca; }
+    .pd-snapshot-bycompany-item--goodnews .pd-snapshot-bycompany-label { color: #c2410c; }
+    .pd-snapshot-bycompany-item--parity .pd-snapshot-bycompany-label  { color: #047857; }
+    .pd-snapshot-bycompany-value {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--text-primary);
+    }
+
+    /* 청년 섹션 (3단) */
+    .pd-youth-grid {
+      display: grid;
+      grid-template-columns: 1fr 2fr;
+      gap: 1rem;
+      align-items: stretch;
+    }
+    @media (max-width: 900px) {
+      .pd-youth-grid { grid-template-columns: 1fr; }
+    }
+    .pd-youth-main {
+      padding: 1rem;
+      background: linear-gradient(135deg, #faf5ff 0%, #fdf4ff 100%);
+      border-radius: 0.6rem;
+      border: 1px solid #e9d5ff;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+    .pd-youth-bignum {
+      font-size: 2.2rem;
+      font-weight: 800;
+      color: #7c3aed;
+      line-height: 1.1;
+    }
+    .pd-youth-cap {
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      margin-top: 0.4rem;
+    }
+    .pd-youth-gender {
+      font-size: 0.85rem;
+      color: var(--text-primary);
+      margin-top: 0.4rem;
+      font-weight: 500;
+    }
+    .pd-youth-bycompany {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      justify-content: center;
+    }
+    .pd-youth-bycompany-row {
+      display: grid;
+      grid-template-columns: 80px 1fr 50px;
+      gap: 0.5rem;
+      align-items: center;
+      padding: 0.5rem 0.75rem;
+      border-radius: 0.5rem;
+      background: #f8fafc;
+      font-size: 0.85rem;
+    }
+    .pd-youth-bycompany-row--sixty   { background: #eef2ff; }
+    .pd-youth-bycompany-row--goodnews { background: #fff7ed; }
+    .pd-youth-bycompany-row--parity  { background: #ecfdf5; }
+    .pd-youth-bycompany-name {
+      font-weight: 600;
+    }
+    .pd-youth-bycompany-row--sixty .pd-youth-bycompany-name   { color: #4338ca; }
+    .pd-youth-bycompany-row--goodnews .pd-youth-bycompany-name { color: #c2410c; }
+    .pd-youth-bycompany-row--parity .pd-youth-bycompany-name  { color: #047857; }
+    .pd-youth-bycompany-bar {
+      height: 8px;
+      background: rgba(255,255,255,0.6);
+      border-radius: 4px;
+      overflow: hidden;
+      position: relative;
+    }
+    .pd-youth-bycompany-bar-fill {
+      height: 100%;
+      transition: width 0.4s ease;
+    }
+    .pd-youth-bycompany-row--sixty .pd-youth-bycompany-bar-fill   { background: #4f46e5; }
+    .pd-youth-bycompany-row--goodnews .pd-youth-bycompany-bar-fill { background: #ea580c; }
+    .pd-youth-bycompany-row--parity .pd-youth-bycompany-bar-fill  { background: #059669; }
+    .pd-youth-bycompany-num {
+      text-align: right;
+      font-weight: 700;
+      color: var(--text-primary);
+    }
+
+    /* 페이지 footnote */
+    .pd-footnote {
+      font-size: 0.72rem;
+      color: #9ca3af;
+      margin-top: -0.75rem;
+      margin-bottom: 1rem;
+      padding-left: 0.25rem;
+    }
+
+    /* 헤더 액션 영역 */
+    .pd-header-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+    .pd-link-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.4rem 0.8rem;
+      background: #fff;
+      border: 1px solid var(--border-color);
+      border-radius: 0.5rem;
+      color: var(--text-primary);
+      text-decoration: none;
+      font-size: 0.85rem;
+      transition: background 0.15s ease;
+    }
+    .pd-link-btn:hover {
+      background: #f1f5f9;
+    }
+
+    /* 빈 상태 / 로딩 */
+    .pd-loading {
+      text-align: center;
+      padding: 2rem;
+      color: var(--text-secondary);
+      font-size: 0.9rem;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="dashboard">
+    <!-- 사이드바: sidebar.js가 <aside class="sidebar">를 통째로 교체 (기존 페이지와 동일 패턴)
+         아래 정적 메뉴는 sidebar.js 로드 전 깜빡임(FOUC) 방지용. sidebar.js의 MENU_ITEMS가 실제 메뉴를 결정. -->
+    <aside class="sidebar" id="sidebar" aria-label="메인 메뉴">
+      <div class="sidebar-header">
+        <button type="button" class="sidebar-toggle" id="sidebar-toggle" aria-label="메뉴 접기/펼치기" title="메뉴 접기/펼치기">☰</button>
+        <h1 class="sidebar-title">CI_R&DM</h1>
+      </div>
+      <nav class="sidebar-nav">
+        <a href="projects-history.html" class="sidebar-link" id="nav-history"><span class="sidebar-link-icon" aria-hidden="true">📜</span><span class="sidebar-link-text">수행 현황</span></a>
+        <a href="index.html#/calendar" class="sidebar-link" id="nav-calendar"><span class="sidebar-link-icon" aria-hidden="true">📅</span><span class="sidebar-link-text">일정 관리</span></a>
+        <div class="sidebar-divider" aria-hidden="true"></div>
+        <a href="dashboard.html" class="sidebar-link" id="nav-dashboard"><span class="sidebar-link-icon" aria-hidden="true">🏠</span><span class="sidebar-link-text">대시보드</span></a>
+        <a href="funding.html" class="sidebar-link" id="nav-funding"><span class="sidebar-link-icon" aria-hidden="true">💵</span><span class="sidebar-link-text">자금 관리</span></a>
+        <a href="projects.html" class="sidebar-link" id="nav-projects"><span class="sidebar-link-icon" aria-hidden="true">📋</span><span class="sidebar-link-text">과제 관리</span></a>
+        <a href="projects-summary.html" class="sidebar-link" id="nav-projects-summary"><span class="sidebar-link-icon" aria-hidden="true">📑</span><span class="sidebar-link-text">과제별 상세</span></a>
+        <a href="index.html" class="sidebar-link" id="nav-hr"><span class="sidebar-link-icon" aria-hidden="true">👤</span><span class="sidebar-link-text">인력 정보 관리</span></a>
+        <a href="index.html#/payroll" class="sidebar-link" id="nav-payroll"><span class="sidebar-link-icon" aria-hidden="true">💰</span><span class="sidebar-link-text">인건비 관리</span></a>
+        <a href="index.html#/participation" class="sidebar-link" id="nav-participation"><span class="sidebar-link-icon" aria-hidden="true">📊</span><span class="sidebar-link-text">참여율 관리</span></a>
+        <div class="sidebar-divider" aria-hidden="true"></div>
+        <a href="persons-dashboard.html" class="sidebar-link active" id="nav-persons-dashboard"><span class="sidebar-link-icon" aria-hidden="true">📈</span><span class="sidebar-link-text">인력 대시보드</span></a>
+        <a href="persons-master.html" class="sidebar-link" id="nav-persons-master"><span class="sidebar-link-icon" aria-hidden="true">👥</span><span class="sidebar-link-text">인력 마스터</span></a>
+        <a href="persons-detail.html" class="sidebar-link" id="nav-persons-detail"><span class="sidebar-link-icon" aria-hidden="true">📑</span><span class="sidebar-link-text">인력 상세</span></a>
+      </nav>
+    </aside>
+
+    <main class="main-area">
+      <div class="container">
+        <header class="header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.75rem">
+          <h1 class="header-title">📈 인력 대시보드</h1>
+          <div class="pd-header-actions">
+            <a href="persons-master.html" class="pd-link-btn" title="명부 입력·수정">
+              <span aria-hidden="true">👥</span> 인력 마스터
+            </a>
+            <a href="persons-detail.html" class="pd-link-btn" title="학력·자격증·연구자번호 등 상세">
+              <span aria-hidden="true">📑</span> 인력 상세
+            </a>
+          </div>
+        </header>
+
+        <!-- ============================================================
+             1단: 인원 현황 (전체/재직/퇴직 + 회사별 3사)
+             ============================================================ -->
+        <section aria-label="인원 현황">
+          <h2 class="pd-section-title" style="margin-bottom:0.75rem">
+            <span aria-hidden="true">👤</span> 인원 현황
+          </h2>
+
+          <!-- 상단 한 줄: 전체 / 재직 / 퇴직 -->
+          <div class="pd-stats-grid">
+            <div class="pd-stat-card pd-stat-card--accent">
+              <div class="pd-stat-label">전체 인력</div>
+              <div class="pd-stat-value">
+                <span id="pd-stat-total">0</span><span class="pd-stat-value-unit">명</span>
+              </div>
+              <div class="pd-stat-sub-hint" id="pd-stat-total-sub">재직 0 · 퇴직 0</div>
+            </div>
+            <div class="pd-stat-card">
+              <div class="pd-stat-label">재직 인력</div>
+              <div class="pd-stat-value" style="color:#059669">
+                <span id="pd-stat-active">0</span><span class="pd-stat-value-unit">명</span>
+              </div>
+              <div class="pd-stat-sub-hint" id="pd-stat-active-sub">남 0 · 여 0</div>
+            </div>
+            <div class="pd-stat-card pd-stat-card--exited">
+              <div class="pd-stat-label">퇴직</div>
+              <div class="pd-stat-value">
+                <span id="pd-stat-exited">0</span><span class="pd-stat-value-unit">명</span>
+              </div>
+              <div class="pd-stat-sub-hint">퇴직 처리됨</div>
+            </div>
+          </div>
+
+          <!-- 하단 한 줄: 회사별 3사 + 청년 -->
+          <div class="pd-stats-grid">
+            <div class="pd-stat-card pd-stat-card--sixty">
+              <div class="pd-stat-label">식스티</div>
+              <div class="pd-stat-value">
+                <span id="pd-stat-sixty">0</span><span class="pd-stat-value-unit">명</span>
+              </div>
+              <div class="pd-stat-sub-hint" id="pd-stat-sixty-sub">남 0 · 여 0</div>
+            </div>
+            <div class="pd-stat-card pd-stat-card--goodnews">
+              <div class="pd-stat-label">굿뉴스</div>
+              <div class="pd-stat-value">
+                <span id="pd-stat-goodnews">0</span><span class="pd-stat-value-unit">명</span>
+              </div>
+              <div class="pd-stat-sub-hint" id="pd-stat-goodnews-sub">남 0 · 여 0</div>
+            </div>
+            <div class="pd-stat-card pd-stat-card--parity">
+              <div class="pd-stat-label">패리티</div>
+              <div class="pd-stat-value">
+                <span id="pd-stat-parity">0</span><span class="pd-stat-value-unit">명</span>
+              </div>
+              <div class="pd-stat-sub-hint" id="pd-stat-parity-sub">남 0 · 여 0</div>
+            </div>
+            <div class="pd-stat-card pd-stat-card--youth">
+              <div class="pd-stat-label">청년 인력</div>
+              <div class="pd-stat-value">
+                <span id="pd-stat-youth">0</span><span class="pd-stat-value-unit">명</span>
+              </div>
+              <div class="pd-stat-sub-hint">만 34세 이하 재직 인력</div>
+            </div>
+          </div>
+          <p class="pd-footnote">
+            * 건강보험 가입자명부 기준 · 식스티(모회사) 카운트에서 자회사 겸직자는 제외됨
+          </p>
+        </section>
+
+        <!-- ============================================================
+             2단: 입·퇴사 현황 + 시점별 재직 인원
+             ============================================================ -->
+        <div class="pd-row-2col">
+          <!-- 좌: 입·퇴사 현황 -->
+          <section class="pd-section-box" aria-label="입퇴사 현황">
+            <div class="pd-section-header">
+              <h2 class="pd-section-title">
+                <span aria-hidden="true">📊</span> 입·퇴사 현황
+              </h2>
+              <div class="pd-controls">
+                <label>
+                  연도
+                  <select id="pd-jl-year" aria-label="입퇴사 조회 연도"></select>
+                </label>
+                <label>
+                  월
+                  <select id="pd-jl-month" aria-label="입퇴사 조회 월">
+                    <option value="">연간</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+
+            <div class="pd-jl-mainrow">
+              <div class="pd-jl-item pd-jl-item--joined">
+                <div class="pd-jl-num" id="pd-jl-joined">0</div>
+                <div class="pd-jl-cap">입사</div>
+              </div>
+              <div class="pd-jl-item pd-jl-item--left">
+                <div class="pd-jl-num" id="pd-jl-left">0</div>
+                <div class="pd-jl-cap">퇴사</div>
+              </div>
+            </div>
+
+            <div>
+              <div style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:0.4rem;font-weight:500">회사별 입사 / 퇴사</div>
+              <div class="pd-jl-bycompany" id="pd-jl-bycompany"></div>
+            </div>
+          </section>
+
+          <!-- 우: 시점별 재직 인원 -->
+          <section class="pd-section-box" aria-label="시점별 재직 인원">
+            <div class="pd-section-header">
+              <h2 class="pd-section-title">
+                <span aria-hidden="true">📅</span> 시점별 재직 인원
+              </h2>
+              <div class="pd-section-meta" id="pd-snapshot-meta">📌 오늘 기준</div>
+            </div>
+
+            <div class="pd-snapshot-main">
+              <div>
+                <span class="pd-snapshot-bignum" id="pd-snapshot-total">0</span><span class="pd-snapshot-bignum-unit">명 재직</span>
+              </div>
+              <div class="pd-snapshot-cap">겸직 포함 · 4대보험 가입자명부 기준</div>
+            </div>
+
+            <div class="pd-snapshot-bycompany">
+              <div class="pd-snapshot-bycompany-item pd-snapshot-bycompany-item--sixty">
+                <div class="pd-snapshot-bycompany-label">식스티</div>
+                <div class="pd-snapshot-bycompany-value" id="pd-snapshot-sixty">0</div>
+              </div>
+              <div class="pd-snapshot-bycompany-item pd-snapshot-bycompany-item--goodnews">
+                <div class="pd-snapshot-bycompany-label">굿뉴스</div>
+                <div class="pd-snapshot-bycompany-value" id="pd-snapshot-goodnews">0</div>
+              </div>
+              <div class="pd-snapshot-bycompany-item pd-snapshot-bycompany-item--parity">
+                <div class="pd-snapshot-bycompany-label">패리티</div>
+                <div class="pd-snapshot-bycompany-value" id="pd-snapshot-parity">0</div>
+              </div>
+            </div>
+
+            <div class="pd-controls" style="border-top:1px solid var(--border-color);padding-top:0.75rem">
+              <span style="color:var(--text-secondary);font-size:0.78rem">🔍 다른 시점</span>
+              <label>
+                연도
+                <select id="pd-snapshot-year" aria-label="시점 조회 연도"></select>
+              </label>
+              <label>
+                월
+                <select id="pd-snapshot-month" aria-label="시점 조회 월"></select>
+              </label>
+              <button type="button" id="pd-snapshot-query-btn" class="is-primary">조회</button>
+              <button type="button" id="pd-snapshot-today-btn" title="오늘 기준으로 돌아가기">📌 오늘로</button>
+            </div>
+          </section>
+        </div>
+
+        <!-- ============================================================
+             3단: 청년 인력 상세
+             ============================================================ -->
+        <section class="pd-section-box" aria-label="청년 인력" style="margin-bottom:1.5rem">
+          <div class="pd-section-header">
+            <h2 class="pd-section-title">
+              <span aria-hidden="true">🎯</span> 청년 인력 (만 34세 이하)
+            </h2>
+            <div class="pd-section-meta">재직 인력 기준</div>
+          </div>
+
+          <div class="pd-youth-grid">
+            <!-- 좌: 전체 청년 -->
+            <div class="pd-youth-main">
+              <div>
+                <span class="pd-youth-bignum" id="pd-youth-total">0</span>
+                <span style="font-size:1rem;color:var(--text-secondary);margin-left:0.25rem">명</span>
+              </div>
+              <div class="pd-youth-cap">전체 청년 인력</div>
+              <div class="pd-youth-gender" id="pd-youth-gender">남 0 · 여 0</div>
+            </div>
+
+            <!-- 우: 회사별 분포 -->
+            <div class="pd-youth-bycompany">
+              <div class="pd-youth-bycompany-row pd-youth-bycompany-row--sixty">
+                <div class="pd-youth-bycompany-name">식스티</div>
+                <div class="pd-youth-bycompany-bar"><div class="pd-youth-bycompany-bar-fill" id="pd-youth-sixty-bar" style="width:0%"></div></div>
+                <div class="pd-youth-bycompany-num" id="pd-youth-sixty">0명</div>
+              </div>
+              <div class="pd-youth-bycompany-row pd-youth-bycompany-row--goodnews">
+                <div class="pd-youth-bycompany-name">굿뉴스</div>
+                <div class="pd-youth-bycompany-bar"><div class="pd-youth-bycompany-bar-fill" id="pd-youth-goodnews-bar" style="width:0%"></div></div>
+                <div class="pd-youth-bycompany-num" id="pd-youth-goodnews">0명</div>
+              </div>
+              <div class="pd-youth-bycompany-row pd-youth-bycompany-row--parity">
+                <div class="pd-youth-bycompany-name">패리티</div>
+                <div class="pd-youth-bycompany-bar"><div class="pd-youth-bycompany-bar-fill" id="pd-youth-parity-bar" style="width:0%"></div></div>
+                <div class="pd-youth-bycompany-num" id="pd-youth-parity">0명</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 로딩 표시 -->
+        <div class="pd-loading" id="pd-loading" hidden>데이터를 불러오는 중...</div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Firebase + 공통 모듈 로드 (persons-master.html과 동일 순서) -->
+  <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-auth-compat.js"></script>
+  <script src="firebase-config.example.js"></script>
+  <script src="firebase-config.js"></script>
+  <script src="firebase.js"></script>
+  <script src="auth-guard.js"></script>
+  <script src="firestore-service.js"></script>
+  <script src="sidebar.js"></script>
+  <!-- 공통 유틸 (Phase 1에서 생성) -->
+  <script src="persons-summary.js"></script>
+  <!-- 페이지 본체 -->
+  <script src="persons-dashboard.js"></script>
+  <script src="floating-buttons.js"></script>
+</body>
+</html>

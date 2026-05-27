@@ -34,13 +34,15 @@
     { id: 'nav-participation',     href: 'index.html#/participation',    icon: '📊', label: '참여율 관리',       group: 2 },
 
     // === 그룹 3: 인력/연구소/인건비 신규 모듈 ===
+    { id: 'nav-persons-dashboard', href: 'persons-dashboard.html',       icon: '📈', label: '인력 대시보드',     group: 3 },
     { id: 'nav-persons-master',    href: 'persons-master.html',          icon: '👥', label: '인력 마스터',       group: 3 },
     { id: 'nav-persons-detail',    href: 'persons-detail.html',          icon: '📑', label: '인력 상세',         group: 3 },
     { id: 'nav-certificates',      href: 'certificates.html',            icon: '🗃️', label: '자격증 관리',       group: 3 },
     { id: 'nav-lab',               href: 'lab.html',                     icon: '🔬', label: '기업부설연구소',    group: 3 },
     { id: 'nav-project-budget',    href: 'project-budget.html',          icon: '💵', label: '인건비 예산',       group: 3 },
     { id: 'nav-project-labor',     href: 'project-labor.html',           icon: '💰', label: '프로젝트별 인건비', group: 3 },
-    { id: 'nav-labor-dashboard',   href: 'labor-dashboard.html',         icon: '📈', label: '인건비 대시보드',   group: 3 }
+    { id: 'nav-labor-dashboard',   href: 'labor-dashboard.html',         icon: '📈', label: '인건비 대시보드',   group: 3 },
+    { id: 'nav-participation-summary', href: 'participation-summary.html', icon: '🧮', label: '참여율 합계',     group: 3 }
   ];
 
   var APP_TITLE = 'CI_R&DM';

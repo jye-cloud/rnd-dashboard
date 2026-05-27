@@ -708,15 +708,20 @@
       if (hasLabRegistered(p)) labCount++;
     });
 
-    if (el.statTotal)        el.statTotal.textContent = total;
-    if (el.statTotalSub)     el.statTotalSub.textContent = '재직 ' + active + ' · 퇴직 ' + exited;
-    if (el.statHrComplete)   el.statHrComplete.textContent = hrComplete;
+    // 한 줄 요약 (각 숫자를 별도 노드에 표시)
+    if (el.statTotal)   el.statTotal.textContent = total;
+    if (el.statActive)  el.statActive.textContent = active;
+    if (el.statExited)  el.statExited.textContent = exited;
+
+    // 호환성: 기존 ID들 (현재는 hidden input이지만, 향후 다시 카드로 부활할 수 있어 그대로 채움)
+    if (el.statTotalSub) el.statTotalSub.value = '재직 ' + active + ' · 퇴직 ' + exited;
+    if (el.statHrComplete) el.statHrComplete.value = hrComplete;
     if (el.statHrCompleteSub) {
-      el.statHrCompleteSub.textContent = active > 0
+      el.statHrCompleteSub.value = active > 0
         ? '재직 ' + active + '명 중 ' + Math.round(hrComplete / active * 100) + '%'
         : '재직 인력 중';
     }
-    if (el.statLab)          el.statLab.textContent = labCount;
+    if (el.statLab) el.statLab.value = labCount;
   }
 
   // ====================================================================
@@ -2768,6 +2773,8 @@
     el.filterLab        = $('filter-lab');
 
     el.statTotal         = $('stat-total');
+    el.statActive        = $('stat-active');
+    el.statExited        = $('stat-exited');
     el.statTotalSub      = $('stat-total-sub');
     el.statHrComplete    = $('stat-hr-complete');
     el.statHrCompleteSub = $('stat-hr-complete-sub');

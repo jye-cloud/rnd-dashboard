@@ -1,0 +1,1211 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>참여율 합계 · CI_R&DM</title>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="sidebar.css">
+<style>
+  /* ============================================================
+     participation-summary 페이지 전용 스타일
+     - 기존 #participation-view-annual 구조·색 규칙을 차용
+     - 모든 셀렉터는 #page-participation-summary 안에 격리
+     ============================================================ */
+
+  #page-participation-summary {
+    display: block;
+    min-height: 100%;
+  }
+
+  /* ── 상단 컨트롤 바 ─────────────────────────────────────── */
+  #page-participation-summary .ps-toolbar {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 0.6rem 0.85rem;
+    padding: 1rem 1.25rem;
+    margin-bottom: 1rem;
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 0.75rem;
+    box-shadow: var(--shadow-sm);
+    min-width: 0;
+  }
+
+  #page-participation-summary .ps-toolbar-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-shrink: 0;
+  }
+
+  #page-participation-summary .ps-toolbar-divider {
+    width: 1px;
+    height: 22px;
+    background: var(--border-color);
+  }
+
+  #page-participation-summary .ps-toolbar-label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+  }
+
+  /* planned/actual 토글 — 세그먼티드 버튼 */
+  #page-participation-summary .ps-mode-toggle {
+    display: inline-flex;
+    border: 1px solid var(--border-color);
+    border-radius: 0.5rem;
+    overflow: hidden;
+    background: #f8fafc;
+  }
+  #page-participation-summary .ps-mode-btn {
+    height: 32px;
+    padding: 0 0.85rem;
+    border: none;
+    background: transparent;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+  }
+  #page-participation-summary .ps-mode-btn:hover {
+    background: rgba(37, 99, 235, 0.06);
+  }
+  #page-participation-summary .ps-mode-btn.is-active {
+    background: var(--primary-color);
+    color: #fff;
+  }
+
+  /* 구분 필터 (전체 / 현금 / 현물) */
+  #page-participation-summary .ps-type-filter {
+    display: inline-flex;
+    gap: 0.35rem;
+  }
+  #page-participation-summary .ps-type-btn {
+    height: 32px;
+    padding: 0 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: 0.45rem;
+    background: #fff;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    cursor: pointer;
+  }
+  #page-participation-summary .ps-type-btn.is-active {
+    background: rgba(37, 99, 235, 0.10);
+    border-color: var(--primary-color);
+    color: var(--primary-color);
+  }
+
+  #page-participation-summary .ps-search-input {
+    width: 150px;
+    height: 32px;
+    padding: 0 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: 0.45rem;
+    font-size: 0.85rem;
+    flex-shrink: 0;
+  }
+  #page-participation-summary .ps-search-input:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: var(--ring);
+  }
+
+  /* 대상 인력 수 (구분 옆 인라인 카운터) */
+  #page-participation-summary .ps-people-count {
+    padding: 0 0.65rem;
+    height: 32px;
+    background: #f1f5f9;
+    border: 1px solid var(--border-color);
+    border-radius: 0.45rem;
+    gap: 0.35rem;
+  }
+  #page-participation-summary .ps-people-count-label {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    letter-spacing: 0.02em;
+  }
+  #page-participation-summary .ps-people-count-value {
+    font-size: 0.88rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* 미배정 인력 토글 버튼 */
+  #page-participation-summary .ps-unassigned-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    height: 32px;
+    padding: 0 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: 0.45rem;
+    background: #fff;
+    color: var(--text-secondary);
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+  #page-participation-summary .ps-unassigned-btn:hover {
+    border-color: #94a3b8;
+    color: var(--text-primary);
+  }
+  #page-participation-summary .ps-unassigned-btn.is-active {
+    background: #fef3c7;
+    border-color: #f59e0b;
+    color: #92400e;
+  }
+  #page-participation-summary .ps-unassigned-icon {
+    font-size: 0.95rem;
+    line-height: 1;
+  }
+  #page-participation-summary .ps-unassigned-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    background: rgba(15, 23, 42, 0.1);
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+  }
+  #page-participation-summary .ps-unassigned-btn.is-active .ps-unassigned-badge {
+    background: #fbbf24;
+    color: #78350f;
+  }
+
+  #page-participation-summary .ps-year-select {
+    height: 32px;
+    padding: 0 0.6rem;
+    border: 1px solid var(--border-color);
+    border-radius: 0.45rem;
+    font-size: 0.85rem;
+    background: #fff;
+  }
+
+  /* ── 메인 표 ───────────────────────────────────────────── */
+  #page-participation-summary .ps-table-wrap {
+    width: 100%;
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 0.75rem;
+    box-shadow: var(--shadow-md);
+    overflow: auto;
+  }
+
+  #page-participation-summary .ps-table {
+    width: 100%;
+    min-width: 100%;
+    border-collapse: collapse;
+    font-size: 0.88rem;
+    table-layout: fixed;
+  }
+  #page-participation-summary .ps-table th,
+  #page-participation-summary .ps-table td {
+    padding: 0.5rem 0.5rem;
+    text-align: center;
+    border-bottom: 1px solid var(--border-color);
+    height: 42px;
+    box-sizing: border-box;
+    vertical-align: middle;
+  }
+  #page-participation-summary .ps-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: #f1f5f9;
+    font-weight: 700;
+    color: var(--text-primary);
+    font-size: 0.82rem;
+  }
+  /* 컬럼 너비 — 이름 / 3책5공 / 구분 / 1~12월 / 연간 */
+  #page-participation-summary .ps-th-name      { width: 140px; }
+  #page-participation-summary .ps-th-3ch5g     { width: 90px; }
+  #page-participation-summary .ps-th-type      { width: 60px; }
+  #page-participation-summary .ps-th-month     { width: auto; }
+  #page-participation-summary .ps-th-annual    { width: 90px; background: #eef2f7; }
+
+  #page-participation-summary .ps-cell-name {
+    text-align: left;
+    padding-left: 0.85rem;
+    font-weight: 500;
+    color: var(--text-primary);
+    background: var(--card-bg);
+  }
+
+  /* 3책 5공 컬럼 — 데이터 없이 자리만 */
+  #page-participation-summary .ps-cell-3ch5g {
+    color: var(--text-secondary);
+    font-size: 0.82rem;
+  }
+  #page-participation-summary .ps-3ch5g-placeholder {
+    color: #cbd5e1;
+    font-style: italic;
+  }
+
+  /* 구분 (현금/현물) */
+  #page-participation-summary .ps-cell-type {
+    font-weight: 600;
+    font-size: 0.82rem;
+  }
+  #page-participation-summary .ps-cell-type--cash { color: var(--text-primary); }
+  #page-participation-summary .ps-cell-type--kind { color: #64748b; }
+
+  /* 현물 행은 배경 연한 회색 */
+  #page-participation-summary .ps-row--kind > td {
+    background: #f8fafc;
+  }
+
+  /* 미배정 인력 행 — 옅은 노란 톤으로 구분 */
+  #page-participation-summary .ps-row--unassigned > td {
+    background: #fffbeb;
+    color: #92400e;
+  }
+  #page-participation-summary .ps-cell-unassigned-tag {
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: #b45309;
+  }
+  #page-participation-summary .ps-row--unassigned .ps-cell-name {
+    color: #78350f;
+  }
+  #page-participation-summary .ps-row--unassigned .ps-cell-annual {
+    background: #fde68a;
+    color: #78350f;
+  }
+
+  /* 월별 셀: 클릭 가능 + 색깔 코딩 */
+  #page-participation-summary .ps-cell-month {
+    font-variant-numeric: tabular-nums;
+    cursor: pointer;
+    transition: background 0.1s;
+  }
+  #page-participation-summary .ps-cell-month:hover {
+    outline: 2px solid var(--primary-color);
+    outline-offset: -2px;
+  }
+  #page-participation-summary .ps-cell-month--empty {
+    color: #cbd5e1;
+    cursor: default;
+  }
+  #page-participation-summary .ps-cell-month--empty:hover {
+    outline: none;
+  }
+
+  /* 색깔 코딩 — 기획서 §1.2 5단계 */
+  #page-participation-summary .ps-cell-month--low      { background: #ecfdf5; color: #047857; }   /* <80% 초록 */
+  #page-participation-summary .ps-cell-month--mid      { background: #fefce8; color: #854d0e; }   /* 80~89% 노랑 */
+  #page-participation-summary .ps-cell-month--high     { background: #ffedd5; color: #9a3412; }   /* ≥90% 주황 */
+  #page-participation-summary .ps-cell-month--full     { background: #fee2e2; color: #b91c1c; font-weight: 700; } /* =100% 톤다운 분홍/빨강 */
+  #page-participation-summary .ps-cell-month--over     { background: #ffe4e6; color: #dc2626; font-weight: 700; } /* >100% 빨강 */
+
+  /* 현물 행에서도 색깔 유지하되 살짝 차분하게 */
+  #page-participation-summary .ps-row--kind .ps-cell-month {
+    opacity: 0.85;
+  }
+
+  /* 연간 평균 */
+  #page-participation-summary .ps-cell-annual {
+    background: #eef2f7;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-primary);
+  }
+  #page-participation-summary .ps-cell-annual--over {
+    color: #dc2626;
+  }
+
+  /* 빈 상태 */
+  #page-participation-summary .ps-empty {
+    padding: 3rem 1rem;
+    text-align: center;
+    color: var(--text-secondary);
+  }
+
+  /* ── 우측 슬라이드 패널 (셀 클릭 시 과제별 분해) ───────── */
+  body .ps-detail-panel {
+    position: fixed;
+    top: 0;
+    right: 0;
+    width: min(420px, 100%);
+    height: 100vh;
+    background: var(--card-bg);
+    box-shadow: -12px 0 30px rgba(15, 23, 42, 0.25);
+    padding: 1.25rem 1.25rem 2rem;
+    overflow-y: auto;
+    transform: translateX(100%);
+    transition: transform 0.25s ease;
+    z-index: 1000;
+  }
+  body .ps-detail-panel.is-open {
+    transform: translateX(0);
+  }
+  body .ps-detail-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: 0.75rem;
+    margin-bottom: 1rem;
+    border-bottom: 1px solid var(--border-color);
+  }
+  body .ps-detail-title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text-primary);
+  }
+  body .ps-detail-close {
+    background: none;
+    border: none;
+    font-size: 1.4rem;
+    color: var(--text-secondary);
+    cursor: pointer;
+    line-height: 1;
+  }
+  body .ps-detail-subtitle {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin-bottom: 1rem;
+  }
+  body .ps-detail-total {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 0.75rem 0.9rem;
+    background: #f1f5f9;
+    border-radius: 0.5rem;
+    margin-bottom: 1rem;
+  }
+  body .ps-detail-total-label {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    font-weight: 600;
+  }
+  body .ps-detail-total-value {
+    font-size: 1.3rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+  body .ps-detail-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  body .ps-detail-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.65rem 0.85rem;
+    border: 1px solid var(--border-color);
+    border-radius: 0.5rem;
+    background: #fff;
+  }
+  body .ps-detail-item-name {
+    font-size: 0.88rem;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+    margin-right: 0.5rem;
+  }
+  body .ps-detail-item-rate {
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--primary-color);
+    flex-shrink: 0;
+  }
+  body .ps-detail-empty {
+    padding: 2rem 0;
+    text-align: center;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+  }
+
+  body .ps-detail-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.35);
+    z-index: 999;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s;
+  }
+  body .ps-detail-backdrop.is-open {
+    opacity: 1;
+    pointer-events: auto;
+  }
+</style>
+</head>
+<body>
+
+<div class="dashboard">
+
+  <!-- 공통 사이드바 -->
+  <div id="sidebar-mount"></div>
+
+  <div class="main-area">
+    <div class="container">
+
+      <div id="page-participation-summary" class="page active">
+
+        <header class="header">
+          <h1 class="header-title">참여율 합계</h1>
+          <p style="margin-top:0.4rem; color:var(--text-secondary); font-size:0.9rem;">
+            한 인력이 모든 과제에서 받은 월별 참여율을 합산하여 100% 초과 위험을 사전에 감지합니다.
+            <span style="margin-left:0.5rem; color:#94a3b8;">데이터 출처: project-labor</span>
+          </p>
+        </header>
+
+        <!-- 상단 컨트롤 바 -->
+        <div class="ps-toolbar">
+
+          <!-- planned / actual 토글 -->
+          <div class="ps-toolbar-group">
+            <span class="ps-toolbar-label">기준</span>
+            <div class="ps-mode-toggle" role="tablist">
+              <button type="button" class="ps-mode-btn is-active" data-mode="planned" role="tab">예상</button>
+              <button type="button" class="ps-mode-btn" data-mode="actual" role="tab">실제</button>
+            </div>
+          </div>
+
+          <div class="ps-toolbar-divider"></div>
+
+          <!-- 연도 -->
+          <div class="ps-toolbar-group">
+            <span class="ps-toolbar-label">연도</span>
+            <select id="ps-year" class="ps-year-select">
+              <!-- JS에서 옵션 채움 -->
+            </select>
+          </div>
+
+          <div class="ps-toolbar-divider"></div>
+
+          <!-- 회사 칩 -->
+          <div class="ps-toolbar-group">
+            <div class="company-chips" id="ps-company-chips">
+              <button type="button" class="company-chip is-active" data-company="">전체</button>
+              <button type="button" class="company-chip" data-company="식스티">식스티</button>
+              <button type="button" class="company-chip" data-company="굿뉴스">굿뉴스</button>
+              <button type="button" class="company-chip" data-company="패리티">패리티</button>
+            </div>
+          </div>
+
+          <div class="ps-toolbar-divider"></div>
+
+          <!-- 구분 (현금/현물) -->
+          <div class="ps-toolbar-group">
+            <span class="ps-toolbar-label">구분</span>
+            <div class="ps-type-filter" id="ps-type-filter">
+              <button type="button" class="ps-type-btn is-active" data-type="all">전체</button>
+              <button type="button" class="ps-type-btn" data-type="cash">현금</button>
+              <button type="button" class="ps-type-btn" data-type="kind">현물</button>
+            </div>
+          </div>
+
+          <!-- 대상 인력 수 (구분 옆 인라인) + 미배정 토글 -->
+          <div class="ps-toolbar-group ps-people-count" id="ps-people-count" title="현재 필터 기준 표에 표시되는 인력 수 / 전체 인력 수">
+            <span class="ps-people-count-label">대상</span>
+            <span class="ps-people-count-value" id="ps-people-count-value">—</span>
+          </div>
+          <button type="button"
+                  class="ps-unassigned-btn"
+                  id="ps-unassigned-btn"
+                  title="참여율이 한 달도 잡히지 않은 인력만 보기 (다시 누르면 해제)">
+            <span class="ps-unassigned-icon" aria-hidden="true">👻</span>
+            <span class="ps-unassigned-text">미배정만 보기</span>
+            <span class="ps-unassigned-badge" id="ps-unassigned-count" hidden>0</span>
+          </button>
+
+          <div class="ps-toolbar-divider"></div>
+
+          <!-- 이름 검색 -->
+          <div class="ps-toolbar-group" style="margin-left:auto;">
+            <input type="text" id="ps-search" class="ps-search-input" placeholder="인력 이름 검색">
+          </div>
+        </div>
+
+        <!-- 메인 표 -->
+        <div class="ps-table-wrap">
+          <table class="ps-table">
+            <thead>
+              <tr>
+                <th class="ps-th-name">이름</th>
+                <th class="ps-th-3ch5g">3책 5공</th>
+                <th class="ps-th-type">구분</th>
+                <th class="ps-th-month">1월</th>
+                <th class="ps-th-month">2월</th>
+                <th class="ps-th-month">3월</th>
+                <th class="ps-th-month">4월</th>
+                <th class="ps-th-month">5월</th>
+                <th class="ps-th-month">6월</th>
+                <th class="ps-th-month">7월</th>
+                <th class="ps-th-month">8월</th>
+                <th class="ps-th-month">9월</th>
+                <th class="ps-th-month">10월</th>
+                <th class="ps-th-month">11월</th>
+                <th class="ps-th-month">12월</th>
+                <th class="ps-th-annual">연간 평균</th>
+              </tr>
+            </thead>
+            <tbody id="ps-tbody">
+              <!-- JS에서 채움 -->
+            </tbody>
+          </table>
+        </div>
+
+      </div>
+
+    </div>
+  </div>
+
+  <!-- 우측 슬라이드 패널은 fixed로 화면에 고정되니까 dashboard/container 흐름 밖에 둔다.
+       container 안에 두면 일부 환경에서 페이지 본문 흐름에도 그려져서 빈 영역이 생긴다. -->
+  <div class="ps-detail-backdrop" id="ps-detail-backdrop"></div>
+  <aside class="ps-detail-panel" id="ps-detail-panel" aria-hidden="true">
+    <div class="ps-detail-header">
+      <div class="ps-detail-title" id="ps-detail-title">과제별 분해</div>
+      <button type="button" class="ps-detail-close" id="ps-detail-close" aria-label="닫기">×</button>
+    </div>
+    <div class="ps-detail-subtitle" id="ps-detail-subtitle">—</div>
+    <div class="ps-detail-total">
+      <span class="ps-detail-total-label">합계</span>
+      <span class="ps-detail-total-value" id="ps-detail-total">—</span>
+    </div>
+    <div class="ps-detail-list" id="ps-detail-list">
+      <div class="ps-detail-empty">셀을 클릭하면 해당 인력의 그 달 과제별 참여율 내역이 표시됩니다.</div>
+    </div>
+  </aside>
+
+<!-- Firebase / Firestore (다른 페이지들과 동일한 로드 패턴) -->
+<script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-auth-compat.js"></script>
+<script src="firebase-config.example.js"></script>
+<script src="firebase-config.js"></script>
+<script src="firebase.js"></script>
+<script src="auth-guard.js"></script>
+<script src="firestore-service.js"></script>
+<script src="sidebar.js"></script>
+<script>
+/* ============================================================
+   participation-summary.js (페이지 내 인라인 — v6.0 + Firestore 연동)
+
+   데이터: window.firestoreService 를 통해 Firestore에서 직접 로드
+     - 인력/과제 마스터: subscribePersons / subscribeProjects (실시간 구독)
+     - 인건비 셀: projectLabor 컬렉션 — {projectId}_planned, {projectId}_actual
+
+   기획서 §1.3 계산식:
+     한 인력 P의 월 M 총 참여율 =
+       Σ projects.filter(laborManaged && 연도활성)
+         → projectLabor[과제].cells[`${과제id}_${M}_${P.id}`].{cash,inkind}
+
+   구조:
+     state {
+       mode: 'planned' | 'actual',
+       year: number,
+       company: '' | '식스티' | '굿뉴스' | '패리티',
+       typeFilter: 'all' | 'cash' | 'kind',
+       search: string
+     }
+   ============================================================ */
+(function () {
+  'use strict';
+
+  // ── 상태 ─────────────────────────────────────────────
+  var state = {
+    mode: 'planned',
+    year: new Date().getFullYear(),
+    company: '',
+    typeFilter: 'all',
+    search: '',
+    showUnassigned: false   // true면 참여율이 한 달도 없는 사람만 표시
+  };
+
+  // ── 데이터 어댑터 (실제 연동 시 여기만 교체) ────────
+  // ── Firestore 데이터 어댑터 ────────────────────────
+  //
+  // 다른 페이지(project-labor.js)와 동일한 패턴을 따른다:
+  //   - 인력/과제 마스터: window.firestoreService.subscribePersons / subscribeProjects
+  //   - 인건비 셀: 컬렉션 'projectLabor', 문서 `${projectId}_planned` / `${projectId}_actual`
+  //     셀 키: `${projectId}_${ym}_${personId}` (ym = 'YYYY-MM')
+  //     셀 값: { rate, cash, inkind, memo, colors? }
+  //
+  // 한 인력의 12개월을 그리려면 모든 laborManaged 과제의 planned/actual 문서가 필요하다.
+  // 따라서 연도가 바뀌면 그 연도에 활성인 과제들의 두 문서를 한꺼번에 가져와 캐시한다.
+
+  var LABOR_COLL = 'projectLabor';
+  var _allProjects = [];   // subscribeProjects 콜백으로 채워짐
+  var _allPersons  = [];   // subscribePersons  콜백으로 채워짐
+  var _laborCache  = {};   // { [projectId]: { planned: cells, actual: cells } }
+  var _laborCacheYear = null;
+  var _laborLoading = false;
+
+  function db() {
+    return window.__firebaseDb || null;
+  }
+  function isFirestoreReady() {
+    return !!(window.__firebaseConfigured && window.__firebaseDb);
+  }
+
+  // 과제가 해당 연도에 활성인지 — project-labor.js의 isProjectActiveInYear 동일 로직
+  function isProjectActiveInYear(proj, year) {
+    if (!proj || !proj.laborManaged) return false;
+    var s = String(proj.status || '');
+    if (s.indexOf('수행') < 0) return false;
+    var yb = proj.yearBudgets || proj.budgets || [];
+    if (!Array.isArray(yb) || yb.length === 0) {
+      var start = proj.researchStart || proj.startDate || proj.submitDate || '';
+      var end   = proj.researchEnd   || proj.endDate   || '';
+      if (!start) return true;
+      var sy = parseInt(start.substring(0, 4), 10);
+      var ey = end ? parseInt(end.substring(0, 4), 10) : sy;
+      return sy <= year && year <= ey;
+    }
+    return yb.some(function (b) {
+      var bs = parseInt((b.start || b.startDate || '').substring(0, 4), 10);
+      var be = parseInt((b.end   || b.endDate   || '').substring(0, 4), 10);
+      if (!bs) return true;
+      if (!be) be = bs;
+      return bs <= year && year <= be;
+    });
+  }
+
+  // 현재 state.year에서 합산 대상이 되는 과제 목록
+  function getActiveProjects() {
+    return _allProjects.filter(function (p) {
+      return isProjectActiveInYear(p, state.year);
+    });
+  }
+
+  // 연도가 바뀌면 그 연도에 활성인 모든 과제의 planned + actual 문서를 한 번에 로드
+  function loadLaborForYear() {
+    if (!isFirestoreReady()) {
+      _laborCache = {};
+      _laborCacheYear = state.year;
+      renderTable();
+      return;
+    }
+    var year = state.year;
+    var projects = getActiveProjects();
+
+    // 캐시가 같은 연도면 재로드 생략
+    if (_laborCacheYear === year && Object.keys(_laborCache).length >= projects.length) {
+      renderTable();
+      return;
+    }
+
+    _laborLoading = true;
+    showLoading(true);
+
+    // 과제별 planned + actual + meta 문서를 모두 병렬로 가져옴
+    //   - planned/actual: cells = { `${projectId}_${ym}_${personId}`: { rate, cash, inkind, memo } }
+    //   - meta: { personRoles: { [personId]: { cashOrInkind: '현금'|'현물', ... } }, personIds, ... }
+    //   ※ 합산 시 '현금/현물' 분기는 meta.personRoles[personId].cashOrInkind 로 정해진다.
+    //     같은 사람도 과제마다 cashOrInkind 가 다를 수 있다.
+    var promises = [];
+    projects.forEach(function (proj) {
+      var docId = proj.id;
+      promises.push(
+        db().collection(LABOR_COLL).doc(docId + '_planned').get()
+          .then(function (snap) {
+            return { projectId: proj.id, kind: 'planned',
+                     cells: (snap.exists && snap.data().cells) ? snap.data().cells : {} };
+          })
+      );
+      promises.push(
+        db().collection(LABOR_COLL).doc(docId + '_actual').get()
+          .then(function (snap) {
+            return { projectId: proj.id, kind: 'actual',
+                     cells: (snap.exists && snap.data().cells) ? snap.data().cells : {} };
+          })
+      );
+      promises.push(
+        db().collection(LABOR_COLL).doc(docId + '_meta').get()
+          .then(function (snap) {
+            return { projectId: proj.id, kind: 'meta',
+                     personRoles: (snap.exists && snap.data().personRoles) ? snap.data().personRoles : {} };
+          })
+      );
+    });
+
+    Promise.all(promises).then(function (results) {
+      var cache = {};
+      results.forEach(function (r) {
+        if (!cache[r.projectId]) cache[r.projectId] = { planned: {}, actual: {}, personRoles: {} };
+        if (r.kind === 'planned')      cache[r.projectId].planned     = r.cells;
+        else if (r.kind === 'actual')  cache[r.projectId].actual      = r.cells;
+        else if (r.kind === 'meta')    cache[r.projectId].personRoles = r.personRoles;
+      });
+      _laborCache = cache;
+      _laborCacheYear = year;
+      _laborLoading = false;
+      showLoading(false);
+      renderTable();
+    }).catch(function (err) {
+      console.error('projectLabor 로드 실패:', err);
+      _laborCache = {};
+      _laborCacheYear = year;
+      _laborLoading = false;
+      showLoading(false);
+      renderTable();
+    });
+  }
+
+  function showLoading(on) {
+    var tbody = document.getElementById('ps-tbody');
+    if (!tbody) return;
+    if (on) {
+      tbody.innerHTML = '<tr><td colspan="16" class="ps-empty">데이터를 불러오는 중…</td></tr>';
+    }
+  }
+
+  // 어댑터에서 노출하는 데이터 형태 (이후 코드가 의존하는 모양)
+  function getData() {
+    return {
+      persons: _allPersons,
+      projects: getActiveProjects()
+    };
+  }
+
+  // ── 핵심 계산: 인력 × 월 → { cash, kind, breakdown } ──
+  //
+  // 기획서 §1.3 + project-labor.js 실제 데이터 모델:
+  //   - cell.rate    = 참여율 (%) — 합산 대상
+  //   - cell.cash    = 현금 인건비 금액 (원) ← 합산 대상 아님
+  //   - cell.inkind  = 현물 인건비 금액 (원) ← 합산 대상 아님
+  //   - 현금/현물 분기는 meta.personRoles[personId].cashOrInkind 로 결정
+  //   - 같은 사람이 과제마다 cashOrInkind 가 다를 수 있다
+  //
+  // 따라서:
+  //   한 인력 P의 월 M 현금 참여율 = Σ (P를 '현금'으로 잡은 과제들의 rate)
+  //   한 인력 P의 월 M 현물 참여율 = Σ (P를 '현물'으로 잡은 과제들의 rate)
+  function getPersonMonthly(personId, ym, mode) {
+    var projects = getActiveProjects();
+    var totalCash = 0, totalKind = 0;
+    var breakdown = [];
+
+    projects.forEach(function (pj) {
+      var bucket = _laborCache[pj.id];
+      if (!bucket) return;
+      var cells = (mode === 'actual') ? bucket.actual : bucket.planned;
+      if (!cells) return;
+      // 실제 키 패턴: `${projectId}_${ym}_${personId}` (project-labor.js의 getLaborKey와 동일)
+      var key = pj.id + '_' + ym + '_' + personId;
+      var cell = cells[key];
+      if (!cell) return;
+
+      var rate = +cell.rate || 0;
+      if (rate <= 0) return;
+
+      // 이 과제에서 이 사람이 '현금'인지 '현물'인지
+      var roles = bucket.personRoles || {};
+      var role  = roles[personId] || {};
+      var ci    = role.cashOrInkind === '현물' ? '현물' : '현금'; // 기본값 '현금'
+
+      if (ci === '현물') totalKind += rate;
+      else               totalCash += rate;
+
+      breakdown.push({
+        projectId: pj.id,
+        projectName: pj.name || pj.projectName || pj.id,
+        rate: rate,
+        cashOrInkind: ci
+      });
+    });
+    return { cash: totalCash, kind: totalKind, total: totalCash + totalKind, breakdown: breakdown };
+  }
+
+  // ── 색깔 코딩 (기획서 §1.2) ──────────────────────────
+  function rateClass(v) {
+    if (v <= 0) return 'ps-cell-month--empty';
+    if (v > 100) return 'ps-cell-month--over';
+    if (v === 100) return 'ps-cell-month--full';
+    if (v >= 90) return 'ps-cell-month--high';
+    if (v >= 80) return 'ps-cell-month--mid';
+    return 'ps-cell-month--low';
+  }
+
+  // ── 렌더링 ───────────────────────────────────────────
+  function ymOf(month) {
+    return state.year + '-' + (month < 10 ? '0' + month : month);
+  }
+
+  function escapeHtml(s) {
+    if (s == null) return '';
+    return String(s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function renderTable() {
+    var data = getData();
+    var tbody = document.getElementById('ps-tbody');
+    if (!tbody) return;
+
+    // 우선 활성 인력만 (status가 active이거나 status 자체가 없는 경우)
+    var activePersons = data.persons.filter(function (p) {
+      return p && (p.status === 'active' || p.status == null || p.status === '');
+    });
+
+    // 전체 인력 수 (회사 필터만 적용)
+    var totalCount = activePersons.filter(function (p) {
+      if (state.company && p.company !== state.company) return false;
+      return true;
+    }).length;
+
+    // 1) 회사 필터 + 이름 검색으로 인력 거르기
+    var people = activePersons.filter(function (p) {
+      if (state.company && p.company !== state.company) return false;
+      if (state.search && (p.name || '').indexOf(state.search) < 0) return false;
+      return true;
+    });
+
+    // 2) 각 인력의 12개월 cash/kind 계산
+    //    sumCash/sumKind = 단순 합, monthsCash/monthsKind = rate>0인 월의 개수
+    //    avg = sum / months (B방식: 참여한 월만의 평균)
+    var rows = people.map(function (p) {
+      var months = [];
+      var sumCash = 0, sumKind = 0;
+      var monthsCash = 0, monthsKind = 0;
+      for (var m = 1; m <= 12; m++) {
+        var r = getPersonMonthly(p.id, ymOf(m), state.mode);
+        months.push(r);
+        if (r.cash > 0) { sumCash += r.cash; monthsCash++; }
+        if (r.kind > 0) { sumKind += r.kind; monthsKind++; }
+      }
+      var avgCash = monthsCash > 0 ? sumCash / monthsCash : 0;
+      var avgKind = monthsKind > 0 ? sumKind / monthsKind : 0;
+      var hasAny = (sumCash > 0 || sumKind > 0);
+      return {
+        person: p, months: months,
+        sumCash: sumCash, sumKind: sumKind,
+        monthsCash: monthsCash, monthsKind: monthsKind,
+        avgCash: avgCash, avgKind: avgKind,
+        hasAny: hasAny
+      };
+    });
+
+    // 3-a) 미배정 카운트 — 회사 필터·이름 검색 기준에서 한 달도 안 잡힌 사람 수
+    //      (배지 표시용. 구분 필터·미배정 토글과 무관하게 항상 계산)
+    var unassignedCount = rows.filter(function (r) { return !r.hasAny; }).length;
+    updateUnassignedBadge(unassignedCount);
+
+    // 3-b) 표에 실제 노출할 행 결정
+    if (state.showUnassigned) {
+      // 미배정 모드: 참여율이 한 달도 없는 사람만
+      rows = rows.filter(function (r) { return !r.hasAny; });
+    } else {
+      // 기본 모드: 참여율 있는 사람만 + 구분 필터 반영
+      rows = rows.filter(function (r) {
+        if (state.typeFilter === 'cash') return r.sumCash > 0;
+        if (state.typeFilter === 'kind') return r.sumKind > 0;
+        return r.hasAny;
+      });
+    }
+
+    if (rows.length === 0) {
+      var emptyMsg = state.showUnassigned
+        ? '참여율이 없는 인력이 없습니다. (전원 한 달 이상 배정됨)'
+        : '조건에 맞는 데이터가 없습니다.';
+      tbody.innerHTML = '<tr><td colspan="16" class="ps-empty">' + emptyMsg + '</td></tr>';
+      updateCount(0, totalCount);
+      return;
+    }
+
+    // 4) 행 HTML 생성
+    var html = '';
+    rows.forEach(function (row) {
+      var p = row.person;
+
+      // 4-a) 미배정 모드: 인력마다 단일 행, 모든 월이 빈 셀
+      if (state.showUnassigned) {
+        html += '<tr class="ps-row ps-row--unassigned" data-person-id="' + escapeHtml(p.id) + '">';
+        html += '<td class="ps-cell-name">' + escapeHtml(p.name) + '</td>';
+        html += '<td class="ps-cell-3ch5g"><span class="ps-3ch5g-placeholder">—</span></td>';
+        html += '<td class="ps-cell-type ps-cell-unassigned-tag">미배정</td>';
+        for (var um = 1; um <= 12; um++) {
+          html += '<td class="ps-cell-month ps-cell-month--empty">—</td>';
+        }
+        html += '<td class="ps-cell-annual">—</td>';
+        html += '</tr>';
+        return;
+      }
+
+      // 4-b) 기본 모드: 인력마다 현금/현물 2행 (둘 다 항상 표시 — 시각 정렬)
+      //      구분 필터가 'cash'면 현금만, 'kind'면 현물만, 'all'이면 둘 다.
+      var showCash = state.typeFilter === 'all' || state.typeFilter === 'cash';
+      var showKind = state.typeFilter === 'all' || state.typeFilter === 'kind';
+      var nameCellRowspan = (showCash && showKind) ? 2 : 1;
+
+      // 현금 행
+      if (showCash) {
+        html += '<tr class="ps-row ps-row--cash" data-person-id="' + escapeHtml(p.id) + '">';
+        html += '<td class="ps-cell-name" rowspan="' + nameCellRowspan + '">' + escapeHtml(p.name) + '</td>';
+        html += '<td class="ps-cell-3ch5g" rowspan="' + nameCellRowspan + '"><span class="ps-3ch5g-placeholder">—</span></td>';
+        html += '<td class="ps-cell-type ps-cell-type--cash">현금</td>';
+        for (var m = 1; m <= 12; m++) {
+          var v = row.months[m - 1].cash;
+          var cls = rateClass(v);
+          var txt = v > 0 ? v + '%' : '—';
+          html += '<td class="ps-cell-month ' + cls + '" data-person-id="' + escapeHtml(p.id) + '" data-month="' + m + '" data-type="cash">' + txt + '</td>';
+        }
+        var annualClass = row.avgCash > 100 ? 'ps-cell-annual--over' : '';
+        var annualCashText = row.monthsCash > 0 ? (Math.round(row.avgCash) + '%') : '—';
+        html += '<td class="ps-cell-annual ' + annualClass + '">' + annualCashText + '</td>';
+        html += '</tr>';
+      }
+
+      // 현물 행 (현물 합이 0이어도 항상 표시 — 시각 정렬)
+      if (showKind) {
+        html += '<tr class="ps-row ps-row--kind" data-person-id="' + escapeHtml(p.id) + '">';
+        if (!showCash) {
+          // 구분 필터가 'kind'일 땐 위에 현금 행이 없으니 이름/3책5공 셀을 여기서 그림
+          html += '<td class="ps-cell-name">' + escapeHtml(p.name) + '</td>';
+          html += '<td class="ps-cell-3ch5g"><span class="ps-3ch5g-placeholder">—</span></td>';
+        }
+        html += '<td class="ps-cell-type ps-cell-type--kind">현물</td>';
+        for (var m2 = 1; m2 <= 12; m2++) {
+          var v2 = row.months[m2 - 1].kind;
+          var cls2 = rateClass(v2);
+          var txt2 = v2 > 0 ? v2 + '%' : '—';
+          html += '<td class="ps-cell-month ' + cls2 + '" data-person-id="' + escapeHtml(p.id) + '" data-month="' + m2 + '" data-type="kind">' + txt2 + '</td>';
+        }
+        var annualClass2 = row.avgKind > 100 ? 'ps-cell-annual--over' : '';
+        var annualKindText = row.monthsKind > 0 ? (Math.round(row.avgKind) + '%') : '—';
+        html += '<td class="ps-cell-annual ' + annualClass2 + '">' + annualKindText + '</td>';
+        html += '</tr>';
+      }
+    });
+    tbody.innerHTML = html;
+
+    updateCount(rows.length, totalCount);
+    bindCellClicks();
+  }
+
+  function updateCount(visibleCount, totalCount) {
+    var el = document.getElementById('ps-people-count-value');
+    if (!el) return;
+    var pct = totalCount > 0 ? Math.round((visibleCount / totalCount) * 100) : 0;
+    el.textContent = visibleCount + '/' + totalCount + '명 (' + pct + '%)';
+  }
+
+  function updateUnassignedBadge(count) {
+    var badge = document.getElementById('ps-unassigned-count');
+    if (!badge) return;
+    if (count > 0) {
+      badge.textContent = count;
+      badge.hidden = false;
+    } else {
+      badge.hidden = true;
+    }
+  }
+
+  // ── 셀 클릭 → 우측 패널에 과제별 분해 ────────────────
+  function bindCellClicks() {
+    var cells = document.querySelectorAll('#ps-tbody .ps-cell-month');
+    cells.forEach(function (cell) {
+      if (cell.classList.contains('ps-cell-month--empty')) return;
+      cell.addEventListener('click', function () {
+        var personId = cell.getAttribute('data-person-id');
+        var month = +cell.getAttribute('data-month');
+        var type = cell.getAttribute('data-type');
+        openDetail(personId, month, type);
+      });
+    });
+  }
+
+  function openDetail(personId, month, type) {
+    var data = getData();
+    var person = data.persons.find(function (p) { return p.id === personId; });
+    if (!person) return;
+    var ym = ymOf(month);
+    var r = getPersonMonthly(personId, ym, state.mode);
+
+    document.getElementById('ps-detail-title').textContent = person.name + ' · ' + month + '월';
+    var modeLabel = state.mode === 'actual' ? '실제' : '예상';
+    var typeLabel = type === 'cash' ? '현금' : (type === 'kind' ? '현물' : '전체');
+    document.getElementById('ps-detail-subtitle').textContent =
+      state.year + '년 · ' + modeLabel + ' · ' + typeLabel + ' 기준';
+
+    var totalValue = type === 'cash' ? r.cash : (type === 'kind' ? r.kind : r.total);
+    document.getElementById('ps-detail-total').textContent = totalValue + '%';
+    document.getElementById('ps-detail-total').style.color =
+      totalValue > 100 ? '#dc2626' : 'var(--text-primary)';
+
+    var list = document.getElementById('ps-detail-list');
+    // 클릭한 type(cash/kind)에 해당하는 과제만 분해 표시
+    //   - 한 과제 안에서 그 사람의 cashOrInkind 가 type과 일치할 때만 보여줌
+    var items = r.breakdown.filter(function (b) {
+      if (type === 'cash') return b.cashOrInkind === '현금';
+      if (type === 'kind') return b.cashOrInkind === '현물';
+      return true;
+    });
+    if (items.length === 0) {
+      list.innerHTML = '<div class="ps-detail-empty">해당 월에 참여한 과제가 없습니다.</div>';
+    } else {
+      list.innerHTML = items.map(function (b) {
+        return '<div class="ps-detail-item">' +
+                 '<div class="ps-detail-item-name">' + escapeHtml(b.projectName) + '</div>' +
+                 '<div class="ps-detail-item-rate">' + b.rate + '%</div>' +
+               '</div>';
+      }).join('');
+    }
+
+    document.getElementById('ps-detail-panel').classList.add('is-open');
+    document.getElementById('ps-detail-backdrop').classList.add('is-open');
+  }
+
+  function closeDetail() {
+    document.getElementById('ps-detail-panel').classList.remove('is-open');
+    document.getElementById('ps-detail-backdrop').classList.remove('is-open');
+  }
+
+  // ── 컨트롤 바인딩 ────────────────────────────────────
+  function initYearSelect() {
+    var sel = document.getElementById('ps-year');
+    var now = new Date().getFullYear();
+    var html = '';
+    for (var y = now - 2; y <= now + 2; y++) {
+      html += '<option value="' + y + '"' + (y === state.year ? ' selected' : '') + '>' + y + '년</option>';
+    }
+    sel.innerHTML = html;
+    sel.addEventListener('change', function () {
+      state.year = +sel.value;
+      _laborCache = {};        // 연도가 바뀌면 인건비 캐시 무효화
+      _laborCacheYear = null;
+      loadLaborForYear();      // 새 연도 데이터 로드 후 자동 renderTable
+    });
+  }
+
+  function bindControls() {
+    // mode toggle
+    document.querySelectorAll('.ps-mode-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        document.querySelectorAll('.ps-mode-btn').forEach(function (b) { b.classList.remove('is-active'); });
+        btn.classList.add('is-active');
+        state.mode = btn.getAttribute('data-mode');
+        renderTable();
+      });
+    });
+
+    // company chips
+    document.querySelectorAll('#ps-company-chips .company-chip').forEach(function (chip) {
+      chip.addEventListener('click', function () {
+        document.querySelectorAll('#ps-company-chips .company-chip').forEach(function (c) { c.classList.remove('is-active'); });
+        chip.classList.add('is-active');
+        state.company = chip.getAttribute('data-company') || '';
+        renderTable();
+      });
+    });
+
+    // type filter
+    document.querySelectorAll('#ps-type-filter .ps-type-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        document.querySelectorAll('#ps-type-filter .ps-type-btn').forEach(function (b) { b.classList.remove('is-active'); });
+        btn.classList.add('is-active');
+        state.typeFilter = btn.getAttribute('data-type');
+        renderTable();
+      });
+    });
+
+    // search
+    var searchInput = document.getElementById('ps-search');
+    var searchTimer = null;
+    searchInput.addEventListener('input', function () {
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(function () {
+        state.search = searchInput.value.trim();
+        renderTable();
+      }, 150);
+    });
+
+    // 미배정 인력 토글
+    var unassignedBtn = document.getElementById('ps-unassigned-btn');
+    if (unassignedBtn) {
+      unassignedBtn.addEventListener('click', function () {
+        state.showUnassigned = !state.showUnassigned;
+        unassignedBtn.classList.toggle('is-active', state.showUnassigned);
+        renderTable();
+      });
+    }
+
+    // detail panel close
+    document.getElementById('ps-detail-close').addEventListener('click', closeDetail);
+    document.getElementById('ps-detail-backdrop').addEventListener('click', closeDetail);
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') closeDetail();
+    });
+  }
+
+  // ── 초기화 ───────────────────────────────────────────
+  //
+  // 흐름:
+  //   1. UI 컨트롤 바인딩
+  //   2. firestoreService 가용성 체크
+  //   3. subscribeProjects / subscribePersons 시작 — 콜백마다 _allProjects/_allPersons 갱신 후 재로드
+  //   4. 첫 데이터가 들어오면 loadLaborForYear가 인건비 문서 가져와 renderTable
+  function init() {
+    initYearSelect();
+    bindControls();
+
+    if (!window.firestoreService) {
+      // 의존 스크립트 누락 — 안내 후 종료
+      var tbody = document.getElementById('ps-tbody');
+      if (tbody) {
+        tbody.innerHTML = '<tr><td colspan="16" class="ps-empty">' +
+          'firestoreService를 불러올 수 없습니다. ' +
+          'firebase-config.js / firebase.js / firestore-service.js 로드 상태를 확인하세요.</td></tr>';
+      }
+      return;
+    }
+
+    showLoading(true);
+
+    // 과제 마스터 구독 — 변경 시 인건비도 다시 로드
+    window.firestoreService.subscribeProjects(function (projects) {
+      _allProjects = Array.isArray(projects) ? projects : [];
+      loadLaborForYear();
+    });
+
+    // 인력 마스터 구독 — 변경 시 표만 다시 렌더 (인건비 재로드는 불필요)
+    window.firestoreService.subscribePersons(function (persons) {
+      _allPersons = Array.isArray(persons) ? persons : [];
+      // 인건비 캐시가 비어있는 첫 진입에선 loadLaborForYear가 아직 끝나지 않았을 수 있어
+      // 그 경우엔 그대로 두고, 이미 캐시가 있다면 즉시 재렌더
+      if (_laborCacheYear === state.year) {
+        renderTable();
+      }
+    });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+
+  // 외부 공개 (디버깅/콘솔 호출용)
+  window.participationSummary = {
+    refresh:    renderTable,
+    reload:     function () { _laborCache = {}; _laborCacheYear = null; loadLaborForYear(); },
+    state:      state,
+    getPersonMonthly: getPersonMonthly
+  };
+})();
+</script>
+
+</body>
+</html>

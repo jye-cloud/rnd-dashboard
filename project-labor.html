@@ -194,43 +194,39 @@
     .pl-tab-content { display: none; }
     .pl-tab-content.is-active { display: block; }
 
-    /* 비교 탭 옵션 행 */
-    .pl-compare-options {
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-      margin-bottom: 0.75rem;
-    }
-    .history-toggle-chip {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.4rem;
-      padding: 0.4rem 0.75rem;
-      background: linear-gradient(135deg, #ecfeff 0%, #cffafe 100%);
-      border: 1px solid #67e8f9;
-      border-radius: 999px;
-      cursor: pointer;
-      font-size: 0.82rem;
-      color: #0e7490;
-      user-select: none;
-      transition: all 0.15s ease;
-      white-space: nowrap;
-    }
-    .history-toggle-chip:hover { border-color: #22d3ee; }
-    .history-toggle-chip.is-active {
-      background: linear-gradient(135deg, #cffafe 0%, #a5f3fc 100%);
-      border-color: #0891b2; color: #155e75; font-weight: 600;
-    }
-    .history-toggle-chip input { cursor: pointer; accent-color: #0891b2; margin: 0; }
-
     /* ========== 테이블 래퍼 ========== */
+    /* v5.3: 엑셀 틀 고정 효과
+       - max-height: 70vh로 wrap을 화면 안에 가두기 → 가로 스크롤바가 wrap 하단에 항상 보임
+       - overflow-y: auto로 인력 행이 많으면 세로 스크롤도 생김
+       - thead/tfoot은 sticky로 고정 (아래쪽 CSS) → 헤더와 합계 행이 화면에 항상 보임
+       - 세로 스크롤이 생겨도 가로 스크롤바는 항상 wrap 하단에 위치 → 어느 인력 행을 보든 즉시 접근 가능 */
     .pl-table-wrap {
-      overflow-x: auto;
+      overflow: auto;
+      max-height: 70vh;
       border: 1px solid var(--border-color, #e5e7eb);
       border-radius: 0.75rem;
       box-shadow: var(--shadow-sm, 0 1px 3px rgba(0,0,0,0.04));
       background: var(--card-bg, #fff);
     }
+
+    /* v5.3: thead/tfoot sticky — 엑셀 틀 고정 */
+    .pl-table thead th {
+      position: sticky;
+      top: 0;
+      z-index: 3;
+      background: #f1f5f9;
+    }
+    .pl-table tfoot td {
+      position: sticky;
+      bottom: 0;
+      z-index: 3;
+      background: #f8fafc;
+    }
+    /* sticky 컬럼(좌/우)과 sticky 행(thead/tfoot) 교차 모서리 — z-index 더 높게.
+       thead th.pl-sticky-*는 아래쪽에서 z-index: 4로 통합 정의됨 */
+    .pl-table tfoot td.pl-sticky-left,
+    .pl-table tfoot td.pl-sticky-right-0,
+    .pl-table tfoot td.pl-sticky-right-1 { z-index: 4; }
 
     /* ========== 메인 테이블 ========== */
     .pl-table {
@@ -239,11 +235,91 @@
       font-size: 0.82rem;
       table-layout: fixed;
     }
-    .pl-table colgroup col.col-name   { width: 115px; }
-    .pl-table colgroup col.col-salary { width: 82px; }
-    .pl-table colgroup col.col-rate   { width: 60px; }
-    .pl-table colgroup col.col-cash   { width: 78px; }
-    .pl-table colgroup col.col-inkind { width: 60px; }
+    .pl-table colgroup col.col-name   { width: 160px; }
+    .pl-table colgroup col.col-salary { width: 105px; }
+    .pl-table colgroup col.col-rate   { width: 64px; }
+    .pl-table colgroup col.col-cash   { width: 92px; }
+    .pl-table colgroup col.col-inkind { width: 88px; }
+    /* v5 Step 3: 접힌 월 컬럼 */
+    .pl-table colgroup col.col-collapsed { width: 26px; }
+    /* v5.3: 우측 합계 컬럼 (현금/현물 각 1) */
+    .pl-table colgroup col.col-total-cash   { width: 100px; }
+    .pl-table colgroup col.col-total-inkind { width: 100px; }
+
+    /* v5.3: sticky 컬럼 — 이름(첫째), 합계 현금(끝-1), 합계 현물(끝)
+       - position: sticky가 td/th에 작동하려면 table border-collapse: separate 필요.
+       - 기존 테이블은 border-collapse 미지정 → 브라우저 기본(separate). OK.
+       - z-index: 일반 셀(자동) < sticky 셀 (1) < thead sticky 셀 (2) < 좌상단 코너 (3)
+    */
+    .pl-table thead th.pl-sticky-left,
+    .pl-table tbody td.pl-sticky-left,
+    .pl-table tfoot td.pl-sticky-left {
+      position: sticky;
+      left: 0;
+      z-index: 1;
+      background: #fafafa;
+    }
+    .pl-table thead th.pl-sticky-right-1,
+    .pl-table tbody td.pl-sticky-right-1 {
+      position: sticky;
+      right: 100px;
+      z-index: 1;
+      background: #fafafa;
+      border-left: 2px solid #e2e8f0;
+    }
+    /* v5.3: tfoot은 우측+하단 양방향 sticky — 한 규칙에 같이 선언 (분리 시 일부 브라우저에서 right 무시) */
+    .pl-table tfoot td.pl-sticky-right-1 {
+      position: sticky !important;
+      right: 100px !important;
+      bottom: 0 !important;
+      z-index: 4;
+      background: #f8fafc;
+      border-left: 2px solid #e2e8f0;
+    }
+
+    .pl-table thead th.pl-sticky-right-0,
+    .pl-table tbody td.pl-sticky-right-0 {
+      position: sticky;
+      right: 0;
+      z-index: 1;
+      background: #fafafa;
+    }
+    /* v5.3: tfoot은 우측+하단 양방향 sticky */
+    .pl-table tfoot td.pl-sticky-right-0 {
+      position: sticky !important;
+      right: 0 !important;
+      bottom: 0 !important;
+      z-index: 4;
+      background: #f8fafc;
+    }
+    /* 좌측 sticky의 tfoot 셀도 양방향 (좌+하단) */
+    .pl-table tfoot td.pl-sticky-left {
+      position: sticky !important;
+      left: 0 !important;
+      bottom: 0 !important;
+      z-index: 4;
+      background: #f8fafc;
+    }
+    /* thead의 sticky 셀은 z 더 높게 (스크롤 시 위로 떠야)
+       v5.3: 틀고정으로 z-index 4 사용 (thead/tfoot=3과 교차 시 위에 떠야 함) */
+    .pl-table thead th.pl-sticky-left,
+    .pl-table thead th.pl-sticky-right-0,
+    .pl-table thead th.pl-sticky-right-1 { z-index: 4; }
+    /* 우측 합계 셀 — 데이터 행 */
+    .pl-table tbody td.pl-cell-total {
+      background: #f8fafc;
+      font-weight: 600;
+      text-align: right;
+      padding: 0.55rem 0.7rem;
+      color: var(--text-primary, #1e293b);
+      font-size: 0.82rem;
+    }
+    .pl-table tbody tr:hover td.pl-cell-total { background: #f1f5f9; }
+    /* 우측 합계 헤더 */
+    .pl-table thead th.pl-th-total {
+      background: #f1f5f9;
+      font-weight: 700;
+    }
 
     /* 월 헤더 행 — 회색 톤 통일 */
     .pl-table thead tr.pl-thead-month th {
@@ -272,16 +348,265 @@
     }
     .pl-table thead tr.pl-thead-month th.month-sep { border-right: 2px solid #d1d9e0 !important; }
 
-    /* 월 헤더 체크박스 */
+    /* 월 헤더 메타 영역 */
     .pl-month-meta {
       display: flex; align-items: center; justify-content: center;
       gap: 0.5rem; margin-top: 0.3rem;
     }
-    .pl-month-meta label {
-      display: inline-flex; align-items: center; gap: 0.2rem;
-      font-size: 0.63rem; color: #94a3b8; cursor: pointer; white-space: nowrap;
+    /* v5.1: 월 확정 버튼 (예상 탭에서만) */
+    .pl-month-confirm-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.2rem;
+      padding: 0.18rem 0.5rem;
+      border-radius: 0.3rem;
+      border: 1px solid #cbd5e1;
+      background: #fff;
+      color: #475569;
+      font-size: 0.68rem;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      transition: all 0.12s;
+      white-space: nowrap;
+      line-height: 1;
     }
-    .pl-month-meta input[type="checkbox"] { width: 11px; height: 11px; accent-color: #64748b; cursor: pointer; }
+    .pl-month-confirm-btn:hover {
+      background: #eff6ff;
+      border-color: #2563eb;
+      color: #1d4ed8;
+    }
+    /* v5.2: 확정 = 청록 (현금 셀렉트 연초록·지급 에메랄드와 색 분리) */
+    .pl-month-confirm-btn.is-confirmed {
+      background: #cffafe;
+      border-color: #67e8f9;
+      color: #155e75;
+    }
+    .pl-month-confirm-btn.is-confirmed:hover {
+      background: #a5f3fc;
+      border-color: #22d3ee;
+    }
+    .pl-confirm-icon { font-weight: 700; }
+
+    /* v5.1+v5.2: 실제 탭의 확정 표식 (작은 청록 뱃지) */
+    .pl-month-confirm-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.1rem 0.4rem;
+      border-radius: 0.3rem;
+      background: #cffafe;
+      color: #155e75;
+      font-size: 0.66rem;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+    }
+
+    /* v5.2 신규: 지급 완료 버튼 (실제 탭, 확정된 월에만 노출) */
+    .pl-month-paid-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.2rem;
+      padding: 0.18rem 0.5rem;
+      border-radius: 0.3rem;
+      border: 1px solid #cbd5e1;
+      background: #fff;
+      color: #475569;
+      font-size: 0.68rem;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      transition: all 0.12s;
+      white-space: nowrap;
+      line-height: 1;
+    }
+    .pl-month-paid-btn:hover {
+      background: #ecfdf5;
+      border-color: #059669;
+      color: #047857;
+    }
+    /* v5.2 신규: 지급 완료 뱃지 (에메랄드 — 옅은 현금 셀렉트와 위계 분리) */
+    .pl-month-paid-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.1rem 0.4rem;
+      border-radius: 0.3rem;
+      background: #a7f3d0;
+      color: #065f46;
+      border: 1px solid #6ee7b7;
+      font-size: 0.66rem;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+      cursor: pointer;          /* 클릭 시 지급일 수정 / 취소 가능 */
+    }
+    .pl-month-paid-badge:hover {
+      background: #6ee7b7;
+    }
+
+    /* v5.2 신규: 인력 행 hover 시 ✕ 삭제 버튼 노출 */
+    .pl-row-remove-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 0;                  /* v5.3: 평소엔 자리 차지 안 함 (이름 ellipsis 방지) */
+      height: 1.1rem;
+      margin-left: 0;
+      border: none;
+      background: transparent;
+      color: #94a3b8;
+      font-size: 0.95rem;
+      line-height: 1;
+      cursor: pointer;
+      border-radius: 0.2rem;
+      opacity: 0;
+      overflow: hidden;
+      transition: opacity 0.12s, background 0.12s, color 0.12s, width 0.12s, margin 0.12s;
+      font-family: inherit;
+      padding: 0;
+      flex-shrink: 0;
+    }
+    .pl-table tbody tr:hover .pl-row-remove-btn {
+      opacity: 1;
+      width: 1.1rem;             /* hover 시 정상 너비 */
+      margin-left: 0.35rem;
+    }
+    .pl-row-remove-btn:hover {
+      background: #fee2e2;
+      color: #b91c1c;
+    }
+
+    /* v5.3 Step 4.8: 행 드래그 핸들 (인력 순서 변경)
+       - 평소엔 숨김, 이름 셀 hover 시 노출 (제거 버튼과 동일한 패턴)
+       - 이름 앞에 위치, 살짝 회색
+       - 드래그 시작/대상 행에 시각 피드백 */
+    .pl-row-drag-handle {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 0;              /* v5.3: 평소엔 자리 차지 안 함 (이름 ellipsis 방지) */
+      height: 1.1rem;
+      margin-right: 0;
+      color: #cbd5e1;
+      font-size: 0.95rem;
+      line-height: 1;
+      cursor: grab;
+      border-radius: 0.2rem;
+      opacity: 0;
+      overflow: hidden;       /* width 0일 때 ≡ 글자 안 보이게 */
+      transition: opacity 0.12s, color 0.12s, background 0.12s, width 0.12s, margin 0.12s;
+      user-select: none;
+      flex-shrink: 0;
+    }
+    .pl-table tbody tr:hover .pl-row-drag-handle {
+      opacity: 1;
+      width: 1.1rem;          /* hover 시 정상 너비 */
+      margin-right: 0.35rem;
+    }
+    .pl-row-drag-handle:hover { color: #475569; background: #f1f5f9; }
+    .pl-row-drag-handle:active { cursor: grabbing; }
+    /* 드래그 중인 행 — 살짝 투명 */
+    .pl-table tbody tr.is-dragging { opacity: 0.4; }
+    /* v5.3: drop 표시선 — 행 위 또는 아래에 굵은 파란 선 하나만.
+       이전 버전(inset + 외부 그림자 양쪽)은 어디로 떨어질지 시각적으로 헷갈렸음.
+       단방향 외부 그림자만 사용. */
+    .pl-table tbody tr.is-drop-above > td { box-shadow: 0 -3px 0 0 #2563eb; }
+    .pl-table tbody tr.is-drop-below > td { box-shadow: 0  3px 0 0 #2563eb; }
+
+    /* v5.2 Step 4.6: 셀 우클릭 컨텍스트 메뉴 (가로 채우기) */
+    .pl-ctx-menu {
+      position: fixed;
+      z-index: 9999;
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 0.4rem;
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18);
+      padding: 0.25rem;
+      min-width: 220px;
+      font-size: 0.78rem;
+      animation: pl-ctx-fade-in 0.08s ease-out;
+    }
+    @keyframes pl-ctx-fade-in {
+      from { opacity: 0; transform: translateY(-2px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .pl-ctx-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.6rem;
+      width: 100%;
+      padding: 0.45rem 0.6rem;
+      border: none;
+      background: transparent;
+      color: #1e293b;
+      font-family: inherit;
+      font-size: 0.78rem;
+      text-align: left;
+      cursor: pointer;
+      border-radius: 0.3rem;
+      transition: background 0.1s;
+    }
+    .pl-ctx-item:hover { background: #f1f5f9; }
+    /* v5.3: 메뉴 섹션 타이틀 (예: '버림') — 비-인터랙티브 라벨 */
+    .pl-ctx-section-title {
+      padding: 0.35rem 0.6rem 0.2rem;
+      font-size: 0.68rem;
+      font-weight: 700;
+      color: #94a3b8;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    /* v5.3: 메뉴 섹션 구분선 */
+    .pl-ctx-divider {
+      height: 1px;
+      background: #e2e8f0;
+      margin: 0.3rem 0.4rem;
+    }
+    /* v5.3: 글자색 팔레트 — 메뉴 안에 작은 색 견본 4개 가로로 */
+    .pl-ctx-color-row {
+      display: flex;
+      gap: 0.25rem;
+      padding: 0.25rem 0.4rem 0.4rem;
+    }
+    .pl-ctx-color-btn {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0.3rem;
+      border: 1px solid #e2e8f0;
+      background: #fff;
+      cursor: pointer;
+      border-radius: 0.3rem;
+      transition: background 0.1s, border-color 0.1s;
+      font-family: inherit;
+    }
+    .pl-ctx-color-btn:hover {
+      background: #f1f5f9;
+      border-color: #cbd5e1;
+    }
+    .pl-ctx-color-swatch {
+      display: inline-block;
+      font-size: 0.95rem;
+      font-weight: 700;
+      line-height: 1;
+    }
+    .pl-ctx-color-default {
+      color: #1e293b;
+      text-decoration: line-through;   /* '기본'은 색 제거를 의미하므로 취소선 */
+      text-decoration-color: #94a3b8;
+    }
+    .pl-ctx-kbd {
+      display: inline-block;
+      padding: 0.05rem 0.35rem;
+      background: #f1f5f9;
+      border: 1px solid #e2e8f0;
+      border-radius: 0.25rem;
+      color: #64748b;
+      font-size: 0.66rem;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-weight: 600;
+      white-space: nowrap;
+    }
 
     /* 서브 헤더 행 (참여율/현금/현물) */
     .pl-table thead tr.pl-thead-sub th {
@@ -320,13 +645,20 @@
       border-right: 2px solid #e2e8f0;
     }
     .pl-td-name { font-weight: 600; color: var(--text-primary, #1e293b); font-size: 0.85rem; }
-    /* 이름 + 뱃지 인라인 한 줄 */
+    /* 이름 + 뱃지 인라인 한 줄 — v5.3: flex-wrap 제거 (✕ 버튼이 줄바꿈되는 문제) */
     .pl-name-row {
-      display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap;
+      display: flex; align-items: center; gap: 0.4rem;
       padding: 0.1rem 0;
+      overflow: hidden;   /* 너비 초과 시 자르기 */
     }
-    .pl-name-text { white-space: nowrap; }
-    .pl-name-badges-inline { display: flex; gap: 0.25rem; flex-wrap: wrap; }
+    .pl-name-text {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;   /* 너무 긴 이름은 ...으로 자름 */
+      min-width: 0;              /* flex 자식 ellipsis가 작동하려면 필요 */
+    }
+    /* 뱃지/✕는 줄이지 않음 */
+    .pl-name-badges-inline { display: flex; gap: 0.25rem; flex-shrink: 0; }
     /* 구형 호환 (비교탭 등) */
     .pl-name-badges { display: flex; gap: 0.25rem; flex-wrap: wrap; margin-top: 0.2rem; }
     .pl-badge {
@@ -339,7 +671,124 @@
     .pl-td-salary {
       font-size: 0.78rem; color: var(--text-secondary, #64748b);
       text-align: right; font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+      padding: 0.3rem 0.4rem !important;
     }
+    /* v5.2: 월급 input — 예상 탭에서 인라인 편집 */
+    .pl-salary-input {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 0.25rem 0.4rem;
+      font-size: 0.78rem;
+      font-family: inherit;
+      font-variant-numeric: tabular-nums;
+      color: var(--text-secondary, #64748b);
+      background: transparent;
+      border: 1px solid transparent;
+      border-radius: 0.25rem;
+      text-align: right;
+      transition: background 0.1s, border-color 0.1s;
+    }
+    .pl-salary-input:hover {
+      background: #f8fafc;
+      border-color: #e2e8f0;
+    }
+    .pl-salary-input:focus {
+      outline: none;
+      background: #fff;
+      border-color: #3b82f6;
+      box-shadow: 0 0 0 2px rgba(59,130,246,0.15);
+      color: var(--text-primary, #1e293b);
+    }
+    .pl-salary-input::placeholder {
+      color: #cbd5e1;
+      font-style: italic;
+    }
+    /* 오버라이드 적용 중 — 파란 강조 */
+    .pl-salary-input.is-override {
+      color: #1d4ed8;
+      font-weight: 600;
+      background: #eff6ff;
+    }
+    .pl-salary-input.is-override:hover {
+      background: #dbeafe;
+    }
+    /* 실제/비교 탭 read-only 셀의 오버라이드 표시 */
+    .pl-salary-cell--override {
+      color: #1d4ed8 !important;
+      font-weight: 600;
+    }
+
+    /* v5 Step 4: 인력 분류 드롭다운 (personRoles) */
+    .pl-role-controls {
+      display: flex; gap: 0.3rem; margin-top: 0.3rem;
+      flex-wrap: nowrap;
+    }
+    .pl-role-select {
+      font-size: 0.7rem;
+      font-family: inherit;
+      color: #475569;
+      background: #fff;
+      border: 1px solid #d1d9e0;
+      border-radius: 4px;
+      padding: 0.15rem 1.1rem 0.15rem 0.4rem;
+      height: 24px;
+      cursor: pointer;
+      appearance: none;
+      -webkit-appearance: none;
+      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='%2364748b' d='M0 0l5 6 5-6z'/></svg>");
+      background-repeat: no-repeat;
+      background-position: right 0.3rem center;
+      font-weight: 500;
+    }
+    .pl-role-select:hover  { border-color: #94a3b8; }
+    .pl-role-select:focus  { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59,130,246,0.15); }
+
+    /* 선택값별 색 분리 (v5 Step 4 - 피드백 #1) */
+    /* 기존/신규 — 기존=회색(중립), 신규=보라(강조) */
+    .pl-role-select.is-existing { background-color: #f1f5f9; color: #475569; border-color: #cbd5e1; }
+    .pl-role-select.is-new      { background-color: #ede9fe; color: #6d28d9; border-color: #c4b5fd; }
+    /* 현금/현물 — 현금=초록(돈), 현물=주황(자원) */
+    .pl-role-select.is-cash     { background-color: #dcfce7; color: #15803d; border-color: #86efac; }
+    .pl-role-select.is-inkind   { background-color: #fef3c7; color: #b45309; border-color: #fcd34d; }
+
+    /* 화살표 색도 톤 맞춰서 — 보라/초록/주황은 진한 색 화살표가 자연스러움 */
+    .pl-role-select.is-new {
+      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='%236d28d9' d='M0 0l5 6 5-6z'/></svg>");
+    }
+    .pl-role-select.is-cash {
+      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='%2315803d' d='M0 0l5 6 5-6z'/></svg>");
+    }
+    .pl-role-select.is-inkind {
+      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='%23b45309' d='M0 0l5 6 5-6z'/></svg>");
+    }
+
+    /* subRole 자유 텍스트 (신규일 때만) */
+    .pl-subrole-row {
+      display: flex; align-items: center; gap: 0.25rem;
+      margin-top: 0.25rem;
+    }
+    .pl-subrole-prefix {
+      color: #94a3b8; font-size: 0.75rem; line-height: 1;
+      user-select: none;
+    }
+    .pl-subrole-input {
+      flex: 1; min-width: 0;
+      font-size: 0.7rem;
+      font-family: inherit;
+      color: #475569;
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 4px;
+      padding: 0.2rem 0.4rem;
+      height: 22px;
+    }
+    .pl-subrole-input:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59,130,246,0.15); }
+    .pl-subrole-input::placeholder { color: #cbd5e1; font-size: 0.66rem; }
+
+    /* 퇴사자 행에서도 분류는 편집 가능 (시각만 흐리게) */
+    .pl-row--exited .pl-role-controls,
+    .pl-row--exited .pl-subrole-row { opacity: 0.7; }
 
     /* 입력 셀 */
     .pl-cell-input {
@@ -360,13 +809,18 @@
     .pl-cell-input.rate-warn   { color: #854d0e; background: #fefce8; }
     .pl-cell-input.rate-danger { color: #991b1b; background: #fef2f2; font-weight: 700; }
 
-    /* 퇴사자 행 */
-    .pl-row--exited td { opacity: 0.42; }
-    .pl-row--exited td.td-fixed { opacity: 1; }
-    .pl-row--exited .pl-cell-input { background: #f8fafc; cursor: not-allowed; }
+    /* 퇴사자 행 — v5.3: 행 전체를 막던 레거시 규칙 제거.
+       이제 잠금은 월별로 .pl-cell--inactive로만 표현됨 (퇴사월 이후/입사월 이전).
+       퇴사자 표시는 이름 칸의 '퇴사' 뱃지로 충분. */
 
     /* 비활성 셀 */
-    .pl-cell--inactive .pl-cell-input { background: #f8fafc; cursor: not-allowed; color: #cbd5e1; }
+    /* v5.3: inactive 셀 — td 전체에 회색 배경 (이전엔 input 안만 회색이라 형광펜처럼 보였음) */
+    .pl-cell--inactive { background: #f1f5f9; }
+    .pl-cell--inactive .pl-cell-input {
+      background: transparent;   /* td 배경 보이게 */
+      cursor: not-allowed;
+      color: #cbd5e1;
+    }
 
     /* 메모 (빨간 글씨) */
     .pl-memo-text {
@@ -408,14 +862,26 @@
     .pl-table tr.pl-row-diff td.diff-neg  { color: #991b1b; }
     .pl-table tr.pl-row-diff td.diff-zero { color: #94a3b8; }
 
-    /* 행 구분 라벨 (예상/실제/차이) */
+    /* 행 구분 라벨 (예상/실제/차이) — v5.1 활성화 */
     .pl-row-type-label {
-      display: inline-block; font-size: 0.65rem; font-weight: 600;
-      padding: 0.1rem 0.35rem; border-radius: 0.2rem; margin-left: 0.3rem; vertical-align: middle;
+      display: inline-block;
+      font-size: 0.72rem; font-weight: 700;
+      padding: 0.15rem 0.55rem;
+      border-radius: 0.3rem;
+      letter-spacing: -0.01em;
+      min-width: 32px;
+      text-align: center;
     }
     .pl-row-type-label--planned { background: #e2e8f0; color: #475569; }
     .pl-row-type-label--actual  { background: #dcfce7; color: #166534; }
     .pl-row-type-label--diff    { background: #fef9c3; color: #854d0e; }
+    /* compare 탭의 두번째 컬럼 (구분/라벨) */
+    .pl-table tbody td.pl-td-row-labels {
+      text-align: center;
+      padding: 0.5rem 0.5rem;
+      background: #fafafa;
+      border-right: 2px solid #e2e8f0;
+    }
 
     /* 빈 상태 */
     .pl-empty {
@@ -453,6 +919,67 @@
       font-size: 0.75rem; font-weight: 600; color: var(--text-secondary);
       text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 0.5rem;
     }
+
+    /* v5.2: 이미 추가된 인력 — 접기/펼치기 헤더 */
+    .pl-modal-added-toggle {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      width: 100%;
+      padding: 0.5rem 0.65rem;
+      margin-bottom: 0.5rem;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 0.4rem;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--text-secondary, #64748b);
+      text-align: left;
+      transition: background 0.12s, border-color 0.12s;
+    }
+    .pl-modal-added-toggle:hover {
+      background: #f1f5f9;
+      border-color: #cbd5e1;
+    }
+    .pl-modal-added-toggle-icon {
+      display: inline-block;
+      transition: transform 0.18s ease;
+      font-size: 0.6rem;
+      color: #94a3b8;
+      flex-shrink: 0;
+    }
+    .pl-modal-added-toggle.is-expanded .pl-modal-added-toggle-icon {
+      transform: rotate(90deg);
+    }
+    .pl-modal-added-toggle-label {
+      flex: 1;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .pl-modal-added-toggle-count {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 1.4rem;
+      height: 1.2rem;
+      padding: 0 0.4rem;
+      background: #e2e8f0;
+      color: #475569;
+      border-radius: 999px;
+      font-size: 0.7rem;
+      font-weight: 700;
+    }
+    .pl-modal-added-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+      margin-bottom: 0.75rem;
+    }
+    /* v5.3 버그픽스: display:flex가 hidden 속성을 무력화하므로 명시적으로 덮어씀.
+       이게 없으면 JS에서 addedList.hidden = true 해도 계속 보임. */
+    .pl-modal-added-list[hidden] { display: none; }
     .pl-modal-footer {
       display: flex; justify-content: flex-end; gap: 0.5rem;
       padding: 0.85rem 1.25rem; border-top: 1px solid var(--border-color); background: #f9fafb;
@@ -477,6 +1004,39 @@
       cursor: pointer; padding: 0.2rem 0.4rem; border-radius: 0.3rem; display: none;
     }
     .pl-modal-search-clear:hover { background: #f1f5f9; }
+
+    /* v5.2: 퇴사자 포함 토글 (모달) */
+    .pl-modal-include-exited {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      margin: -0.5rem 0 0.85rem 0.1rem;
+      padding: 0.25rem 0.5rem;
+      cursor: pointer;
+      font-size: 0.75rem;
+      color: var(--text-secondary, #64748b);
+      user-select: none;
+      border-radius: 0.3rem;
+      transition: background 0.1s, color 0.1s;
+    }
+    .pl-modal-include-exited:hover {
+      background: #f1f5f9;
+      color: var(--text-primary, #1e293b);
+    }
+    .pl-modal-include-exited input[type="checkbox"] {
+      margin: 0;
+      cursor: pointer;
+      accent-color: var(--primary-color, #2563eb);
+    }
+    /* 퇴사자 행 — 옅게 표시해서 구분 */
+    .pl-modal-person-row.is-exited {
+      opacity: 0.7;
+      background: #f8fafc;
+    }
+    .pl-modal-person-row.is-exited:hover {
+      opacity: 1;
+    }
+
     .pl-modal-result-list { display: flex; flex-direction: column; gap: 0.4rem; }
     .pl-modal-person-row {
       display: flex; align-items: center; gap: 0.75rem;
@@ -484,9 +1044,75 @@
       border-radius: 0.5rem; background: #fff; transition: all 0.15s;
     }
     .pl-modal-person-row:hover { border-color: var(--primary-color); background: #eff6ff; }
+
+    /* v5.2: 체크박스 모드 — 행 전체 클릭으로 토글 */
+    .pl-modal-person-row.is-checkable {
+      cursor: pointer;
+      user-select: none;
+    }
+    .pl-modal-person-row.is-selected {
+      border-color: #2563eb;
+      background: #eff6ff;
+      box-shadow: 0 0 0 1px #2563eb inset;
+    }
+    .pl-modal-person-row.is-disabled {
+      cursor: not-allowed;
+      opacity: 0.55;
+      background: #f8fafc;
+    }
+    .pl-modal-person-row.is-disabled:hover { background: #f8fafc; border-color: var(--border-color); }
+    .pl-modal-person-checkbox {
+      width: 1.1rem; height: 1.1rem;
+      margin: 0;
+      accent-color: var(--primary-color, #2563eb);
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .pl-modal-person-checkbox:disabled { cursor: not-allowed; }
+
+    /* v5.2: 추가된 인력 표시 (체크박스 자리에 ✓) */
+    .pl-modal-person-added-mark {
+      width: 1.1rem; height: 1.1rem;
+      display: inline-flex; align-items: center; justify-content: center;
+      color: #94a3b8;
+      font-size: 0.85rem;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+
     .pl-modal-person-name { font-weight: 600; font-size: 0.9rem; color: var(--text-primary); flex: 1; }
     .pl-modal-person-meta { font-size: 0.75rem; color: var(--text-secondary); }
     .pl-modal-person-salary { font-size: 0.78rem; color: var(--text-secondary); white-space: nowrap; }
+
+    /* v6.3: 모달 인력 행에 표시되는 "현재 월" 참여율·과제 수 인라인 배지
+       (오늘 날짜 기준의 ym + 현재 활성 탭에서 계산) */
+    .pl-modal-person-stats {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      margin-left: 0.45rem;
+      padding: 0.12rem 0.5rem;
+      border-radius: 999px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      background: #f1f5f9;
+      color: #475569;
+      border: 1px solid #e2e8f0;
+      vertical-align: middle;
+      cursor: help;
+      white-space: nowrap;
+    }
+    .pl-modal-person-stats-count { font-weight: 600; }
+    .pl-modal-person-stats-rate  { font-weight: 700; font-variant-numeric: tabular-nums; }
+    .pl-modal-person-stats-sep   { opacity: 0.5; }
+    /* 색깔 코딩 — 엄격 (사용자 결정):
+       <80%   기본 (회색)
+       ≥80%   노랑
+       ≥90%   주황
+       ≥100%  빨강 (톤다운) */
+    .pl-modal-person-stats--warn { background: #fef9c3; color: #854d0e; border-color: #fde047; }
+    .pl-modal-person-stats--high { background: #ffedd5; color: #9a3412; border-color: #fed7aa; }
+    .pl-modal-person-stats--over { background: #fee2e2; color: #b91c1c; border-color: #fecaca; }
     .pl-modal-add-btn {
       padding: 0.3rem 0.7rem; border-radius: 0.35rem; font-size: 0.78rem; font-weight: 600;
       font-family: inherit; cursor: pointer; border: 1px solid #2563eb;
@@ -504,8 +1130,381 @@
       color: var(--text-secondary); font-size: 0.88rem;
     }
 
+    /* v5.2: 일괄 선택 액션 바 (모달 하단 sticky) */
+    .pl-modal-bulk-bar {
+      position: sticky;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      display: none;   /* v5.3: 평소엔 레이아웃에서 빠짐 — 안 그러면 모달 body 스크롤 끝에서 마지막 행이 가려짐 */
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.55rem 1rem;   /* v5.3: 세로 padding 0.85 → 0.55 (높이 ~75%) */
+      background: linear-gradient(to top, #fff 70%, rgba(255,255,255,0));
+      border-top: 1px solid #e2e8f0;
+      margin: 1rem -1.25rem -1.25rem;
+      /* v5.3: 모달 패널의 border-radius(0.75rem)과 맞춰서 좌우 하단 모서리 둥글게.
+         이게 없으면 bulk-bar의 직각 모서리가 모달 패널 둥근 모서리와 어긋나 보임. */
+      border-radius: 0 0 0.75rem 0.75rem;
+    }
+    .pl-modal-bulk-bar.is-visible {
+      display: flex;
+    }
+    .pl-modal-bulk-count {
+      flex: 1;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+    .pl-modal-bulk-count strong { color: #2563eb; }
+    .pl-modal-bulk-clear {
+      padding: 0.3rem 0.7rem;   /* v5.3: bulk-bar 축소에 맞춰 살짝 줄임 */
+      border-radius: 0.35rem;
+      font-size: 0.78rem;
+      font-weight: 500;
+      font-family: inherit;
+      cursor: pointer;
+      border: 1px solid #e2e8f0;
+      background: #fff;
+      color: #64748b;
+      transition: all 0.15s;
+    }
+    .pl-modal-bulk-clear:hover { background: #f1f5f9; color: var(--text-primary); }
+    .pl-modal-bulk-add {
+      padding: 0.35rem 0.9rem;   /* v5.3: bulk-bar 축소에 맞춰 살짝 줄임 */
+      border-radius: 0.35rem;
+      font-size: 0.85rem;
+      font-weight: 700;
+      font-family: inherit;
+      cursor: pointer;
+      border: 1px solid #2563eb;
+      background: #2563eb;
+      color: #fff;
+      transition: all 0.15s;
+      white-space: nowrap;
+    }
+    .pl-modal-bulk-add:hover { background: #1d4ed8; border-color: #1d4ed8; }
+    .pl-modal-bulk-add:disabled { opacity: 0.5; cursor: not-allowed; }
+
     /* 사이드바 구분선 */
     .sidebar-divider { height: 1px; background: #e5e7eb; margin: 0.75rem 1rem; opacity: 0.7; }
+
+    /* ============================================================ */
+    /* v5 Step 2: 뷰 모드 토글 [전체 12개월 | 분기]                 */
+    /* ============================================================ */
+    .pl-view-mode {
+      display: inline-flex;
+      border: 1px solid var(--border-color);
+      border-radius: 0.5rem;
+      overflow: hidden;
+      background: var(--card-bg);
+      flex-shrink: 0;
+    }
+    .pl-view-mode-btn {
+      padding: 0.45rem 0.85rem;
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      color: var(--text-secondary);
+      font-size: 0.83rem;
+      font-weight: 600;
+      font-family: inherit;
+      transition: background 0.15s, color 0.15s;
+      line-height: 1;
+      white-space: nowrap;
+    }
+    .pl-view-mode-btn + .pl-view-mode-btn { border-left: 1px solid var(--border-color); }
+    .pl-view-mode-btn:hover { background: #f1f5f9; color: var(--text-primary); }
+    .pl-view-mode-btn.is-active {
+      background: var(--primary-color, #2563eb);
+      color: #fff;
+    }
+
+    /* v5 Step 3: 모두 펼치기 버튼 (접힌 월 있을 때만 노출) */
+    .pl-expand-all-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      padding: 0.4rem 0.7rem;
+      border-radius: 0.4rem;
+      border: 1px solid var(--border-color);
+      background: var(--card-bg);
+      color: var(--text-secondary, #64748b);
+      font-size: 0.78rem;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      transition: all 0.15s;
+      white-space: nowrap;
+      line-height: 1;
+    }
+    .pl-expand-all-btn:hover {
+      background: #f1f5f9;
+      color: var(--text-primary, #1e293b);
+      border-color: #cbd5e1;
+    }
+    .pl-expand-all-btn > span:first-child {
+      color: #94a3b8;
+      font-size: 0.9rem;
+    }
+    .pl-expand-all-count {
+      display: inline-block;
+      padding: 0.05rem 0.4rem;
+      background: #f1f5f9;
+      color: #475569;
+      border-radius: 999px;
+      font-size: 0.7rem;
+      font-weight: 700;
+      margin-left: 0.1rem;
+    }
+    .pl-expand-all-btn:hover .pl-expand-all-count {
+      background: #e2e8f0;
+    }
+
+    /* ============================================================ */
+    /* v5 Step 2: 2단 레이아웃 (좌: 본문 / 우: sticky 박스)         */
+    /* ============================================================ */
+    .pl-layout-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 240px;
+      gap: 1rem;
+      align-items: start;
+    }
+    .pl-layout-main {
+      min-width: 0;   /* 그리드 자식 가로 스크롤 활성화에 필수 */
+    }
+    .pl-sticky-col {
+      position: sticky;
+      top: 1rem;
+      align-self: start;   /* sticky가 grid에서 동작하려면 align-self: start */
+    }
+
+    /* sticky 박스 4개 */
+    #pl-sticky {
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+    }
+    .pl-sticky-empty {
+      padding: 1rem;
+      text-align: center;
+      color: var(--text-secondary, #94a3b8);
+      font-size: 0.85rem;
+      background: var(--card-bg, #fff);
+      border: 1px dashed var(--border-color, #e5e7eb);
+      border-radius: 0.6rem;
+    }
+
+    .pl-sticky-box {
+      background: var(--card-bg, #fff);
+      border: 1px solid var(--border-color, #e5e7eb);
+      border-radius: 0.65rem;
+      padding: 0.75rem 0.85rem 0.7rem;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+    }
+    .pl-sticky-box--muted { background: #f8fafc; }
+    .pl-sticky-box--pos {
+      background: #E1F5EE;
+      border-color: #a7e8c8;
+    }
+    .pl-sticky-box--neg {
+      background: #FCEBEB;
+      border-color: #f5b4b4;
+    }
+    .pl-sticky-box--neutral {
+      /* 차액 0 근처: 중립 회색 톤 */
+      background: #f8fafc;
+      border-color: #e2e8f0;
+    }
+
+    .pl-sticky-box-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.4rem;
+      margin-bottom: 0.3rem;
+    }
+    .pl-sticky-box-title {
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: #475569;
+      letter-spacing: -0.01em;
+    }
+    .pl-sticky-box--pos .pl-sticky-box-title { color: #085041; }
+    .pl-sticky-box--neg .pl-sticky-box-title { color: #791F1F; }
+
+    .pl-sticky-link {
+      font-size: 0.78rem;
+      color: var(--primary-color, #2563eb);
+      text-decoration: none;
+      padding: 0 0.2rem;
+    }
+    .pl-sticky-link:hover { text-decoration: underline; }
+
+    .pl-sticky-box-hint {
+      font-size: 0.68rem;
+      color: #94a3b8;
+      cursor: help;
+    }
+
+    .pl-sticky-box-amount {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: var(--text-primary, #1e293b);
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: -0.01em;
+      line-height: 1.25;
+    }
+    .pl-sticky-box--pos .pl-sticky-box-amount { color: #085041; }
+    .pl-sticky-box--neg .pl-sticky-box-amount { color: #791F1F; }
+
+    .pl-sticky-box-breakdown {
+      margin-top: 0.5rem;
+      padding-top: 0.45rem;
+      border-top: 1px dashed #e5e7eb;
+      display: flex;
+      flex-direction: column;
+      gap: 0.18rem;
+    }
+    .pl-sticky-box-breakdown > div {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 0.5rem;
+      font-size: 0.72rem;
+    }
+    .pl-sticky-box-breakdown > div > span {
+      color: var(--text-secondary, #64748b);
+    }
+    .pl-sticky-box-breakdown > div > strong {
+      font-weight: 600;
+      color: var(--text-primary, #1e293b);
+      font-variant-numeric: tabular-nums;
+    }
+    .pl-sticky-box-breakdown > div.is-disabled {
+      opacity: 0.45;
+    }
+    .pl-sticky-box-breakdown > div.is-disabled > strong {
+      color: var(--text-secondary, #64748b);
+      font-weight: 500;
+    }
+    .pl-sticky-box--pos .pl-sticky-box-breakdown > div > strong { color: #085041; }
+    .pl-sticky-box--neg .pl-sticky-box-breakdown > div > strong { color: #791F1F; }
+    .pl-sticky-box--pos .pl-sticky-box-breakdown { border-top-color: #a7e8c8; }
+    .pl-sticky-box--neg .pl-sticky-box-breakdown { border-top-color: #f5b4b4; }
+
+    .pl-sticky-box-note {
+      margin-top: 0.4rem;
+      padding: 0.3rem 0.5rem;
+      background: #fef9c3;
+      border-radius: 0.3rem;
+      font-size: 0.68rem;
+      color: #854d0e;
+      text-align: center;
+    }
+    .pl-sticky-box-formula {
+      margin-top: 0.45rem;
+      font-size: 0.66rem;
+      color: #94a3b8;
+      text-align: right;
+      font-style: italic;
+    }
+    .pl-sticky-box--pos .pl-sticky-box-formula { color: #4b8970; }
+    .pl-sticky-box--neg .pl-sticky-box-formula { color: #b07474; }
+
+    /* ============================================================ */
+    /* v5 Step 3: 월 접기/펼치기                                    */
+    /* ============================================================ */
+
+    /* 펼친 월 헤더의 월 라벨 영역 — 클릭으로 접기 */
+    .pl-month-head-label {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.3rem;
+      font-size: 0.85rem;
+      padding: 0.05rem 0.4rem;
+      border-radius: 0.25rem;
+      cursor: pointer;
+      user-select: none;
+      transition: background 0.12s;
+    }
+    .pl-month-head-label:hover { background: #e2e8f0; }
+    .pl-month-collapse-icon {
+      display: inline-flex;
+      align-items: center; justify-content: center;
+      width: 13px; height: 13px;
+      font-size: 0.85rem; font-weight: 700;
+      line-height: 1;
+      color: #94a3b8;
+      border: 1px solid #cbd5e1;
+      border-radius: 0.18rem;
+      background: #fff;
+    }
+    .pl-month-head-label:hover .pl-month-collapse-icon {
+      color: #475569; border-color: #94a3b8;
+    }
+
+    /* 접힌 월 헤더 셀 — 좁은 회색 컬럼, 세로쓰기 월번호 */
+    .pl-table thead tr.pl-thead-month th.th-month-collapsed {
+      background: #e2e8f0;
+      padding: 0.3rem 0;
+      cursor: pointer;
+      transition: background 0.12s;
+      vertical-align: middle;
+    }
+    .pl-table thead tr.pl-thead-month th.th-month-collapsed:hover {
+      background: #cbd5e1;
+    }
+    .pl-month-collapsed-label {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 0.3rem;
+      padding: 0.15rem 0;
+    }
+    .pl-month-collapsed-num {
+      font-size: 0.82rem;
+      font-weight: 700;
+      color: #475569;
+      line-height: 1;
+      letter-spacing: -0.02em;
+    }
+    .pl-month-collapsed-icon {
+      display: inline-flex;
+      align-items: center; justify-content: center;
+      width: 14px; height: 14px;
+      font-size: 0.78rem; font-weight: 700;
+      line-height: 1;
+      color: #64748b;
+      border: 1px solid #94a3b8;
+      border-radius: 0.18rem;
+      background: #fff;
+    }
+
+    /* 접힌 월 body / tfoot 셀 — 단일 회색 빈 셀 */
+    .pl-table tbody td.pl-cell-collapsed,
+    .pl-table tfoot tr.pl-tfoot-sum td.pl-cell-collapsed {
+      background: #f1f5f9;
+      padding: 0;
+      cursor: pointer;
+      border-right: 1px solid #e2e8f0;
+      transition: background 0.12s;
+    }
+    .pl-table tbody td.pl-cell-collapsed:hover,
+    .pl-table tfoot tr.pl-tfoot-sum td.pl-cell-collapsed:hover {
+      background: #e2e8f0;
+    }
+    /* tfoot의 합계행 회색 배경과 톤 통일을 위해 살짝 더 진하게 */
+    .pl-table tfoot tr.pl-tfoot-sum td.pl-cell-collapsed {
+      background: #e8eef5;
+      border-top: 2px solid #d1d9e0;
+    }
+    .pl-table tfoot tr.pl-tfoot-sum td.pl-cell-collapsed:hover {
+      background: #d8e0ea;
+    }
   </style>
 </head>
 <body>
@@ -537,8 +1536,17 @@
         <!-- 컨트롤바 2행 구조 -->
         <div style="display:flex; flex-direction:column; gap:0.6rem; margin-bottom:1rem;">
 
-          <!-- 1행: 연도 + 분기 + 회사 필터 -->
+          <!-- 1행: 뷰모드 + 연도 + 분기 + 회사 필터 -->
           <div class="history-toolbar" style="margin-bottom:0;">
+            <!-- v5 Step 2: 뷰 모드 토글 -->
+            <div class="pl-view-mode" id="pl-view-mode" role="group" aria-label="뷰 모드">
+              <button type="button" class="pl-view-mode-btn is-active" data-mode="all12">전체 12개월</button>
+              <button type="button" class="pl-view-mode-btn" data-mode="quarter">분기</button>
+            </div>
+            <!-- v5 Step 3: 모두 펼치기 버튼 — 명시적으로 접힌 월이 1개 이상일 때만 노출 -->
+            <button type="button" class="pl-expand-all-btn" id="pl-expand-all-btn" style="display:none;" title="명시적으로 접힌 월을 모두 펼칩니다">
+              <span>↕</span> 모두 펼치기 <span class="pl-expand-all-count" id="pl-expand-all-count"></span>
+            </button>
             <span class="history-toolbar-label">연도</span>
             <input type="number" id="pl-year-input" value="2025" min="2020" max="2035" step="1" style="font-weight:700; text-align:center;">
             <span class="history-toolbar-label">분기</span>
@@ -583,58 +1591,64 @@
           <span id="pl-hire-text"></span>
         </div>
 
-        <!-- 탭 -->
-        <div class="history-tabs">
-          <button type="button" class="history-tab is-active" data-tab="planned">
-            <span class="history-tab-icon">📝</span>
-            <span class="history-tab-body">
-              <span class="history-tab-title">예상 (계획)</span>
-              <span class="history-tab-sub">참여율·현금 입력</span>
-            </span>
-            <span class="history-tab-count" id="tab-count-planned">-</span>
-          </button>
-          <button type="button" class="history-tab" data-tab="actual">
-            <span class="history-tab-icon">✅</span>
-            <span class="history-tab-body">
-              <span class="history-tab-title">실제 (지급 후)</span>
-              <span class="history-tab-sub">실제 지급 내역 입력</span>
-            </span>
-            <span class="history-tab-count" id="tab-count-actual">-</span>
-          </button>
-          <button type="button" class="history-tab" data-tab="compare">
-            <span class="history-tab-icon">⚖️</span>
-            <span class="history-tab-body">
-              <span class="history-tab-title">비교</span>
-              <span class="history-tab-sub">예상 vs 실제 차이</span>
-            </span>
-            <span class="history-tab-count" id="tab-count-compare">-</span>
-          </button>
-        </div>
+        <!-- v5 Step 2: 2단 레이아웃 (좌: 탭+탭 컨텐츠 / 우: sticky 박스) -->
+        <div class="pl-layout-grid">
+          <div class="pl-layout-main">
 
-        <!-- 예상 탭 -->
-        <div class="pl-tab-content is-active" id="tab-planned">
-          <div class="pl-table-wrap">
-            <table class="pl-table" id="pl-table-planned"></table>
-          </div>
-        </div>
+            <!-- 탭 -->
+            <div class="history-tabs">
+              <button type="button" class="history-tab is-active" data-tab="planned">
+                <span class="history-tab-icon">📝</span>
+                <span class="history-tab-body">
+                  <span class="history-tab-title">예상 (계획)</span>
+                  <span class="history-tab-sub">참여율·현금 입력</span>
+                </span>
+                <span class="history-tab-count" id="tab-count-planned">-</span>
+              </button>
+              <button type="button" class="history-tab" data-tab="actual">
+                <span class="history-tab-icon">✅</span>
+                <span class="history-tab-body">
+                  <span class="history-tab-title">실제 (지급 후)</span>
+                  <span class="history-tab-sub">실제 지급 내역 입력</span>
+                </span>
+                <span class="history-tab-count" id="tab-count-actual">-</span>
+              </button>
+              <button type="button" class="history-tab" data-tab="compare">
+                <span class="history-tab-icon">⚖️</span>
+                <span class="history-tab-body">
+                  <span class="history-tab-title">비교</span>
+                  <span class="history-tab-sub">예상 vs 실제 차이</span>
+                </span>
+              </button>
+            </div>
 
-        <!-- 실제 탭 -->
-        <div class="pl-tab-content" id="tab-actual">
-          <div class="pl-table-wrap">
-            <table class="pl-table" id="pl-table-actual"></table>
-          </div>
-        </div>
+            <!-- 예상 탭 -->
+            <div class="pl-tab-content is-active" id="tab-planned">
+              <div class="pl-table-wrap" id="pl-table-planned-wrap">
+                <table class="pl-table" id="pl-table-planned"></table>
+              </div>
+            </div>
 
-        <!-- 비교 탭 -->
-        <div class="pl-tab-content" id="tab-compare">
-          <div class="pl-compare-options">
-            <label class="history-toggle-chip" id="pl-diff-only-chip">
-              <input type="checkbox" id="pl-diff-only"> 차이만 보기
-            </label>
+            <!-- 실제 탭 -->
+            <div class="pl-tab-content" id="tab-actual">
+              <div class="pl-table-wrap" id="pl-table-actual-wrap">
+                <table class="pl-table" id="pl-table-actual"></table>
+              </div>
+            </div>
+
+            <!-- 비교 탭 -->
+            <div class="pl-tab-content" id="tab-compare">
+              <div class="pl-table-wrap" id="pl-table-compare-wrap">
+                <table class="pl-table" id="pl-table-compare"></table>
+              </div>
+            </div>
+
           </div>
-          <div class="pl-table-wrap">
-            <table class="pl-table" id="pl-table-compare"></table>
-          </div>
+
+          <!-- v5 Step 2: 우측 sticky 박스 (JS가 렌더) -->
+          <aside class="pl-sticky-col" aria-label="예산 요약">
+            <div id="pl-sticky"></div>
+          </aside>
         </div>
 
       </div>
@@ -664,14 +1678,24 @@
         <div class="pl-modal-search-wrap">
           <span class="pl-modal-search-icon">🔍</span>
           <input type="text" id="pl-modal-search" class="pl-modal-search-input"
-            placeholder="이름으로 검색..." autocomplete="off">
+            placeholder="이름으로 검색 (콤마로 여러 명)" autocomplete="off">
           <button type="button" class="pl-modal-search-clear" id="pl-modal-search-clear">×</button>
         </div>
 
-        <!-- 이미 추가된 인력 -->
+        <!-- v5.2: 퇴사자 포함 토글 (과거 시점 데이터 입력용) -->
+        <label class="pl-modal-include-exited">
+          <input type="checkbox" id="pl-modal-include-exited">
+          <span>퇴사자도 표시 (과거 데이터 입력용)</span>
+        </label>
+
+        <!-- 이미 추가된 인력 — v5.2: 기본 접힘, 헤더 클릭으로 펼침 -->
         <div id="pl-modal-added-section" style="margin-bottom:1rem; display:none;">
-          <div class="pl-modal-section-title">이미 추가된 인력</div>
-          <div id="pl-modal-added-list"></div>
+          <button type="button" id="pl-modal-added-toggle" class="pl-modal-added-toggle" aria-expanded="false">
+            <span class="pl-modal-added-toggle-icon">▶</span>
+            <span class="pl-modal-added-toggle-label">이미 추가된 인력</span>
+            <span class="pl-modal-added-toggle-count" id="pl-modal-added-toggle-count">0</span>
+          </button>
+          <div id="pl-modal-added-list" class="pl-modal-added-list" hidden></div>
         </div>
 
         <!-- 검색 결과 -->
@@ -680,6 +1704,17 @@
 
         <div id="pl-modal-empty" class="pl-modal-empty" style="display:none;">
           검색 결과가 없습니다.
+        </div>
+
+        <!-- v5.2: 일괄 선택 액션 바 — 1명 이상 선택 시 노출 -->
+        <div id="pl-modal-bulk-bar" class="pl-modal-bulk-bar">
+          <span class="pl-modal-bulk-count">
+            <strong id="pl-modal-bulk-count-num">0</strong>명 선택됨
+          </span>
+          <button type="button" class="pl-modal-bulk-clear" id="pl-modal-bulk-clear">선택 해제</button>
+          <button type="button" class="pl-modal-bulk-add" id="pl-modal-bulk-add">
+            + <span id="pl-modal-bulk-add-num">0</span>명 추가
+          </button>
         </div>
       </div>
       <div class="pl-modal-footer">
@@ -697,6 +1732,8 @@
   <script src="auth-guard.js"></script>
   <script src="firestore-service.js"></script>
   <script src="sidebar.js"></script>
+  <!-- v5.2 Step 6: 엑셀 업로드 (SheetJS) -->
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
   <script src="project-labor.js"></script>
 </body>
 </html>

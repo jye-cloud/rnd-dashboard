@@ -1869,6 +1869,60 @@
       padding: 0.4rem 0;
     }
 
+    /* ============================================================
+       한 줄 미니 요약 (카드 영역 대체)
+       - 자세한 통계는 인력 대시보드에서
+       ============================================================ */
+    .persons-mini-summary {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      padding: 0.55rem 0.85rem;
+      margin-bottom: 1rem;
+      background: #f8fafc;
+      border: 1px solid var(--border-color);
+      border-radius: 0.5rem;
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+    }
+    .persons-mini-summary-text {
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+      flex-wrap: wrap;
+      min-width: 0;
+    }
+    .persons-mini-summary-text strong {
+      color: var(--text-primary);
+      font-weight: 700;
+    }
+    .persons-mini-summary-sep {
+      color: #cbd5e1;
+      margin: 0 0.1rem;
+    }
+    .persons-mini-summary-extra {
+      color: #94a3b8;
+      font-size: 0.78rem;
+      margin-left: 0.4rem;
+    }
+    .persons-mini-summary-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      color: var(--text-secondary);
+      text-decoration: none;
+      font-size: 0.78rem;
+      padding: 0.2rem 0.5rem;
+      border-radius: 0.4rem;
+      transition: color 0.15s ease, background 0.15s ease;
+      flex-shrink: 0;
+    }
+    .persons-mini-summary-link:hover {
+      color: var(--primary-color);
+      background: #eff6ff;
+    }
+
   </style>
 </head>
 
@@ -1918,24 +1972,24 @@
           </div>
         </header>
 
-        <!-- 상단 요약 카드 (4개) -->
-        <section class="projects-stats-grid" aria-label="정보 입력 현황">
-          <div class="projects-stat-card projects-stat-card--narrow">
-            <div class="projects-stat-label">전체 인력</div>
-            <div class="projects-stat-value" id="stat-total">0</div>
-            <div class="projects-stat-sub-hint" id="stat-total-sub">재직 0 · 퇴직 0</div>
+        <!-- 상단 한 줄 요약 (자세한 통계는 인력 대시보드에서) -->
+        <div class="persons-mini-summary" aria-label="인력 요약">
+          <div class="persons-mini-summary-text">
+            전체 <strong id="stat-total">0</strong>명
+            <span class="persons-mini-summary-sep">·</span>
+            재직 <strong id="stat-active">0</strong>
+            <span class="persons-mini-summary-sep">·</span>
+            퇴직 <strong id="stat-exited">0</strong>
           </div>
-          <div class="projects-stat-card projects-stat-card--narrow">
-            <div class="projects-stat-label">정보 입력 완료</div>
-            <div class="projects-stat-value projects-stat--success" id="stat-hr-complete">0</div>
-            <div class="projects-stat-sub-hint" id="stat-hr-complete-sub">재직 인력 중</div>
-          </div>
-          <div class="projects-stat-card projects-stat-card--narrow">
-            <div class="projects-stat-label">연구소 등록</div>
-            <div class="projects-stat-value" id="stat-lab" style="color:#7c3aed">0</div>
-            <div class="projects-stat-sub-hint">기업부설연구소</div>
-          </div>
-        </section>
+          <a href="persons-dashboard.html" class="persons-mini-summary-link" title="회사별·청년·입퇴사 등 자세한 통계는 인력 대시보드에서">
+            <span aria-hidden="true">📈</span> 더 자세한 통계
+          </a>
+        </div>
+        <!-- 기존 정보 입력 완료/연구소 등록 카드는 제거됨. ID는 호환성 위해 hidden 보존 -->
+        <input type="hidden" id="stat-total-sub" value="">
+        <input type="hidden" id="stat-hr-complete" value="0">
+        <input type="hidden" id="stat-hr-complete-sub" value="">
+        <input type="hidden" id="stat-lab" value="0">
 
         <!-- 검색 + 필터 행 -->
         <div class="projects-actions-row">
@@ -2277,6 +2331,7 @@
   <script src="auth-guard.js"></script>
   <script src="firestore-service.js"></script>
   <script src="sidebar.js"></script>
+  <script src="persons-summary.js"></script>
   <script src="persons-detail.js"></script>
   <script src="floating-buttons.js"></script>
 </body>
