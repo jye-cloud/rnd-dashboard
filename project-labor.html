@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>[R&DM] 프로젝트별 인건비</title>
+  <title>프로젝트별 인건비</title>
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="sidebar.css">
   <style>
@@ -226,25 +226,29 @@
        thead th.pl-sticky-*는 아래쪽에서 z-index: 4로 통합 정의됨 */
     .pl-table tfoot td.pl-sticky-left,
     .pl-table tfoot td.pl-sticky-right-0,
-    .pl-table tfoot td.pl-sticky-right-1 { z-index: 4; }
+    .pl-table tfoot td.pl-sticky-right-1,
+    .pl-table tfoot td.pl-sticky-right-2 { z-index: 4; }
 
     /* ========== 메인 테이블 ========== */
     .pl-table {
-      width: 100%;
+      width: max-content;     /* v7.4: 항상 컬럼 px대로 — 분기/12개월 뷰에서 고정 컬럼 폭 일관 */
       border-collapse: collapse;
       font-size: 0.82rem;
       table-layout: fixed;
     }
-    .pl-table colgroup col.col-name   { width: 160px; }
-    .pl-table colgroup col.col-salary { width: 105px; }
+    .pl-table colgroup col.col-name   { width: 120px; }
+    .pl-table colgroup col.col-salary { width: 120px; }
+    .pl-table colgroup col.col-classify { width: 98px; }   /* v7.4: 구분(분류) — 지원금 안 짤리게 */
     .pl-table colgroup col.col-rate   { width: 64px; }
     .pl-table colgroup col.col-cash   { width: 92px; }
+    .pl-table colgroup col.col-selfcash { width: 92px; }   /* v7.4: 자부담현금 */
     .pl-table colgroup col.col-inkind { width: 88px; }
     /* v5 Step 3: 접힌 월 컬럼 */
     .pl-table colgroup col.col-collapsed { width: 26px; }
-    /* v5.3: 우측 합계 컬럼 (현금/현물 각 1) */
-    .pl-table colgroup col.col-total-cash   { width: 100px; }
-    .pl-table colgroup col.col-total-inkind { width: 100px; }
+    /* v5.3: 우측 합계 컬럼 (지원금/[현금]/현물 각 1) */
+    .pl-table colgroup col.col-total-cash     { width: 100px; }
+    .pl-table colgroup col.col-total-selfcash { width: 100px; }   /* v7.4 */
+    .pl-table colgroup col.col-total-inkind   { width: 100px; }
 
     /* v5.3: sticky 컬럼 — 이름(첫째), 합계 현금(끝-1), 합계 현물(끝)
        - position: sticky가 td/th에 작동하려면 table border-collapse: separate 필요.
@@ -271,6 +275,24 @@
     .pl-table tfoot td.pl-sticky-right-1 {
       position: sticky !important;
       right: 100px !important;
+      bottom: 0 !important;
+      z-index: 4;
+      background: #f8fafc;
+      border-left: 2px solid #e2e8f0;
+    }
+
+    /* v7.4: 자부담현금(현금) 합계 컬럼 — 3열일 때 지원금 합계가 끝-2(right:200px)로 밀림 */
+    .pl-table thead th.pl-sticky-right-2,
+    .pl-table tbody td.pl-sticky-right-2 {
+      position: sticky;
+      right: 200px;
+      z-index: 1;
+      background: #fafafa;
+      border-left: 2px solid #e2e8f0;
+    }
+    .pl-table tfoot td.pl-sticky-right-2 {
+      position: sticky !important;
+      right: 200px !important;
       bottom: 0 !important;
       z-index: 4;
       background: #f8fafc;
@@ -304,7 +326,8 @@
        v5.3: 틀고정으로 z-index 4 사용 (thead/tfoot=3과 교차 시 위에 떠야 함) */
     .pl-table thead th.pl-sticky-left,
     .pl-table thead th.pl-sticky-right-0,
-    .pl-table thead th.pl-sticky-right-1 { z-index: 4; }
+    .pl-table thead th.pl-sticky-right-1,
+    .pl-table thead th.pl-sticky-right-2 { z-index: 4; }
     /* 우측 합계 셀 — 데이터 행 */
     .pl-table tbody td.pl-cell-total {
       background: #f8fafc;
@@ -657,8 +680,24 @@
       text-overflow: ellipsis;   /* 너무 긴 이름은 ...으로 자름 */
       min-width: 0;              /* flex 자식 ellipsis가 작동하려면 필요 */
     }
+    /* v7.4: 퇴사자 이름 취소선 */
+    .pl-row--exited .pl-name-text {
+      text-decoration: line-through;
+      text-decoration-color: #94a3b8;
+      color: #64748b;
+    }
     /* 뱃지/✕는 줄이지 않음 */
     .pl-name-badges-inline { display: flex; gap: 0.25rem; flex-shrink: 0; }
+    /* v7.4: 이름 줄에 인라인으로 들어간 기존/신규 셀렉트 — 컴팩트 */
+    .pl-name-row .pl-role-select {
+      flex-shrink: 0;
+      height: 22px;
+      font-size: 0.66rem;
+      padding: 0.1rem 0.95rem 0.1rem 0.35rem;
+      margin-top: 0;
+    }
+    .pl-name-row .pl-row-drag-handle { flex-shrink: 0; }
+    .pl-name-row .pl-row-remove-btn { flex-shrink: 0; }
     /* 구형 호환 (비교탭 등) */
     .pl-name-badges { display: flex; gap: 0.25rem; flex-wrap: wrap; margin-top: 0.2rem; }
     .pl-badge {
@@ -743,13 +782,61 @@
     }
     .pl-role-select:hover  { border-color: #94a3b8; }
     .pl-role-select:focus  { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59,130,246,0.15); }
+    .pl-role-select:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* v7.4: 구분(분류) 셀 — 드롭다운 가운데 정렬 */
+    .pl-td-classify {
+      text-align: center;
+      vertical-align: middle;
+      padding: 0.3rem 0.4rem;
+    }
+    .pl-td-classify .pl-role-select { width: 100%; }
+
+    /* v7.4: 나눔 멀티행 — 구분 라벨/읽기전용 금액/빈칸/행 구분 */
+    .pl-classify-label {
+      display: inline-block;
+      font-size: 0.72rem; font-weight: 700;
+      padding: 0.15rem 0.5rem; border-radius: 999px;
+    }
+    .pl-classify-cash     { background: #dcfce7; color: #166534; }  /* 지원금 */
+    .pl-classify-selfCash { background: #e0f2fe; color: #075985; }  /* 현금(자부담) */
+    .pl-classify-inkind   { background: #fef3c7; color: #92400e; }  /* 현물 */
+    .pl-split-money {
+      background: #f8fafc !important;
+      color: #475569; cursor: default;
+    }
+    .pl-split-empty { background: #fcfcfd; }
+    /* 사람 단위 구분선 — 마지막 split 줄 아래 진한 경계 */
+    .pl-split-row-last > td { border-bottom: 2px solid #d1d9e0; }
+    .pl-split-row-first.pl-split-row > td { border-top: 1px solid #eef2f6; }
+
+    /* v7.4: 분류 나눔 토글 — 월급 우측 작은 체크박스만 */
+    .pl-salary-wrap {
+      display: flex; align-items: center; justify-content: flex-end; gap: 0.4rem;
+    }
+    .pl-salary-wrap .pl-salary-input { flex: 1 1 auto; min-width: 0; text-align: right; }
+    .pl-salary-text { flex: 1 1 auto; text-align: right; }
+    .pl-split-toggle {
+      flex-shrink: 0;
+      display: inline-flex; align-items: center;
+      cursor: pointer;
+    }
+    .pl-split-toggle input { margin: 0; cursor: pointer; }
+    /* 나눔 분류칸 %-입력 / 참여율 합(읽기전용) */
+    .pl-input-split { font-style: italic; }
+    .pl-input-split-sum {
+      background: #f1f5f9 !important;
+      color: #475569;
+      cursor: default;
+    }
 
     /* 선택값별 색 분리 (v5 Step 4 - 피드백 #1) */
     /* 기존/신규 — 기존=회색(중립), 신규=보라(강조) */
     .pl-role-select.is-existing { background-color: #f1f5f9; color: #475569; border-color: #cbd5e1; }
     .pl-role-select.is-new      { background-color: #ede9fe; color: #6d28d9; border-color: #c4b5fd; }
-    /* 현금/현물 — 현금=초록(돈), 현물=주황(자원) */
+    /* 현금/현물 — 지원금=초록(돈), 자부담현금=주황·현물=앰버(자부담 계열) */
     .pl-role-select.is-cash     { background-color: #dcfce7; color: #15803d; border-color: #86efac; }
+    .pl-role-select.is-selfcash { background-color: #ffedd5; color: #c2410c; border-color: #fdba74; }
     .pl-role-select.is-inkind   { background-color: #fef3c7; color: #b45309; border-color: #fcd34d; }
 
     /* 화살표 색도 톤 맞춰서 — 보라/초록/주황은 진한 색 화살표가 자연스러움 */
@@ -758,6 +845,9 @@
     }
     .pl-role-select.is-cash {
       background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='%2315803d' d='M0 0l5 6 5-6z'/></svg>");
+    }
+    .pl-role-select.is-selfcash {
+      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='%23c2410c' d='M0 0l5 6 5-6z'/></svg>");
     }
     .pl-role-select.is-inkind {
       background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='%23b45309' d='M0 0l5 6 5-6z'/></svg>");
@@ -822,10 +912,59 @@
       color: #cbd5e1;
     }
 
-    /* 메모 (빨간 글씨) */
-    .pl-memo-text {
-      font-size: 0.68rem; color: #dc2626; font-weight: 500;
-      padding: 0 0.4rem 0.2rem; display: block; line-height: 1.3;
+    /* v7.4.3 §4.1: 셀 메모 — 옅은 분홍 배경 + 모서리 마커 + 편집 팝오버 */
+    td.pl-cell-has-memo { position: relative; background: #fdf2f8; }
+    .pl-memo-marker {
+      position: absolute; top: 0; right: 0;
+      width: 0; height: 0;
+      border-top: 8px solid #ec4899;
+      border-left: 8px solid transparent;
+      cursor: pointer; z-index: 2;
+    }
+    .pl-memo-marker::after {           /* 클릭 영역 확대(투명) */
+      content: ''; position: absolute; top: -4px; right: -4px;
+      width: 16px; height: 16px;
+    }
+    .pl-memo-popover {
+      position: fixed; z-index: 1200;
+      width: 264px; max-width: calc(100vw - 24px);
+      background: #fff; border: 1px solid #d1d9e0; border-radius: 0.6rem;
+      box-shadow: 0 8px 28px rgba(0,0,0,0.16);
+      padding: 0.7rem 0.75rem 0.6rem; font-family: inherit;
+    }
+    .pl-memo-pop-head {
+      font-size: 0.74rem; font-weight: 700; color: #475569;
+      margin-bottom: 0.45rem; line-height: 1.3;
+    }
+    .pl-memo-pop-head .pl-memo-pop-ym { color: #94a3b8; font-weight: 600; }
+    .pl-memo-pop-textarea {
+      width: 100%; box-sizing: border-box; min-height: 64px; resize: vertical;
+      border: 1px solid #cbd5e1; border-radius: 0.45rem;
+      padding: 0.45rem 0.55rem; font-size: 0.8rem; font-family: inherit;
+      line-height: 1.4; color: #1e293b;
+    }
+    .pl-memo-pop-textarea:focus {
+      outline: none; border-color: #2563eb; box-shadow: 0 0 0 2px rgba(37,99,235,0.15);
+    }
+    .pl-memo-pop-textarea[readonly] { background: #f8fafc; color: #475569; }
+    .pl-memo-pop-actions {
+      display: flex; align-items: center; gap: 0.4rem;
+      margin-top: 0.5rem; justify-content: flex-end;
+    }
+    .pl-memo-pop-actions .pl-memo-pop-del { margin-right: auto; }
+    .pl-memo-pop-btn {
+      font: inherit; font-size: 0.76rem; font-weight: 600;
+      border-radius: 0.4rem; padding: 0.32rem 0.7rem; cursor: pointer;
+      border: 1px solid transparent;
+    }
+    .pl-memo-pop-cancel { background: #f1f5f9; color: #475569; border-color: #e2e8f0; }
+    .pl-memo-pop-cancel:hover { background: #e2e8f0; }
+    .pl-memo-pop-save { background: #2563eb; color: #fff; }
+    .pl-memo-pop-save:hover { background: #1d4ed8; }
+    .pl-memo-pop-del { background: transparent; color: #dc2626; }
+    .pl-memo-pop-del:hover { background: #fef2f2; }
+    .pl-memo-pop-hint {
+      font-size: 0.66rem; color: #94a3b8; margin-top: 0.35rem; text-align: right;
     }
 
     /* 합계 행 */
@@ -919,6 +1058,120 @@
       font-size: 0.75rem; font-weight: 600; color: var(--text-secondary);
       text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 0.5rem;
     }
+
+    /* ========== v7.4.4 §4.2: 예상 계획 스냅샷 모달 ========== */
+    .pl-snap-panel { max-width: 560px; }
+    .pl-snap-save-box {
+      background: #f8fafc; border: 1px solid var(--border-color);
+      border-radius: 0.6rem; padding: 0.85rem;
+    }
+    .pl-snap-current { font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.6rem; }
+    .pl-snap-current strong { color: var(--text-primary); }
+    .pl-snap-save-row { display: flex; gap: 0.5rem; }
+    .pl-snap-label-input {
+      flex: 1; padding: 0.5rem 0.7rem; border: 1px solid var(--border-color);
+      border-radius: 0.45rem; font-size: 0.88rem; font-family: inherit; background: #fff;
+    }
+    .pl-snap-label-input:focus { outline: none; border-color: #2563eb; box-shadow: 0 0 0 2px rgba(37,99,235,0.15); }
+    .pl-snap-save-row .ui-btn { white-space: nowrap; }
+
+    .pl-snap-list { display: flex; flex-direction: column; gap: 0.5rem; }
+    .pl-snap-loading, .pl-snap-empty {
+      font-size: 0.85rem; color: var(--text-secondary); text-align: center;
+      padding: 1.25rem 0.5rem;
+    }
+    .pl-snap-row {
+      border: 1px solid var(--border-color); border-radius: 0.55rem;
+      overflow: hidden; background: #fff;
+    }
+    .pl-snap-row.is-open { border-color: #93c5fd; }
+    .pl-snap-row-main {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 0.6rem; padding: 0.6rem 0.75rem;
+    }
+    .pl-snap-row-info { min-width: 0; flex: 1; }
+    .pl-snap-row-label {
+      font-size: 0.9rem; font-weight: 600; color: var(--text-primary);
+      display: flex; align-items: center; gap: 0.4rem;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .pl-snap-row-meta { font-size: 0.74rem; color: var(--text-secondary); margin-top: 0.15rem; }
+    .pl-snap-badge {
+      font-size: 0.65rem; font-weight: 700; padding: 0.08rem 0.4rem;
+      border-radius: 0.3rem; letter-spacing: 0.02em;
+    }
+    .pl-snap-badge--auto { background: #fef3c7; color: #92400e; }
+    .pl-snap-row-actions { display: flex; gap: 0.3rem; flex-shrink: 0; }
+    .pl-snap-btn {
+      font-size: 0.74rem; font-weight: 600; padding: 0.32rem 0.55rem;
+      border-radius: 0.35rem; border: 1px solid var(--border-color);
+      background: #fff; color: var(--text-secondary); cursor: pointer; font-family: inherit;
+      white-space: nowrap;
+    }
+    .pl-snap-btn:hover { background: #f1f5f9; color: var(--text-primary); }
+    .pl-snap-btn--primary { border-color: #2563eb; color: #2563eb; }
+    .pl-snap-btn--primary:hover { background: #eff6ff; }
+    .pl-snap-btn--danger { border-color: #fca5a5; color: #dc2626; }
+    .pl-snap-btn--danger:hover { background: #fef2f2; }
+
+    .pl-snap-diff {
+      border-top: 1px solid var(--border-color); background: #f8fafc;
+      padding: 0.7rem 0.85rem; max-height: 320px; overflow-y: auto;
+    }
+    .pl-snap-diff-empty { font-size: 0.82rem; color: var(--text-secondary); text-align: center; padding: 0.5rem; }
+    .pl-snap-diff-counts {
+      display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.55rem;
+      font-size: 0.78rem; flex-wrap: wrap;
+    }
+    .pl-snap-diff-c { font-weight: 700; }
+    .pl-snap-diff-c.is-add { color: #059669; }
+    .pl-snap-diff-c.is-chg { color: #d97706; }
+    .pl-snap-diff-c.is-rm  { color: #dc2626; }
+    .pl-snap-diff-legend { margin-left: auto; color: var(--text-secondary); font-weight: 400; font-size: 0.72rem; }
+    .pl-snap-diff-group { margin-bottom: 0.55rem; }
+    .pl-snap-diff-person { font-size: 0.82rem; font-weight: 700; color: var(--text-primary); margin-bottom: 0.2rem; }
+    .pl-snap-diff-item {
+      font-size: 0.78rem; color: var(--text-primary); padding: 0.18rem 0.4rem;
+      border-left: 3px solid transparent; margin-bottom: 0.1rem; border-radius: 0 0.25rem 0.25rem 0;
+    }
+    .pl-snap-diff-item.is-add { border-left-color: #059669; background: #ecfdf5; }
+    .pl-snap-diff-item.is-chg { border-left-color: #d97706; background: #fffbeb; }
+    .pl-snap-diff-item.is-rm  { border-left-color: #dc2626; background: #fef2f2; }
+    .pl-snap-diff-ym {
+      display: inline-block; min-width: 4.2rem; font-weight: 600;
+      color: var(--text-secondary); margin-right: 0.35rem;
+    }
+    /* 내역(view) 패널 — 표 형태 */
+    .pl-snap-btn.is-active { background: #eff6ff; border-color: #93c5fd; color: #2563eb; }
+    .pl-snap-view-bar {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 0.5rem; margin-bottom: 0.55rem;
+    }
+    .pl-snap-view-when { font-size: 0.74rem; color: var(--text-secondary); }
+    .pl-snap-view-actions { display: flex; gap: 0.3rem; flex-shrink: 0; }
+    .pl-snap-view-split {
+      font-size: 0.64rem; font-weight: 700; color: #92400e;
+      background: #fef3c7; padding: 0.02rem 0.3rem; border-radius: 0.25rem; margin-left: 0.25rem;
+    }
+    .pl-snap-table-wrap { overflow-x: auto; border: 1px solid var(--border-color); border-radius: 0.45rem; }
+    .pl-snap-table { border-collapse: collapse; font-size: 0.74rem; white-space: nowrap; }
+    .pl-snap-table th, .pl-snap-table td {
+      border: 1px solid #e2e8f0; padding: 0.25rem 0.5rem; text-align: center;
+    }
+    .pl-snap-table thead th {
+      background: #f1f5f9; font-weight: 700; color: var(--text-secondary);
+      position: sticky; top: 0; z-index: 1;
+    }
+    .pl-snap-th-name, .pl-snap-td-name {
+      text-align: left; position: sticky; left: 0; background: #fff; z-index: 2;
+      font-weight: 600; color: var(--text-primary); min-width: 5.5rem;
+    }
+    .pl-snap-table thead th.pl-snap-th-name { background: #f1f5f9; z-index: 3; }
+    .pl-snap-th-ci, .pl-snap-td-ci { color: var(--text-secondary); }
+    .pl-snap-td-rate { font-weight: 700; color: var(--text-primary); }
+    .pl-snap-td-amt { font-size: 0.66rem; color: var(--text-secondary); }
+    .pl-snap-td-empty { color: #cbd5e1; }
+    .pl-snap-th-sum, .pl-snap-td-sum { font-weight: 700; background: #f8fafc; }
 
     /* v5.2: 이미 추가된 인력 — 접기/펼치기 헤더 */
     .pl-modal-added-toggle {
@@ -1574,8 +1827,9 @@
               </select>
             </div>
 
-            <!-- 3칸: 버튼 3개 균등 배치 -->
+            <!-- 3칸: 버튼 균등 배치 -->
             <div style="display:flex; gap:0.4rem;">
+              <button type="button" class="ui-btn" id="pl-snapshot-btn" style="flex:1; justify-content:center; font-size:0.78rem; padding:0.45rem 0.3rem; white-space:nowrap;">📸 스냅샷</button>
               <button type="button" class="ui-btn" id="pl-copy-prev-btn" style="flex:1; justify-content:center; font-size:0.78rem; padding:0.45rem 0.3rem; white-space:nowrap;">📋 이전 분기 복사</button>
               <button type="button" class="ui-btn ui-btn--success" id="pl-calc-all-btn" style="flex:1; justify-content:center; font-size:0.78rem; padding:0.45rem 0.3rem; white-space:nowrap;">⚡ 일괄 자동 계산</button>
               <button type="button" class="ui-btn ui-btn--primary" id="pl-add-person-top-btn" style="flex:1; justify-content:center; font-size:0.78rem; padding:0.45rem 0.3rem; white-space:nowrap;">+ 인력 추가</button>
@@ -1719,6 +1973,36 @@
       </div>
       <div class="pl-modal-footer">
         <button type="button" class="ui-btn" id="pl-modal-cancel">닫기</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- v7.4.4 §4.2: 예상 계획 스냅샷 모달 -->
+  <div class="pl-modal-overlay" id="pl-snapshot-modal" hidden>
+    <div class="pl-modal-panel pl-snap-panel" role="dialog" aria-modal="true" aria-labelledby="pl-snap-title">
+      <div class="pl-modal-header">
+        <h2 class="pl-modal-title" id="pl-snap-title">📸 예상 계획 스냅샷</h2>
+        <button type="button" class="pl-modal-close" id="pl-snap-close" aria-label="닫기">×</button>
+      </div>
+      <div class="pl-modal-body">
+        <p class="pl-modal-desc">예상(planned) 셀·인력구성·역할을 한 시점으로 저장해 두고, 나중에 차이를 비교하거나 복원할 수 있습니다.</p>
+
+        <!-- 저장 -->
+        <div class="pl-snap-save-box">
+          <div class="pl-snap-current" id="pl-snap-current-summary"></div>
+          <div class="pl-snap-save-row">
+            <input type="text" id="pl-snap-label-input" class="pl-snap-label-input"
+              placeholder="스냅샷 이름 (예: 7월 계획안)" maxlength="60" autocomplete="off">
+            <button type="button" class="ui-btn ui-btn--primary" id="pl-snap-save-btn">📸 현재 계획 저장</button>
+          </div>
+        </div>
+
+        <!-- 이력 -->
+        <div class="pl-modal-section-title" style="margin-top:1.25rem;">저장된 스냅샷</div>
+        <div id="pl-snap-list" class="pl-snap-list"></div>
+      </div>
+      <div class="pl-modal-footer">
+        <button type="button" class="ui-btn" id="pl-snap-close-2" onclick="document.getElementById('pl-snapshot-modal').hidden=true">닫기</button>
       </div>
     </div>
   </div>

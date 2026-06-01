@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>[60hz] 인력 상세</title>
+  <title>상세</title>
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="sidebar.css">
   <style>
@@ -1956,7 +1956,7 @@
     <main class="main-area">
       <div class="container">
         <header class="header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.75rem">
-          <h1 class="header-title">📑 인력 상세</h1>
+          <h1 class="header-title">📑 상세</h1>
           <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
             <button type="button" id="bulk-download-btn" class="ui-btn ui-btn--ghost" title="현재 인력의 상세 정보를 엑셀로 다운로드">
               ⬇️ 전체 다운로드
@@ -1971,6 +1971,12 @@
             </a>
           </div>
         </header>
+
+        <!-- 회사 필터 -->
+        <div style="display:flex; align-items:center; gap:0.6rem; margin-bottom:0.75rem;">
+          <span style="font-size:0.85rem; color:var(--text-secondary); font-weight:500;">회사</span>
+          <div id="pd-company-chips"></div>
+        </div>
 
         <!-- 상단 한 줄 요약 (자세한 통계는 인력 대시보드에서) -->
         <div class="persons-mini-summary" aria-label="인력 요약">
@@ -2007,15 +2013,6 @@
                 <option value="all">전체</option>
                 <option value="active" selected>재직</option>
                 <option value="exited">퇴직</option>
-              </select>
-            </label>
-            <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.875rem;color:var(--text-secondary)">
-              회사:
-              <select id="filter-company" class="ui-select">
-                <option value="all">전체</option>
-                <option value="식스티">식스티</option>
-                <option value="굿뉴스">굿뉴스</option>
-                <option value="패리티">패리티</option>
               </select>
             </label>
             <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.875rem;color:var(--text-secondary)">
@@ -2332,6 +2329,7 @@
   <script src="firestore-service.js"></script>
   <script src="sidebar.js"></script>
   <script src="persons-summary.js"></script>
+  <script src="company-filter.js"></script>
   <script src="persons-detail.js"></script>
   <script src="floating-buttons.js"></script>
 </body>

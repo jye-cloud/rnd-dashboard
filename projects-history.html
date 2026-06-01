@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>[60hz] R&D · 용역 수행 현황</title>
+  <title>수행 현황</title>
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="sidebar.css">
   <style>
@@ -764,8 +764,14 @@
     <main class="main-area">
       <div class="container">
         <header class="header">
-          <h1 class="header-title">[60hz] R&D · 용역 수행 현황</h1>
+          <h1 class="header-title">📜 수행 현황</h1>
         </header>
+
+        <!-- 회사 필터 -->
+        <div style="display:flex; align-items:center; gap:0.6rem; margin-bottom:0.75rem;">
+          <span style="font-size:0.85rem; color:var(--text-secondary); font-weight:500;">회사</span>
+          <div id="history-company-chips"></div>
+        </div>
 
         <div class="history-toolbar">
           <span class="history-toolbar-label">연도</span>
@@ -936,6 +942,7 @@
   <script src="auth-guard.js"></script>
   <script src="firestore-service.js"></script>
   <script src="sidebar.js"></script>
+  <script src="company-filter.js"></script>
   <script src="projects-history.js"></script>
   <script src="floating-buttons.js"></script>
 </body>

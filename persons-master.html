@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>[60hz] 인력 마스터</title>
+  <title>마스터</title>
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="sidebar.css">
   <style>
@@ -1595,7 +1595,7 @@
     <main class="main-area">
       <div class="container">
         <header class="header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.75rem">
-          <h1 class="header-title">👥 인력 마스터</h1>
+          <h1 class="header-title">👤 마스터</h1>
           <div style="display:flex;gap:0.5rem">
             <input type="file" id="excel-input" accept=".xlsx,.xls" hidden>
             <input type="file" id="bulk-edit-input" accept=".xlsx,.xls" hidden>
@@ -1627,6 +1627,12 @@
             <button type="button" class="ui-btn ui-btn--primary" id="person-add-btn" title="인력 한 명씩 직접 추가">+ 인력 추가</button>
           </div>
         </header>
+
+        <!-- 회사 필터 -->
+        <div style="display:flex; align-items:center; gap:0.6rem; margin-bottom:0.75rem;">
+          <span style="font-size:0.85rem; color:var(--text-secondary); font-weight:500;">회사</span>
+          <div id="pm-company-chips"></div>
+        </div>
 
         <!-- 마이그레이션 경고 배너: 생년월일 미입력 인력이 있을 때만 표시 -->
         <div class="migration-banner" id="migration-banner" hidden role="button" tabindex="0" aria-label="생년월일 미입력 인력 필터링">
@@ -1672,16 +1678,6 @@
                 <option value="active" selected>재직</option>
                 <option value="exited">퇴직</option>
                 <option value="moonlight">겸직</option>
-              </select>
-            </label>
-            <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.875rem;color:var(--text-secondary)">
-              회사:
-              <select id="filter-company" class="ui-select">
-                <option value="all">전체</option>
-                <option value="식스티">식스티</option>
-                <option value="굿뉴스">굿뉴스</option>
-                <option value="패리티">패리티</option>
-                <option value="unset">미지정</option>
               </select>
             </label>
             <label style="display:flex;align-items:center;gap:0.4rem;font-size:0.875rem;color:var(--text-secondary)">
@@ -1954,6 +1950,7 @@
   <script src="firestore-service.js"></script>
   <script src="sidebar.js"></script>
   <script src="persons-summary.js"></script>
+  <script src="company-filter.js"></script>
   <script src="persons-master.js"></script>
   <script src="floating-buttons.js"></script>
 </body>

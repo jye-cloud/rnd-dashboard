@@ -6,7 +6,7 @@
   </script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>[R&DM] 과제별 상세</title>
+  <title>과제별 상세</title>
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="sidebar.css">
   <style>
@@ -223,8 +223,14 @@
     <main class="main-area">
       <div class="container">
         <header class="header">
-          <h1 class="header-title">[R&DM] 과제별 상세</h1>
+          <h1 class="header-title">🪪 과제별 상세</h1>
         </header>
+
+        <!-- 회사 필터 -->
+        <div style="display:flex; align-items:center; gap:0.6rem; margin-bottom:0.75rem;">
+          <span style="font-size:0.85rem; color:var(--text-secondary); font-weight:500;">회사</span>
+          <div id="ps-company-chips"></div>
+        </div>
 
         <div class="summary-toolbar">
           <span class="toolbar-label">현재 수행 중인 과제 및 지원사업 (용역 제외)</span>
@@ -249,6 +255,7 @@
   <script src="auth-guard.js"></script>
   <script src="firestore-service.js"></script>
   <script src="sidebar.js"></script>
+  <script src="company-filter.js"></script>
   <script src="projects-summary.js"></script>
 </body>
 </html>

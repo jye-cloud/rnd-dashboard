@@ -272,8 +272,9 @@
     // 자금
     var sujuTotal = 0;       // 수주 지원금 — 그 해 시작 yearBudget.support 합 (status 수행/종료/선정기타)
     var yearSupport = 0;     // 입금 예정 지원금 — 그 해 입금 예정 금액 (총합)
-    var yearSupportTask = 0; // 입금 예정 지원금 — 과제 분류만
-    var yearSupportOther = 0;// 입금 예정 지원금 — 지원사업 + 기타 (용역 제외)
+    var yearSupportTask = 0;    // 입금 예정 지원금 — 과제 분류
+    var yearSupportSupport = 0; // 입금 예정 지원금 — 지원사업 분류
+    var yearSupportOther = 0;   // 입금 예정 지원금 — 기타 + 빈 값 (용역 제외)
     var yearActual = 0;      // 입금 완료 — 그 해 actualPayments 합
     var yearCash = 0;
     var yearInKind = 0;
@@ -327,9 +328,11 @@
         yearSupport += amt.support;
         yearCash    += amt.cash;
         yearInKind  += amt.inKind;
-        // 유형별 — 과제 vs 기타(지원사업 + 기타 + 빈 값)
+        // 유형별 — 과제 / 지원사업 / 기타(기타 + 빈 값). 용역은 위에서 제외됨
         if (it.division1 === '과제') {
           yearSupportTask += amt.support;
+        } else if (it.division1 === '지원사업') {
+          yearSupportSupport += amt.support;
         } else {
           yearSupportOther += amt.support;
         }
@@ -353,6 +356,7 @@
       sujuTotal: sujuTotal,
       yearSupport: yearSupport,
       yearSupportTask: yearSupportTask,
+      yearSupportSupport: yearSupportSupport,
       yearSupportOther: yearSupportOther,
       yearActual: yearActual,
       yearCash: yearCash,
@@ -379,13 +383,14 @@
     if (titleEl) titleEl.innerHTML = year + '년 현황 <span aria-hidden="true">📋</span>';
   }
 
-  // Panel 2: 지원금 현황 — 입금 예정(과제) + 전체/기타 + 입금 완료율
+  // Panel 2: 지원금 현황 — 전체(메인) + 과제/지원사업/기타 + 입금 완료율
   function renderFunding(kpis, year) {
-    // 카드 1: 입금 예정 (과제) — 메인, 파란색 강조
-    setText('hero-task-sum', eokFloor(kpis.yearSupportTask));
-
-    // 카드 2: 전체 / 기타
+    // 카드 1: 전체 — 메인, 큰 숫자
     setText('hero-total-sum', eokFloor(kpis.yearSupport));
+
+    // 카드 2: 과제 / 지원사업 / 기타 (미니)
+    setText('hero-task-sum', eokFloor(kpis.yearSupportTask));
+    setText('hero-support-sum', eokFloor(kpis.yearSupportSupport));
     setText('hero-other-sum', eokFloor(kpis.yearSupportOther));
 
     // 카드 3: 입금 완료율 — actualPayments / yearSupport * 100
@@ -914,14 +919,20 @@
     }
 
     function rerender() {
-      var kpis = computeKPIs(latestItems, currentYear);
+      // 회사 필터 (전 페이지 공유)
+      var company = (window.CompanyFilter && window.CompanyFilter.get) ? window.CompanyFilter.get() : '';
+      var items = company
+        ? latestItems.filter(function (it) { return it && it.company === company; })
+        : latestItems;
+
+      var kpis = computeKPIs(items, currentYear);
       renderPills(kpis, currentYear);
       renderFunding(kpis, currentYear);
-      renderAlerts(latestItems, currentYear, kpis, latestCalendarEvents);
+      renderAlerts(items, currentYear, kpis, latestCalendarEvents);
       renderDonut(kpis, currentYear);
-      renderRecent(latestItems, currentYear);
-      renderRecentServices(latestItems, currentYear);
-      renderMonthlyProposalCard(latestItems, currentYear);
+      renderRecent(items, currentYear);
+      renderRecentServices(items, currentYear);
+      renderMonthlyProposalCard(items, currentYear);
 
       // 동적 링크 갱신 — 현재 연도 인계
       var recentLink = document.getElementById('recent-link');
@@ -966,6 +977,13 @@
     if (yearSelect) {
       yearSelect.addEventListener('change', function () {
         currentYear = parseInt(yearSelect.value, 10) || DEFAULT_YEAR;
+        rerender();
+      });
+    }
+
+    // 회사 필터 칩 (전 페이지 공유)
+    if (window.CompanyFilter) {
+      window.CompanyFilter.mountChips('dash-company-chips', function () {
         rerender();
       });
     }

@@ -57,7 +57,6 @@
     searchWrap: null,
     searchClear: null,
     filterStatus: null,
-    filterCompany: null,
     filterGender: null,
     filterAge: null,
     filterYouth: null,
@@ -2498,7 +2497,9 @@
   }
 
   function onFilterCompanyChange() {
-    _filter.company = el.filterCompany.value || 'all';
+    // CompanyFilter (회사 칩)로부터 호출됨. 인자: '' (전체) | '식스티' | '굿뉴스' | '패리티'
+    var company = (window.CompanyFilter && window.CompanyFilter.get) ? window.CompanyFilter.get() : '';
+    _filter.company = company || 'all';
     render();
   }
 
@@ -2540,7 +2541,6 @@
     if (el.search)         el.search.addEventListener('input', onSearchInput);
     if (el.searchClear)    el.searchClear.addEventListener('click', onSearchClear);
     if (el.filterStatus)   el.filterStatus.addEventListener('change', onFilterStatusChange);
-    if (el.filterCompany)  el.filterCompany.addEventListener('change', onFilterCompanyChange);
     if (el.filterGender)   el.filterGender.addEventListener('change', onFilterGenderChange);
     if (el.filterAge)      el.filterAge.addEventListener('change', onFilterAgeChange);
     if (el.filterYouth)    el.filterYouth.addEventListener('change', onFilterYouthChange);
@@ -2610,7 +2610,6 @@
     el.searchWrap    = $('search-wrap');
     el.searchClear   = $('search-clear');
     el.filterStatus  = $('filter-status');
-    el.filterCompany = $('filter-company');
     el.filterGender  = $('filter-gender');
     el.filterAge     = $('filter-age');
     el.filterYouth   = $('filter-youth');
@@ -2673,6 +2672,15 @@
 
     bindEvents();
     bindModalEvents();
+
+    // 회사 필터 칩 (전 페이지 공유)
+    if (window.CompanyFilter) {
+      // 1) localStorage에 저장된 회사로 _filter.company 초기 동기화
+      var savedCompany = window.CompanyFilter.get();
+      _filter.company = savedCompany || 'all';
+      // 2) 칩 UI 렌더링 + 클릭 시 재렌더
+      window.CompanyFilter.mountChips('pm-company-chips', onFilterCompanyChange);
+    }
 
     if (!window.firestoreService || typeof window.firestoreService.subscribePersons !== 'function') {
       console.error('firestoreService.subscribePersons 가 없습니다. firestore-service.js 가 먼저 로드되었는지 확인하세요.');

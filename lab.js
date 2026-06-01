@@ -421,9 +421,9 @@
       }
 
       // 카드 펼침 규칙:
-      //  - 데이터 있는 달 + (업로드 달 OR 오늘 월) → 펼침
-      //  - 그 외 → 접힘
-      var expanded = (applicable && (isUpload || isToday)) ? 'true' : 'false';
+      //  - 데이터 있는 달 + 오늘 월 → 펼침 (선택 연도가 올해일 때만 해당 월 존재)
+      //  - 그 외(업로드 달 포함) → 접힘
+      var expanded = (applicable && isToday) ? 'true' : 'false';
 
       // 오늘 월 카드는 살짝 강조 (테두리 색)
       var cardExtraClass = isToday ? ' lab-month-card--today' : '';

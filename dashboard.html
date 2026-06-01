@@ -7,7 +7,7 @@
   </script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>[R&DM] 대시보드</title>
+  <title>대시보드</title>
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="sidebar.css">
   <style>
@@ -1061,8 +1061,14 @@
     <main class="main-area">
       <div class="container">
         <header class="header">
-          <h1 class="header-title">[R&DM] 대시보드</h1>
+          <h1 class="header-title">🏠 대시보드</h1>
         </header>
+
+        <!-- 회사 필터 -->
+        <div style="display:flex; align-items:center; gap:0.6rem; margin-bottom:0.75rem;">
+          <span style="font-size:0.85rem; color:var(--text-secondary); font-weight:500;">회사</span>
+          <div id="dash-company-chips"></div>
+        </div>
 
         <div class="dash-toolbar">
           <span class="toolbar-label">기준 연도</span>
@@ -1131,21 +1137,25 @@
               <p class="hero-panel-subtitle" id="funding-subtitle">2026년 입금 예정</p>
               <div class="big-stats big-stats--triple">
                 <div>
-                  <div class="big-stat-num"><span id="hero-task-sum">0</span><small>억</small></div>
-                  <div class="big-stat-label">입금 예정 (과제)</div>
+                  <div class="big-stat-num"><span id="hero-total-sum">0</span><small>억</small></div>
+                  <div class="big-stat-label">전체</div>
                 </div>
                 <div>
                   <div class="type-mini">
                     <div class="type-mini-row">
-                      <span class="type-mini-label">전체</span>
-                      <span class="type-mini-value"><span id="hero-total-sum">0</span><small>억</small></span>
+                      <span class="type-mini-label">과제</span>
+                      <span class="type-mini-value"><span id="hero-task-sum">0</span><small>억</small></span>
+                    </div>
+                    <div class="type-mini-row">
+                      <span class="type-mini-label">지원사업</span>
+                      <span class="type-mini-value"><span id="hero-support-sum">0</span><small>억</small></span>
                     </div>
                     <div class="type-mini-row">
                       <span class="type-mini-label">기타</span>
                       <span class="type-mini-value"><span id="hero-other-sum">0</span><small>억</small></span>
                     </div>
                   </div>
-                  <div class="big-stat-label">전체 / 기타</div>
+                  <div class="big-stat-label">과제 / 지원사업 / 기타</div>
                 </div>
                 <div class="big-stats-divider" aria-hidden="true"></div>
                 <div>
@@ -1353,6 +1363,7 @@
   <script src="auth-guard.js"></script>
   <script src="firestore-service.js"></script>
   <script src="sidebar.js"></script>
+  <script src="company-filter.js"></script>
   <script src="dashboard.js"></script>
   <script src="floating-buttons.js"></script>
 </body>

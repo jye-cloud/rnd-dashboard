@@ -256,6 +256,7 @@
   // ====================================================================
   var LABOR_COLL  = 'projectLabor';
   var BUDGET_COLL = 'projectBudget';   // v5: 예산총액 sticky 박스용
+  var SNAP_COLL   = 'projectLaborSnapshots';  // v7.4.4 §4.2: 예상 계획 스냅샷 (1 문서 = 1 스냅샷)
 
   function db() {
     return window.__firebaseDb;
@@ -395,44 +396,80 @@
     return isFinite(v) ? v : 0;
   }
 
+  // ====================================================================
+  // v7.4 §3.4: 금액 3분류 (지원금 / 현금 / 현물)
+  //   데이터 키 '현금'      = 정부지원금 (환급 대상, cell.cash)
+  //   데이터 키 '자부담현금' = 자부담 현금 (환급 X, cell.selfCash)
+  //   데이터 키 '현물'      = 자부담 현물 (환급 X, cell.inkind)
+  //   ※ 표시 라벨은 fundTypeLabel로 '지원금/현금/현물'. 값 비교·저장은 항상 데이터 키.
+  //   ※ 자부담현금 컬럼/옵션은 과제 단위 플래그 project.hasSelfCash (budget에서 설정) 가 true일 때만 노출.
+  // ====================================================================
+  var FUND_FIELD       = { '현금': 'cash', '자부담현금': 'selfCash', '현물': 'inkind' };
+  var FUND_TYPE_LABELS = { '현금': '지원금', '자부담현금': '현금', '현물': '현물' };
+  var MONEY_FIELDS     = ['cash', 'selfCash', 'inkind'];
+  function moneyFieldOf(ci) { return FUND_FIELD[ci] || 'cash'; }
+  function otherMoneyFields(field) { return MONEY_FIELDS.filter(function (f) { return f !== field; }); }
+  function fundTypeLabel(ci) { return FUND_TYPE_LABELS[ci] || ci; }
+  function projHasSelfCash(project) { return !!(project && project.hasSelfCash); }
+  // cashOrInkind 정규화 — 알 수 없는 값은 '현금'(지원금)으로 폴백
+  function normalizeCi(ci) { return (ci === '현물' || ci === '자부담현금') ? ci : '현금'; }
+
   // v5 Step 4: 인력 행의 personRoles 드롭다운 HTML 빌더
-  // - 이름·뱃지 줄 아래에 [기존/신규] [현금/현물] 셀렉트 2개
+  // - 이름·뱃지 줄 아래에 [기존/신규] [지원금/현금/현물] 셀렉트 2개
   // - newOrExisting==='신규' 일 때만 subRole 자유 텍스트 입력란 표시
   // - 선택값마다 색이 달라지도록 modifier 클래스 (--existing/--new, --cash/--inkind) 부여
   // - 변경 이벤트는 위임으로 처리 (bindEvents의 change/input 핸들러)
-  function buildRoleControlsHtml(personId) {
-    var role = (state.personRoles && state.personRoles[personId]) || {
-      newOrExisting: '기존', cashOrInkind: '현금', subRole: ''
-    };
+  // v7.4: 기존/신규 셀렉트 (이름 줄 왼쪽에 인라인)
+  function buildNeSelectHtml(personId) {
+    var role = (state.personRoles && state.personRoles[personId]) || { newOrExisting: '기존' };
     var ne = role.newOrExisting === '신규' ? '신규' : '기존';
-    var ci = role.cashOrInkind  === '현물' ? '현물' : '현금';
-    var sub = role.subRole || '';
-
     var neCls = 'pl-role-select pl-role-select--ne ' + (ne === '신규' ? 'is-new' : 'is-existing');
-    var ciCls = 'pl-role-select pl-role-select--ci ' + (ci === '현물' ? 'is-inkind' : 'is-cash');
+    return '<select class="' + neCls + '" data-role-field="newOrExisting" data-person-id="' + personId + '" aria-label="기존/신규">' +
+        '<option value="기존"' + (ne === '기존' ? ' selected' : '') + '>기존</option>' +
+        '<option value="신규"' + (ne === '신규' ? ' selected' : '') + '>신규</option>' +
+      '</select>';
+  }
 
-    var html =
-      '<div class="pl-role-controls">' +
-        '<select class="' + neCls + '" data-role-field="newOrExisting" data-person-id="' + personId + '" aria-label="기존/신규">' +
-          '<option value="기존"' + (ne === '기존' ? ' selected' : '') + '>기존</option>' +
-          '<option value="신규"' + (ne === '신규' ? ' selected' : '') + '>신규</option>' +
-        '</select>' +
-        '<select class="' + ciCls + '" data-role-field="cashOrInkind" data-person-id="' + personId + '" aria-label="현금/현물">' +
-          '<option value="현금"' + (ci === '현금' ? ' selected' : '') + '>현금</option>' +
-          '<option value="현물"' + (ci === '현물' ? ' selected' : '') + '>현물</option>' +
-        '</select>' +
+  // v7.4: 나눔 토글 — 작은 체크박스만(월급 칸 우측). 실무자용이라 라벨 생략.
+  function buildSplitToggleHtml(personId, isSplit) {
+    return '<label class="pl-split-toggle" title="분류 나눔 — 지원금/현물(+현금) 줄로 나눠 입력">' +
+        '<input type="checkbox" data-role-field="split" data-person-id="' + personId + '"' + (isSplit ? ' checked' : '') + ' />' +
+      '</label>';
+  }
+
+  // 세부역할(신규일 때만) — 이름 아래 줄. 기존/신규는 이름 줄로 이동(buildNeSelectHtml).
+  function buildRoleControlsHtml(personId) {
+    var role = (state.personRoles && state.personRoles[personId]) || { newOrExisting: '기존', subRole: '' };
+    var ne = role.newOrExisting === '신규' ? '신규' : '기존';
+    var sub = role.subRole || '';
+    if (ne !== '신규') return '';
+    return '<div class="pl-subrole-row">' +
+        '<span class="pl-subrole-prefix">↳</span>' +
+        '<input type="text" class="pl-subrole-input" data-role-field="subRole" data-person-id="' + personId + '" ' +
+          'value="' + escapeAttr(sub) + '" placeholder="청년 필수 1 / 청년 추가 2 / 기타 1 등" />' +
       '</div>';
+  }
 
-    // 신규일 때만 subRole 입력
-    if (ne === '신규') {
-      html +=
-        '<div class="pl-subrole-row">' +
-          '<span class="pl-subrole-prefix">↳</span>' +
-          '<input type="text" class="pl-subrole-input" data-role-field="subRole" data-person-id="' + personId + '" ' +
-            'value="' + escapeAttr(sub) + '" placeholder="청년 필수 1 / 청년 추가 2 / 기타 1 등" />' +
-        '</div>';
+  // v7.4: 구분(분류) 컬럼 셀 HTML — 분류 드롭다운(지원금/현금/현물)
+  //   비교 탭 외 모드에서 이름·월급 다음 고정 컬럼에 렌더.
+  function buildClassifyCellHtml(personId) {
+    var role = (state.personRoles && state.personRoles[personId]) || { cashOrInkind: '현금' };
+    var ci = normalizeCi(role.cashOrInkind);
+    var hasSelfCash   = projHasSelfCash(getProject());
+    var allowSelfCash = hasSelfCash || ci === '자부담현금';
+    var ciCls = 'pl-role-select pl-role-select--ci ' + (ci === '현물' ? 'is-inkind' : ci === '자부담현금' ? 'is-selfcash' : 'is-cash');
+
+    var ciOptions =
+      '<option value="현금"' + (ci === '현금' ? ' selected' : '') + '>' + fundTypeLabel('현금') + '</option>';
+    if (allowSelfCash) {
+      ciOptions +=
+        '<option value="자부담현금"' + (ci === '자부담현금' ? ' selected' : '') + '>' + fundTypeLabel('자부담현금') + '</option>';
     }
-    return html;
+    ciOptions +=
+      '<option value="현물"' + (ci === '현물' ? ' selected' : '') + '>' + fundTypeLabel('현물') + '</option>';
+
+    return '<select class="' + ciCls + '" data-role-field="cashOrInkind" data-person-id="' + personId + '" aria-label="지원금/현금/현물">' +
+      ciOptions + '</select>';
   }
 
   // HTML 속성용 간단 이스케이프 (value="..." 안에 들어가는 사용자 입력 안전 처리)
@@ -979,6 +1016,7 @@
     buildTable(document.getElementById('pl-table-compare'), 'compare');
     updateTabCounts();
     renderStickyBoxes();      // v5 Step 2
+    renderSnapshotBtnVisibility();  // v7.4.4 §4.2
   }
 
   // ====================================================================
@@ -1156,15 +1194,19 @@
     var hasRefund = !project || project.laborRefund !== false;
 
     // v5 Step 3: 월 컬럼 총 개수 (접힌 월=1, 펼친 월=mode별)
-    // v5.1: compare 5 → 2 → v5 Step 4: 환급 있으면 3(% / 현금 / 현물), 없으면 1(%)
+    // v5.1: compare 5 → 2 → v5 Step 4: 환급 있으면 3(% / 지원금 / 현물), 없으면 1(%)
+    // v7.4: hasSelfCash면 자부담현금(현금) 컬럼 추가 → 4(% / 지원금 / 현금 / 현물)
+    var hasSelfCash = projHasSelfCash(project);
+    var moneyColsCount = hasSelfCash ? 3 : 2;   // 지원금(+현금) + 현물
     function colsPerMonth(m) {
       if (isMonthCollapsed(m.month)) return 1;
-      if (mode === 'compare') return hasRefund ? 3 : 1;
-      return hasRefund ? 3 : 1;
+      return hasRefund ? (1 + moneyColsCount) : 1;
     }
     var totalMonthCols = months.reduce(function (sum, m) { return sum + colsPerMonth(m); }, 0);
-    // v5.3: 합계 컬럼 2개(현금/현물) — hasRefund + compare 아닐 때만
-    var totalCols = 2 + totalMonthCols + ((hasRefund && mode !== 'compare') ? 2 : 0);
+    // v5.3: 우측 합계 컬럼(현금/현물) — hasRefund + compare 아닐 때만. v7.4: hasSelfCash면 +1(현금)
+    // v7.4: 고정 왼쪽 컬럼 수 — 이름+월급(+구분, 비교 외)
+    var fixedLeftCols = 2 + (mode !== 'compare' ? 1 : 0);
+    var totalCols = fixedLeftCols + totalMonthCols + ((hasRefund && mode !== 'compare') ? moneyColsCount : 0);
 
     tableEl.innerHTML = '';
 
@@ -1183,30 +1225,29 @@
 
     // colgroup
     var cg = document.createElement('colgroup');
-    cg.innerHTML = '<col class="col-name"><col class="col-salary">';
+    // v7.4: 이름 | 월급 | [구분(분류)] — 구분 컬럼은 비교 탭 외 모드에만 (비교 탭 2번째 고정칸은 행타입 '구분')
+    cg.innerHTML = '<col class="col-name"><col class="col-salary">' +
+      (mode !== 'compare' ? '<col class="col-classify">' : '');
     months.forEach(function (m) {
       // v5 Step 3: 접힌 월은 단일 좁은 컬럼 1개
       if (isMonthCollapsed(m.month)) {
         cg.innerHTML += '<col class="col-collapsed">';
         return;
       }
-      if (mode === 'compare') {
-        // v5 Step 4: 환급 있으면 3컬럼(% / 현금 / 현물), 없으면 1컬럼(%)
-        if (hasRefund) {
-          cg.innerHTML += '<col class="col-rate"><col class="col-cash"><col class="col-inkind">';
-        } else {
-          cg.innerHTML += '<col class="col-rate">';
-        }
-      } else if (hasRefund) {
-        cg.innerHTML += '<col class="col-rate"><col class="col-cash"><col class="col-inkind">';
+      // v5 Step 4: 환급 있으면 지원금/현물(+v7.4 hasSelfCash면 현금) 컬럼, 없으면 참여율만
+      if (hasRefund) {
+        cg.innerHTML += '<col class="col-rate"><col class="col-cash">' +
+          (hasSelfCash ? '<col class="col-selfcash">' : '') +
+          '<col class="col-inkind">';
       } else {
-        // 환급 없음: 참여율만
         cg.innerHTML += '<col class="col-rate">';
       }
     });
-    // v5.3: 우측 합계 컬럼 — hasRefund일 때만 (참여율은 합계 의미 없음)
+    // v5.3: 우측 합계 컬럼 — hasRefund일 때만 (참여율은 합계 의미 없음). v7.4: hasSelfCash면 현금 합계 추가
     if (hasRefund && mode !== 'compare') {
-      cg.innerHTML += '<col class="col-total-cash"><col class="col-total-inkind">';
+      cg.innerHTML += '<col class="col-total-cash">' +
+        (hasSelfCash ? '<col class="col-total-selfcash">' : '') +
+        '<col class="col-total-inkind">';
     }
     tableEl.appendChild(cg);
 
@@ -1216,7 +1257,7 @@
     trMonth.className = 'pl-thead-month';
 
     var thName = document.createElement('th');
-    thName.textContent = '인력';
+    thName.textContent = '이름';
     thName.rowSpan = 2;
     thName.className = 'th-fixed pl-sticky-left';   // v5.3: sticky
     trMonth.appendChild(thName);
@@ -1227,6 +1268,15 @@
     thSalary.rowSpan = 2;
     thSalary.className = 'th-fixed';
     trMonth.appendChild(thSalary);
+
+    // v7.4: 분류 구분 컬럼 헤더 (비교 탭 외)
+    if (mode !== 'compare') {
+      var thClassify = document.createElement('th');
+      thClassify.textContent = '구분';
+      thClassify.rowSpan = 2;
+      thClassify.className = 'th-fixed';
+      trMonth.appendChild(thClassify);
+    }
 
     months.forEach(function (m, mi) {
       var isLast = mi === months.length - 1;
@@ -1252,9 +1302,7 @@
       }
 
       // 펼친 월
-      th.colSpan = mode === 'compare'
-        ? (hasRefund ? 3 : 1)
-        : (hasRefund ? 3 : 1);
+      th.colSpan = hasRefund ? (1 + moneyColsCount) : 1;
       th.className = 'th-month' + (!isLast ? ' month-sep' : '');
 
       // v5.1: 확정 메타 — 예상 탭에서만 확정 버튼 노출
@@ -1317,16 +1365,25 @@
       trMonth.appendChild(th);
     });
     // v5.3: 우측 합계 헤더 (rowSpan=2로 두 헤더 행 합침)
+    // v7.4: hasSelfCash면 [합계 지원금 | 합계 현금 | 합계 현물] 3열, 아니면 [합계 지원금 | 합계 현물] 2열
+    //   sticky 우측 인덱스: 현물=0(right:0), 현금=1(right:100), 지원금=2(right:200, hasSelfCash) 또는 지원금=1(2열일 때)
     if (hasRefund && mode !== 'compare') {
       var thTotalCash = document.createElement('th');
       thTotalCash.rowSpan = 2;
-      thTotalCash.className = 'pl-th-total pl-sticky-right-1';
-      thTotalCash.textContent = '합계 현금';
+      thTotalCash.className = 'pl-th-total ' + (hasSelfCash ? 'pl-sticky-right-2' : 'pl-sticky-right-1');
+      thTotalCash.textContent = '합계 ' + fundTypeLabel('현금');   // "합계 지원금"
       trMonth.appendChild(thTotalCash);
+      if (hasSelfCash) {
+        var thTotalSelf = document.createElement('th');
+        thTotalSelf.rowSpan = 2;
+        thTotalSelf.className = 'pl-th-total pl-sticky-right-1';
+        thTotalSelf.textContent = '합계 ' + fundTypeLabel('자부담현금');   // "합계 현금"
+        trMonth.appendChild(thTotalSelf);
+      }
       var thTotalInkind = document.createElement('th');
       thTotalInkind.rowSpan = 2;
       thTotalInkind.className = 'pl-th-total pl-sticky-right-0';
-      thTotalInkind.textContent = '합계 현물';
+      thTotalInkind.textContent = '합계 ' + fundTypeLabel('현물');   // "합계 현물"
       trMonth.appendChild(thTotalInkind);
     }
     thead.appendChild(trMonth);
@@ -1338,11 +1395,12 @@
       if (isMonthCollapsed(m.month)) return;
 
       var isLast = mi === months.length - 1;
-      var cols = mode === 'compare'
-        ? (hasRefund ? ['참여율', '현금', '현물'] : ['참여율'])
-        : hasRefund
-          ? ['참여율', '현금', '현물']
-          : ['참여율'];
+      // v7.4: 환급 컬럼 라벨 — 지원금 / (현금) / 현물
+      var cols = hasRefund
+        ? (hasSelfCash
+            ? ['참여율', fundTypeLabel('현금'), fundTypeLabel('자부담현금'), fundTypeLabel('현물')]
+            : ['참여율', fundTypeLabel('현금'), fundTypeLabel('현물')])
+        : ['참여율'];
       cols.forEach(function (label, li) {
         var th = document.createElement('th');
         th.textContent = label;
@@ -1368,6 +1426,8 @@
       persons.forEach(function (person) {
         if (mode === 'compare') {
           buildCompareRows(tbody, person, months, project);
+        } else if (state.personRoles && state.personRoles[person.id] && state.personRoles[person.id].split) {
+          buildSplitPersonRows(tbody, person, months, project, dataMap, mode, hasRefund);
         } else {
           buildDataRow(tbody, person, months, project, dataMap, mode, hasRefund);
         }
@@ -1394,7 +1454,7 @@
       trSum.className = 'pl-tfoot-sum';
 
       var tdLabel = document.createElement('td');
-      tdLabel.colSpan = 2;
+      tdLabel.colSpan = 3;   // v7.4: 이름+월급+구분
       tdLabel.className = 'td-fixed pl-sticky-left';   // v5.3: sticky
       tdLabel.textContent = hasRefund ? '월별 합계 (환급 예정)' : '월별 합계 (참여율)';
       trSum.appendChild(tdLabel);
@@ -1413,7 +1473,9 @@
           return;
         }
 
-        var fields = hasRefund ? ['rate', 'cash', 'inkind'] : ['rate'];
+        var fields = hasRefund
+          ? (hasSelfCash ? ['rate', 'cash', 'selfCash', 'inkind'] : ['rate', 'cash', 'inkind'])
+          : ['rate'];
         fields.forEach(function (field, fi) {
           var td = document.createElement('td');
           td.id = 'sum-' + field + '-' + mode + '-' + m.ym;
@@ -1423,13 +1485,20 @@
         });
       });
 
-      // v5.3: 그랜드 토탈 (전체 인력 × 12개월 합산) — sticky 우측
+      // v5.3: 그랜드 토탈 (전체 인력 × 12개월 합산) — sticky 우측. v7.4: hasSelfCash면 현금 추가
       if (hasRefund) {
         var tdGrandCash = document.createElement('td');
-        tdGrandCash.className = 'pl-cell-total pl-sticky-right-1';
+        tdGrandCash.className = 'pl-cell-total ' + (hasSelfCash ? 'pl-sticky-right-2' : 'pl-sticky-right-1');
         tdGrandCash.id = 'grand-cash-' + mode;
         tdGrandCash.textContent = '-';
         trSum.appendChild(tdGrandCash);
+        if (hasSelfCash) {
+          var tdGrandSelf = document.createElement('td');
+          tdGrandSelf.className = 'pl-cell-total pl-sticky-right-1';
+          tdGrandSelf.id = 'grand-selfCash-' + mode;
+          tdGrandSelf.textContent = '-';
+          trSum.appendChild(tdGrandSelf);
+        }
         var tdGrandInkind = document.createElement('td');
         tdGrandInkind.className = 'pl-cell-total pl-sticky-right-0';
         tdGrandInkind.id = 'grand-inkind-' + mode;
@@ -1536,6 +1605,12 @@
   // ---- 일반 행 ----
   function buildDataRow(tbody, person, months, project, dataMap, mode, hasRefund) {
     var isExited = (person.status === 'exited');
+    var hasSelfCash = projHasSelfCash(project);   // v7.4: 자부담현금 컬럼 노출 여부
+    // v7.4: 분류 나눔 — 한 사람이 한 과제에서 분류별로 참여율을 나눠 입력
+    var roleForRow = (state.personRoles && state.personRoles[person.id]) || {};
+    var splitMode  = false;   // v7.4 1단계: 나눔(멀티행)은 2단계 구현. 현재는 단일 분류만.
+    var primaryCi  = normalizeCi(roleForRow.cashOrInkind);
+    var rowSalary  = getEffectiveMonthlySalary(person);
     // v5.3: 퇴사월 / 입사월 (YYYY-MM)
     //   - 퇴사월보다 뒤 → 잠금
     //   - 입사월보다 앞 → 잠금
@@ -1553,12 +1628,13 @@
     var badgesHtml = '';
     if (person.isYouth) badgesHtml += '<span class="pl-badge pl-badge--youth">청년</span>';
     if (person.isNew)   badgesHtml += '<span class="pl-badge pl-badge--new">신규</span>';
-    if (isExited)       badgesHtml += '<span class="pl-badge pl-badge--exit">퇴사</span>';
+    // v7.4: 퇴사자는 뱃지 대신 이름에 취소선 + 진회색 (CSS: .pl-row--exited .pl-name-text)
     // v5.2: hover 시 노출되는 ✕ 삭제 버튼. data-remove-person으로 위임 처리.
     // v5.3 Step 4.8: 이름 앞에 드래그 핸들(≡). data-drag-handle 마커 — dragstart에서 확인.
     tdName.innerHTML =
       '<div class="pl-name-row">' +
         '<span class="pl-row-drag-handle" data-drag-handle="1" title="드래그해서 순서 변경">≡</span>' +
+        buildNeSelectHtml(person.id) +
         '<span class="pl-name-text">' + person.name + '</span>' +
         (badgesHtml ? '<span class="pl-name-badges-inline">' + badgesHtml + '</span>' : '') +
         '<button type="button" class="pl-row-remove-btn" data-remove-person="' + person.id + '"' +
@@ -1577,6 +1653,8 @@
     var roles  = (state.personRoles && state.personRoles[person.id]) || {};
     var hasOverride = (typeof roles.monthlySalaryOverride === 'number' && roles.monthlySalaryOverride > 0);
     var effective   = getEffectiveMonthlySalary(person);
+    var salWrap = document.createElement('div');
+    salWrap.className = 'pl-salary-wrap';
     if (mode === 'planned') {
       // input 으로 렌더
       var salInput = document.createElement('input');
@@ -1592,16 +1670,34 @@
       salInput.title = hasOverride
         ? '과제 오버라이드 적용 중 (마스터: ' + (person.monthlySalary ? person.monthlySalary.toLocaleString('ko-KR') + '원' : '미등록') + ')\n빈 값으로 두면 마스터 값 복원'
         : '클릭해서 이 과제에 한해 다른 월급으로 변경할 수 있습니다';
-      tdSalary.appendChild(salInput);
+      salWrap.appendChild(salInput);
     } else {
       // 실제/비교 탭 — read-only 표시
-      tdSalary.textContent = fmtSalary(effective);
+      var salSpan = document.createElement('span');
+      salSpan.className = 'pl-salary-text';
+      salSpan.textContent = fmtSalary(effective);
+      salWrap.appendChild(salSpan);
       if (hasOverride) {
         tdSalary.classList.add('pl-salary-cell--override');
         tdSalary.title = '과제 오버라이드 적용 중 (마스터: ' + (person.monthlySalary ? person.monthlySalary.toLocaleString('ko-KR') + '원' : '미등록') + ')';
       }
     }
+    // v7.4: 나눔 토글 — 월급 우측 (예상 탭만)
+    //   split은 personRoles에 사람 단위로 저장돼 예상/실제/비교가 공유한다.
+    //   → 토글은 예상에서만 켜고, 실제·비교는 그 결과(멀티행)만 표시(중복 조작 방지).
+    if (mode === 'planned') {
+      salWrap.insertAdjacentHTML('beforeend', buildSplitToggleHtml(person.id, false));
+    }
+    tdSalary.appendChild(salWrap);
     tr.appendChild(tdSalary);
+
+    // v7.4: 구분(분류) 셀 — 비교 탭 외. 분류 드롭다운(지원금/현금/현물)
+    if (mode !== 'compare') {
+      var tdClassify = document.createElement('td');
+      tdClassify.className = 'td-fixed pl-td-classify';
+      tdClassify.innerHTML = buildClassifyCellHtml(person.id);
+      tr.appendChild(tdClassify);
+    }
 
     months.forEach(function (m, mi) {
       var isLast   = mi === months.length - 1;
@@ -1647,74 +1743,94 @@
       inputRate.value = fmtCellRateDisplay(cell.rate);
       applyRateColor(inputRate, cell.rate || 0);
       applyCellColorToInput(inputRate, getCellColor(cell, 'rate'));   // v5.3: 사용자 색
+      if (splitMode) {
+        // v7.4 나눔: 참여율은 분류별 합(읽기전용). 입력은 각 분류 칸에서.
+        inputRate.readOnly = true;
+        inputRate.classList.add('pl-input-split-sum');
+        inputRate.title = '분류 나눔: 각 분류 칸 합계';
+      }
       tdRate.appendChild(inputRate);
       if (cell.memo) {
-        var memoSpan = document.createElement('span');
-        memoSpan.className = 'pl-memo-text';
-        memoSpan.textContent = cell.memo;
-        tdRate.appendChild(memoSpan);
+        tdRate.classList.add('pl-cell-has-memo');
+        tdRate.title = cell.memo;
+        tdRate.appendChild(buildMemoMarker(person.id, m.ym, mode, cell.memo));
       }
       tr.appendChild(tdRate);
 
       if (hasRefund) {
-        // 현금 — v5 Step 4: 콤마 포맷팅 + 우측 정렬
-        var tdCash = document.createElement('td');
-        tdCash.className = inactive ? 'pl-cell--inactive' : '';
-        var inputCash = document.createElement('input');
-        inputCash.type = 'text';
-        inputCash.inputMode = 'numeric';
-        inputCash.className = 'pl-cell-input pl-input-cash';
-        inputCash.placeholder = '0';
-        inputCash.readOnly = locked;
-        inputCash.dataset.personId = person.id;
-        inputCash.dataset.ym = m.ym;
-        inputCash.dataset.field = 'cash';
-        inputCash.dataset.mode = mode;
-        inputCash.dataset.raw = String(cell.cash || 0);
-        inputCash.value = fmtCellMoneyDisplay(cell.cash);
-        applyCellColorToInput(inputCash, getCellColor(cell, 'cash'));   // v5.3: 사용자 색
-        tdCash.appendChild(inputCash);
-        tr.appendChild(tdCash);
+        // v7.4: 표시할 금액 분류 컬럼 — 지원금(cash) / [현금(selfCash)] / 현물(inkind)
+        var moneyFields = [{ f: 'cash', cls: 'pl-input-cash' }];
+        if (hasSelfCash) moneyFields.push({ f: 'selfCash', cls: 'pl-input-selfCash' });
+        moneyFields.push({ f: 'inkind', cls: 'pl-input-inkind' });
 
-        // 현물 — v5 Step 4: 콤마 포맷팅 + 우측 정렬
-        var tdInkind = document.createElement('td');
-        tdInkind.className = (inactive ? 'pl-cell--inactive ' : '') + (!isLast ? 'month-sep' : '');
-        var inputInkind = document.createElement('input');
-        inputInkind.type = 'text';
-        inputInkind.inputMode = 'numeric';
-        inputInkind.className = 'pl-cell-input pl-input-inkind';
-        inputInkind.placeholder = '0';
-        inputInkind.readOnly = locked;
-        inputInkind.dataset.personId = person.id;
-        inputInkind.dataset.ym = m.ym;
-        inputInkind.dataset.field = 'inkind';
-        inputInkind.dataset.mode = mode;
-        inputInkind.dataset.raw = String(cell.inkind || 0);
-        inputInkind.value = fmtCellMoneyDisplay(cell.inkind);
-        applyCellColorToInput(inputInkind, getCellColor(cell, 'inkind'));   // v5.3: 사용자 색
-        tdInkind.appendChild(inputInkind);
-        tr.appendChild(tdInkind);
+        moneyFields.forEach(function (mf, fi) {
+          var isLastField = (fi === moneyFields.length - 1);
+          var td = document.createElement('td');
+          var tdCls = (inactive ? 'pl-cell--inactive ' : '') + ((isLastField && !isLast) ? 'month-sep' : '');
+          if (tdCls.trim()) td.className = tdCls.trim();
+
+          var input = document.createElement('input');
+          input.type = 'text';
+          input.inputMode = 'numeric';
+          input.readOnly = locked;
+          input.dataset.personId = person.id;
+          input.dataset.ym = m.ym;
+          input.dataset.mode = mode;
+
+          if (splitMode) {
+            // 나눔: 이 칸은 해당 분류의 참여율(%) 입력. 금액은 급여×%로 자동.
+            //   값 우선순위: cell.rates[field] → (이 칸이 기존 분류면 cell.rate) → 0
+            var rv = (cell.rates && typeof cell.rates[mf.f] === 'number')
+              ? cell.rates[mf.f]
+              : (mf.f === primaryCi ? (cell.rate || 0) : 0);
+            input.className = 'pl-cell-input pl-input-split pl-input-splitrate-' + mf.f;
+            input.dataset.field = 'splitRate';
+            input.dataset.splitField = mf.f;
+            input.dataset.raw = String(rv);
+            input.value = rv > 0 ? fmtCellRateDisplay(rv) : '';
+            input.placeholder = '0%';
+            applyRateColor(input, rv);
+          } else {
+            input.className = 'pl-cell-input ' + mf.cls;
+            input.dataset.field = mf.f;
+            input.dataset.raw = String(cell[mf.f] || 0);
+            input.value = fmtCellMoneyDisplay(cell[mf.f]);
+            input.placeholder = '0';
+            applyCellColorToInput(input, getCellColor(cell, mf.f));   // v5.3: 사용자 색
+          }
+          td.appendChild(input);
+          tr.appendChild(td);
+        });
       } else {
         // 환급 없음: 참여율 셀에 month-sep만 추가
         if (!isLast) tdRate.classList.add('month-sep');
       }
     });
 
-    // v5.3: 우측 합계 셀 2개 (현금/현물) — 행 단위 12개월 합산
+    // v5.3: 우측 합계 셀 (지원금/[현금]/현물) — 행 단위 12개월 합산. v7.4: hasSelfCash면 현금 추가
     if (hasRefund) {
-      var rowTotalCash = 0, rowTotalInkind = 0;
+      var rowTotalCash = 0, rowTotalSelf = 0, rowTotalInkind = 0;
       // dataMap에서 직접 12개월 다 더함 (months는 접힌 월 제외일 수 있어서 부정확)
       var allYms = getAllMonths(state.year).map(function (m) { return m.ym; });
       allYms.forEach(function (ym) {
         var c = getCell(dataMap, project.id, ym, person.id);
-        rowTotalCash   += (c.cash   || 0);
-        rowTotalInkind += (c.inkind || 0);
+        rowTotalCash   += (c.cash     || 0);
+        rowTotalSelf   += (c.selfCash || 0);
+        rowTotalInkind += (c.inkind   || 0);
       });
       var tdTotalCash = document.createElement('td');
-      tdTotalCash.className = 'pl-cell-total pl-sticky-right-1';
+      tdTotalCash.className = 'pl-cell-total ' + (hasSelfCash ? 'pl-sticky-right-2' : 'pl-sticky-right-1');
       tdTotalCash.id = 'total-cash-' + mode + '-' + person.id;
       tdTotalCash.textContent = rowTotalCash ? rowTotalCash.toLocaleString('ko-KR') : '-';
       tr.appendChild(tdTotalCash);
+
+      if (hasSelfCash) {
+        var tdTotalSelf = document.createElement('td');
+        tdTotalSelf.className = 'pl-cell-total pl-sticky-right-1';
+        tdTotalSelf.id = 'total-selfCash-' + mode + '-' + person.id;
+        tdTotalSelf.textContent = rowTotalSelf ? rowTotalSelf.toLocaleString('ko-KR') : '-';
+        tr.appendChild(tdTotalSelf);
+      }
 
       var tdTotalInkind = document.createElement('td');
       tdTotalInkind.className = 'pl-cell-total pl-sticky-right-0';
@@ -1726,7 +1842,226 @@
     tbody.appendChild(tr);
   }
 
-  // ---- 비교 행 ----
+  // ---- 나눔(분류 split) 멀티행 ----
+  // v7.4: 한 사람을 분류(지원금/현금/현물)별 여러 줄로 렌더. 이름·월급은 rowspan으로 묶음.
+  //   데이터는 단일 셀(cell.rates + cell.cash/selfCash/inkind)에 저장 — 키 변경 없음.
+  //   각 줄: 구분 라벨 + 참여율(이 분류) 입력 + 그 분류 금액(읽기전용). 다른 분류 칸은 빈칸.
+  function buildSplitPersonRows(tbody, person, months, project, dataMap, mode, hasRefund) {
+    var isExited = (person.status === 'exited');
+    var hasSelfCash = projHasSelfCash(project);
+    var exitYm = isExited ? getExitYm(person) : null;
+    var hireYm = getHireYm(person);
+    var roles  = (state.personRoles && state.personRoles[person.id]) || {};
+    var primaryCi = normalizeCi(roles.cashOrInkind);
+    var salary = getEffectiveMonthlySalary(person);
+
+    // v7.4: 나눔 줄 = personRoles.splitCis(사용자가 드롭다운으로 고른 분류들). 없으면 기본값.
+    var splitCis = (Array.isArray(roles.splitCis) && roles.splitCis.length)
+      ? roles.splitCis.slice()
+      : defaultSplitCis(person.id);
+    var rowCis = splitCis.map(function (ci) { return { ci: ci }; });
+    var nRows = rowCis.length;
+    var allYms = getAllMonths(state.year).map(function (mm) { return mm.ym; });
+
+    // 사용 가능한 분류(드롭다운 옵션 후보)
+    var availCis = ['현금'];
+    if (hasSelfCash) availCis.push('자부담현금');
+    availCis.push('현물');
+
+    rowCis.forEach(function (rc, ri) {
+      var rowCi = rc.ci;
+      var rowField = moneyFieldOf(rowCi);   // cash | selfCash | inkind
+      var isFirst = (ri === 0);
+
+      var tr = document.createElement('tr');
+      if (isExited) tr.className = 'pl-row--exited';
+      tr.classList.add('pl-split-row');
+      if (isFirst) tr.classList.add('pl-split-row-first');
+      if (ri === nRows - 1) tr.classList.add('pl-split-row-last');
+      tr.dataset.personId = person.id;
+      tr.dataset.rowCi = rowCi;
+
+      // 이름/월급 — 첫 줄만 (rowspan)
+      if (isFirst) {
+        var tdName = document.createElement('td');
+        tdName.className = 'td-fixed pl-td-name pl-sticky-left';
+        tdName.rowSpan = nRows;
+        var badgesHtml = '';
+        if (person.isYouth) badgesHtml += '<span class="pl-badge pl-badge--youth">청년</span>';
+        if (person.isNew)   badgesHtml += '<span class="pl-badge pl-badge--new">신규</span>';
+        // v7.4: 퇴사자는 뱃지 대신 이름 취소선 처리
+        tdName.innerHTML =
+          '<div class="pl-name-row">' +
+            '<span class="pl-row-drag-handle" data-drag-handle="1" title="드래그해서 순서 변경">≡</span>' +
+            buildNeSelectHtml(person.id) +
+            '<span class="pl-name-text">' + person.name + '</span>' +
+            (badgesHtml ? '<span class="pl-name-badges-inline">' + badgesHtml + '</span>' : '') +
+            '<button type="button" class="pl-row-remove-btn" data-remove-person="' + person.id + '"' +
+              ' title="' + person.name + ' 이 프로젝트에서 제거">×</button>' +
+          '</div>' +
+          buildRoleControlsHtml(person.id);
+        tr.appendChild(tdName);
+
+        var tdSalary = document.createElement('td');
+        tdSalary.className = 'td-fixed pl-td-salary';
+        tdSalary.rowSpan = nRows;
+        var hasOverride = (typeof roles.monthlySalaryOverride === 'number' && roles.monthlySalaryOverride > 0);
+        var salWrap = document.createElement('div');
+        salWrap.className = 'pl-salary-wrap';
+        if (mode === 'planned') {
+          var salInput = document.createElement('input');
+          salInput.type = 'text'; salInput.inputMode = 'numeric';
+          salInput.className = 'pl-salary-input' + (hasOverride ? ' is-override' : '');
+          salInput.dataset.personId = person.id;
+          salInput.dataset.raw = String(salary || 0);
+          salInput.value = salary ? salary.toLocaleString('ko-KR') : '';
+          salInput.placeholder = person.monthlySalary ? person.monthlySalary.toLocaleString('ko-KR') : '월급 미등록';
+          salWrap.appendChild(salInput);
+        } else {
+          var salSpan = document.createElement('span');
+          salSpan.className = 'pl-salary-text';
+          salSpan.textContent = fmtSalary(salary);
+          salWrap.appendChild(salSpan);
+          if (hasOverride) tdSalary.classList.add('pl-salary-cell--override');
+        }
+        // 나눔 토글은 예상 탭에서만 — 실제·비교는 결과만 표시(예상에서 켠 split 공유)
+        if (mode === 'planned') {
+          salWrap.insertAdjacentHTML('beforeend', buildSplitToggleHtml(person.id, true));
+        }
+        tdSalary.appendChild(salWrap);
+        tr.appendChild(tdSalary);
+      }
+
+      // 구분 — 드롭다운(이 줄의 분류 선택). 다른 줄이 이미 쓰는 분류는 옵션에서 제외(중복 방지).
+      var tdClassify = document.createElement('td');
+      tdClassify.className = 'td-fixed pl-td-classify';
+      var usedByOthers = splitCis.filter(function (c, i) { return i !== ri; });
+      var ciColorCls = rowField === 'inkind' ? 'is-inkind' : rowField === 'selfCash' ? 'is-selfcash' : 'is-cash';
+      var optsHtml = availCis
+        .filter(function (c) { return c === rowCi || usedByOthers.indexOf(c) < 0; })
+        .map(function (c) {
+          return '<option value="' + c + '"' + (c === rowCi ? ' selected' : '') + '>' + fundTypeLabel(c) + '</option>';
+        }).join('');
+      tdClassify.innerHTML =
+        '<select class="pl-role-select pl-role-select--ci pl-split-ci-select ' + ciColorCls + '" ' +
+          'data-role-field="splitCi" data-person-id="' + person.id + '" data-row-index="' + ri + '" aria-label="분류 선택">' +
+          optsHtml +
+        '</select>';
+      tr.appendChild(tdClassify);
+
+      // 월별 셀
+      months.forEach(function (m, mi) {
+        var isLast = (mi === months.length - 1);
+        if (isMonthCollapsed(m.month)) {
+          var tdC = document.createElement('td');
+          tdC.className = 'pl-cell-collapsed' + (!isLast ? ' month-sep' : '');
+          tdC.dataset.collapseToggle = '1';
+          tdC.dataset.month = String(m.month);
+          tr.appendChild(tdC);
+          return;
+        }
+        var cell = getCell(dataMap, project.id, m.ym, person.id);
+        var locked = false;
+        if (isExited && exitYm && m.ym > exitYm) locked = true;
+        if (hireYm && m.ym < hireYm)             locked = true;
+        if (isYmManuallyLocked(person.id, m.ym)) locked = true;
+        var inactive = locked;
+
+        // 참여율(이 분류) — 시드 우선순위:
+        //   1) cell.rates[field] 있으면 그대로
+        //   2) 이 분류에 금액이 있으면 금액/급여로 역산 (참여율을 금액 위치에 맞춤)
+        //   3) 금액이 전혀 없고 이 줄이 주 분류면 cell.rate (단일 입력분 폴백)
+        var rv = 0;
+        if (cell.rates && typeof cell.rates[rowField] === 'number') {
+          rv = cell.rates[rowField];
+        } else if ((cell[rowField] || 0) > 0 && salary > 0) {
+          rv = Math.round((cell[rowField] || 0) / salary * 100);
+        } else if (rowCi === primaryCi && (cell.rate || 0) > 0 &&
+                   !((cell.cash || 0) || (cell.selfCash || 0) || (cell.inkind || 0))) {
+          rv = cell.rate || 0;
+        }
+        var tdRate = document.createElement('td');
+        tdRate.className = inactive ? 'pl-cell--inactive' : '';
+        var inputRate = document.createElement('input');
+        inputRate.type = 'text'; inputRate.inputMode = 'numeric';
+        inputRate.className = 'pl-cell-input pl-input-rate';
+        inputRate.placeholder = '0%';
+        inputRate.readOnly = locked;
+        inputRate.dataset.personId = person.id;
+        inputRate.dataset.ym = m.ym;
+        inputRate.dataset.field = 'rate';
+        inputRate.dataset.mode = mode;
+        inputRate.dataset.split = '1';
+        inputRate.dataset.splitField = rowField;
+        inputRate.dataset.raw = String(rv);
+        inputRate.value = rv > 0 ? fmtCellRateDisplay(rv) : '';
+        applyRateColor(inputRate, rv);
+        tdRate.appendChild(inputRate);
+        if (cell.memo && ri === 0) {           // 메모는 셀 1개 → 첫 줄에만 마커
+          tdRate.classList.add('pl-cell-has-memo');
+          tdRate.title = cell.memo;
+          tdRate.appendChild(buildMemoMarker(person.id, m.ym, mode, cell.memo));
+        }
+        tr.appendChild(tdRate);
+
+        if (hasRefund) {
+          var mf = ['cash'];
+          if (hasSelfCash) mf.push('selfCash');
+          mf.push('inkind');
+          mf.forEach(function (f, fi) {
+            var isLastField = (fi === mf.length - 1);
+            var td = document.createElement('td');
+            var tdCls = (inactive ? 'pl-cell--inactive ' : '') + ((isLastField && !isLast) ? 'month-sep' : '');
+            if (tdCls.trim()) td.className = tdCls.trim();
+            if (f === rowField) {
+              var mInput = document.createElement('input');
+              mInput.type = 'text'; mInput.inputMode = 'numeric';
+              mInput.className = 'pl-cell-input pl-input-' + f + ' pl-split-money';
+              mInput.readOnly = true;
+              mInput.title = '참여율로 자동 계산된 금액';
+              mInput.dataset.personId = person.id;
+              mInput.dataset.ym = m.ym;
+              mInput.dataset.field = f;
+              mInput.dataset.mode = mode;
+              mInput.dataset.raw = String(cell[f] || 0);
+              mInput.value = fmtCellMoneyDisplay(cell[f]);
+              td.appendChild(mInput);
+            } else {
+              td.classList.add('pl-split-empty');
+            }
+            tr.appendChild(td);
+          });
+        } else {
+          if (!isLast) tdRate.classList.add('month-sep');
+        }
+      });
+
+      // 우측 합계 — 이 분류 칸만 값, 나머지 빈칸 (sticky 클래스는 항상 부여해 정렬 유지)
+      if (hasRefund) {
+        var totCash = 0, totSelf = 0, totInkind = 0;
+        allYms.forEach(function (ym) {
+          var c = getCell(dataMap, project.id, ym, person.id);
+          totCash += (c.cash || 0); totSelf += (c.selfCash || 0); totInkind += (c.inkind || 0);
+        });
+        var mkTotal = function (field, total, cls) {
+          var td = document.createElement('td');
+          td.className = 'pl-cell-total ' + cls;
+          if (field === rowField) {
+            td.id = 'total-' + field + '-' + mode + '-' + person.id;
+            td.textContent = total ? total.toLocaleString('ko-KR') : '-';
+          } else {
+            td.textContent = '';
+          }
+          return td;
+        };
+        tr.appendChild(mkTotal('cash', totCash, hasSelfCash ? 'pl-sticky-right-2' : 'pl-sticky-right-1'));
+        if (hasSelfCash) tr.appendChild(mkTotal('selfCash', totSelf, 'pl-sticky-right-1'));
+        tr.appendChild(mkTotal('inkind', totInkind, 'pl-sticky-right-0'));
+      }
+
+      tbody.appendChild(tr);
+    });
+  }
   // v5.1 변경:
   //   - 한 월에 5컬럼(예상%/예상현금/실제%/실제현금/차이) → 2컬럼(% / 현금)으로 축소
   //   - 각 행은 자기 값만 표시 (예상행=예상값, 실제행=실제값, 차이행=차이)
@@ -1804,9 +2139,10 @@
         var hasPlanned = !!state.planned[getLaborKey(project.id, m.ym, person.id)];
 
         // v5 Step 4: 환급 여부에 따라 컬럼 구성
-        //   환급 있음 → 참여율 / 현금 / 현물 (3컬럼)
+        //   환급 있음 → 참여율 / 지원금 / (현금) / 현물
         //   환급 없음 → 참여율 (1컬럼)
         var refund = !project || project.laborRefund !== false;
+        var hasSelfCash = projHasSelfCash(project);   // v7.4
         var rateSepCls = (refund ? '' : (!isLast ? 'month-sep' : ''));
         var inkindSepCls = (refund && !isLast) ? 'month-sep' : '';
 
@@ -1814,24 +2150,28 @@
         if (rowType.key === 'planned') {
           appendCompareCell(tr, hasPlanned ? planned.rate : null, '%', false, rateSepCls);
           if (refund) {
-            appendCompareCell(tr, hasPlanned ? planned.cash   : null, '원', false, '');
+            appendCompareCell(tr, hasPlanned ? planned.cash : null, '원', false, '');
+            if (hasSelfCash) appendCompareCell(tr, hasPlanned ? planned.selfCash : null, '원', false, '');
             appendCompareCell(tr, hasPlanned ? planned.inkind : null, '원', false, inkindSepCls);
           }
         } else if (rowType.key === 'actual') {
           appendCompareCell(tr, hasActual ? actual.rate : null, '%', false, rateSepCls);
           if (refund) {
-            appendCompareCell(tr, hasActual ? actual.cash   : null, '원', false, '');
+            appendCompareCell(tr, hasActual ? actual.cash : null, '원', false, '');
+            if (hasSelfCash) appendCompareCell(tr, hasActual ? actual.selfCash : null, '원', false, '');
             appendCompareCell(tr, hasActual ? actual.inkind : null, '원', false, inkindSepCls);
           }
         } else {
           // 차이행: 예상·실제 둘 다 있어야 의미. 한쪽만 있으면 비워둠.
           var bothPresent = hasPlanned && hasActual;
-          var diffRate   = bothPresent ? (actual.rate   - planned.rate)   : null;
-          var diffCash   = bothPresent ? (actual.cash   - planned.cash)   : null;
-          var diffInkind = bothPresent ? (actual.inkind - planned.inkind) : null;
+          var diffRate   = bothPresent ? (actual.rate     - planned.rate)     : null;
+          var diffCash   = bothPresent ? (actual.cash     - planned.cash)     : null;
+          var diffSelf   = bothPresent ? ((actual.selfCash || 0) - (planned.selfCash || 0)) : null;
+          var diffInkind = bothPresent ? (actual.inkind   - planned.inkind)   : null;
           appendCompareCell(tr, diffRate, '%', true, rateSepCls);
           if (refund) {
-            appendCompareCell(tr, diffCash,   '원', true, '');
+            appendCompareCell(tr, diffCash, '원', true, '');
+            if (hasSelfCash) appendCompareCell(tr, diffSelf, '원', true, '');
             appendCompareCell(tr, diffInkind, '원', true, inkindSepCls);
           }
         }
@@ -1887,24 +2227,28 @@
   // ====================================================================
   function recalcSums(mode, months, persons, project, dataMap) {
     var hasRefund = !project || project.laborRefund !== false;
+    var hasSelfCash = projHasSelfCash(project);   // v7.4
 
     // 월별 합계 (기존)
     months.forEach(function (m) {
-      var totalRate = 0, totalCash = 0, totalInkind = 0;
+      var totalRate = 0, totalCash = 0, totalSelf = 0, totalInkind = 0;
       persons.forEach(function (p) {
         var cell = getCell(dataMap, project.id, m.ym, p.id);
-        totalRate   += (cell.rate   || 0);
-        totalCash   += (cell.cash   || 0);
-        totalInkind += (cell.inkind || 0);
+        totalRate   += (cell.rate     || 0);
+        totalCash   += (cell.cash     || 0);
+        totalSelf   += (cell.selfCash || 0);
+        totalInkind += (cell.inkind   || 0);
       });
-      var elRate   = document.getElementById('sum-rate-'   + mode + '-' + m.ym);
-      var elCash   = document.getElementById('sum-cash-'   + mode + '-' + m.ym);
-      var elInkind = document.getElementById('sum-inkind-' + mode + '-' + m.ym);
+      var elRate   = document.getElementById('sum-rate-'     + mode + '-' + m.ym);
+      var elCash   = document.getElementById('sum-cash-'     + mode + '-' + m.ym);
+      var elSelf   = document.getElementById('sum-selfCash-' + mode + '-' + m.ym);
+      var elInkind = document.getElementById('sum-inkind-'   + mode + '-' + m.ym);
       // v5.3: 월별 참여율 합계는 의미가 없어 일괄 '-' 표시 (개별 합산값 숨김)
       if (elRate)   elRate.textContent   = '-';
       if (hasRefund) {
         // v5.3: 합계 셀이 좁아서 '원'을 빼고 콤마 숫자만 표시 (다른 셀과 일관)
         if (elCash)   elCash.textContent   = totalCash   ? fmtMoneyFull(totalCash)   : '-';
+        if (elSelf)   elSelf.textContent   = totalSelf   ? fmtMoneyFull(totalSelf)   : '-';
         if (elInkind) elInkind.textContent = totalInkind ? fmtMoneyFull(totalInkind) : '-';
       }
     });
@@ -1912,24 +2256,30 @@
     // v5.3: 행별 합계 (12개월 전체 — 접힌 월 포함) + 그랜드 토탈
     if (hasRefund) {
       var allYms = getAllMonths(state.year).map(function (m) { return m.ym; });
-      var grandCash = 0, grandInkind = 0;
+      var grandCash = 0, grandSelf = 0, grandInkind = 0;
       persons.forEach(function (p) {
-        var rowCash = 0, rowInkind = 0;
+        var rowCash = 0, rowSelf = 0, rowInkind = 0;
         allYms.forEach(function (ym) {
           var c = getCell(dataMap, project.id, ym, p.id);
-          rowCash   += (c.cash   || 0);
-          rowInkind += (c.inkind || 0);
+          rowCash   += (c.cash     || 0);
+          rowSelf   += (c.selfCash || 0);
+          rowInkind += (c.inkind   || 0);
         });
         grandCash   += rowCash;
+        grandSelf   += rowSelf;
         grandInkind += rowInkind;
-        var elRowCash   = document.getElementById('total-cash-'   + mode + '-' + p.id);
-        var elRowInkind = document.getElementById('total-inkind-' + mode + '-' + p.id);
+        var elRowCash   = document.getElementById('total-cash-'     + mode + '-' + p.id);
+        var elRowSelf   = document.getElementById('total-selfCash-' + mode + '-' + p.id);
+        var elRowInkind = document.getElementById('total-inkind-'   + mode + '-' + p.id);
         if (elRowCash)   elRowCash.textContent   = rowCash   ? rowCash.toLocaleString('ko-KR')   : '-';
+        if (elRowSelf)   elRowSelf.textContent   = rowSelf   ? rowSelf.toLocaleString('ko-KR')   : '-';
         if (elRowInkind) elRowInkind.textContent = rowInkind ? rowInkind.toLocaleString('ko-KR') : '-';
       });
-      var elGrandCash   = document.getElementById('grand-cash-'   + mode);
-      var elGrandInkind = document.getElementById('grand-inkind-' + mode);
+      var elGrandCash   = document.getElementById('grand-cash-'     + mode);
+      var elGrandSelf   = document.getElementById('grand-selfCash-' + mode);
+      var elGrandInkind = document.getElementById('grand-inkind-'   + mode);
       if (elGrandCash)   elGrandCash.textContent   = grandCash   ? fmtMoneyFull(grandCash)   : '-';
+      if (elGrandSelf)   elGrandSelf.textContent   = grandSelf   ? fmtMoneyFull(grandSelf)   : '-';
       if (elGrandInkind) elGrandInkind.textContent = grandInkind ? fmtMoneyFull(grandInkind) : '-';
     }
   }
@@ -1954,8 +2304,8 @@
     if (!input || !input.classList || !input.classList.contains('pl-cell-input')) return;
     var field = input.dataset.field;
     var raw = Number(input.dataset.raw || 0);
-    if (field === 'rate') {
-      input.value = fmtCellRateDisplay(raw);
+    if (field === 'rate' || field === 'splitRate') {
+      input.value = raw ? fmtCellRateDisplay(raw) : '';
     } else {
       // cash / inkind
       input.value = fmtCellMoneyDisplay(raw);
@@ -1996,18 +2346,53 @@
       input.dataset.raw = String(val);
       applyRateColor(input, val);
 
-      // v5 Step 4: personRoles.cashOrInkind 에 따라 자동계산값을 cash / inkind 중 적절한 쪽에 채움
-      //   '현금' → cash 필드 (정부지원금, 환급 대상)
-      //   '현물' → inkind 필드 (회사부담, 환급 X)
-      // personRoles 미설정/잘못된 값이면 안전하게 '현금'으로 폴백.
+      // v7.4 나눔: 분류줄 참여율 — cell.rates[splitField]에 저장, 그 분류 금액=급여×%, cell.rate=세 분류 합.
+      if (input.dataset.split === '1') {
+        var sf = input.dataset.splitField;
+        var roleSp = (state.personRoles && state.personRoles[personId]) || {};
+        var pci = normalizeCi(roleSp.cashOrInkind);
+        var cur = getCell(dataMap, project.id, ym, personId);
+        var rates = cur.rates
+          ? { cash: cur.rates.cash || 0, selfCash: cur.rates.selfCash || 0, inkind: cur.rates.inkind || 0 }
+          : (function () { var s = { cash: 0, selfCash: 0, inkind: 0 }; var pf = moneyFieldOf(pci); s[pf] = cur.rate || 0; return s; })();
+        rates[sf] = val;
+        var salSp = getEffectiveMonthlySalary(person);
+        var sumRate = (rates.cash || 0) + (rates.selfCash || 0) + (rates.inkind || 0);
+        setCell(dataMap, project.id, ym, personId, {
+          rates: rates,
+          cash:     Math.round(salSp * (rates.cash || 0) / 100),
+          selfCash: Math.round(salSp * (rates.selfCash || 0) / 100),
+          inkind:   Math.round(salSp * (rates.inkind || 0) / 100),
+          rate: sumRate
+        });
+        // 같은 줄의 그 분류 금액(읽기전용) 표시 갱신
+        var trSp = input.closest('tr');
+        if (trSp) {
+          var moneyInp = trSp.querySelector('.pl-input-' + sf + '[data-ym="' + ym + '"]');
+          if (moneyInp) {
+            var amt = Math.round(salSp * val / 100);
+            moneyInp.dataset.raw = String(amt);
+            moneyInp.value = fmtCellMoneyDisplay(amt);
+          }
+        }
+        var monthsSp = getVisibleMonths();
+        recalcSums(mode, monthsSp, getPersons(), project, dataMap);
+        renderStickyBoxes();
+        scheduleSave();
+        return;
+      }
+
+      // v7.4 §3.4: personRoles.cashOrInkind 에 따라 자동계산값을 cash/selfCash/inkind 중 적절한 쪽에 채움
+      //   '현금'(지원금) → cash (환급 대상) / '자부담현금' → selfCash (환급 X) / '현물' → inkind (환급 X)
+      // personRoles 미설정/잘못된 값이면 안전하게 '현금'(cash)으로 폴백.
       var role = (state.personRoles && state.personRoles[personId]) || {};
-      var targetField = role.cashOrInkind === '현물' ? 'inkind' : 'cash';
-      var otherFieldCI = (targetField === 'cash') ? 'inkind' : 'cash';   // v5.3: 반대편
+      var targetField = moneyFieldOf(role.cashOrInkind);
+      var otherFields = otherMoneyFields(targetField);   // 나머지 두 금액 필드
       var autoAmount = Math.round(getEffectiveMonthlySalary(person) * val / 100);
 
       var patch = { rate: val };
       patch[targetField] = autoAmount;
-      patch[otherFieldCI] = 0;   // v5.3: 반대편 필드도 0으로 (cashOrInkind 변경 후 옛값 잔존 방지)
+      otherFields.forEach(function (f) { patch[f] = 0; });   // 반대편 필드 0으로 (분류 변경 후 옛값 잔존 방지)
       setCell(dataMap, project.id, ym, personId, patch);
 
       // 같은 행의 해당 필드 input 시각도 갱신
@@ -2024,16 +2409,49 @@
             moneyInput.value = fmtCellMoneyDisplay(autoAmount);
           }
         }
-        // v5.3: 반대편 필드 input도 0으로 갱신 (시각/dataset 동기화)
-        var otherSel = '.pl-input-' + otherFieldCI + '[data-ym="' + ym + '"]';
-        var otherInput = tr.querySelector(otherSel);
-        if (otherInput) {
-          otherInput.dataset.raw = '0';
-          if (document.activeElement === otherInput) {
-            otherInput.value = '';
-          } else {
-            otherInput.value = fmtCellMoneyDisplay(0);
+        // v7.4: 나머지 금액 input도 0으로 갱신 (시각/dataset 동기화)
+        otherFields.forEach(function (f) {
+          var otherInput = tr.querySelector('.pl-input-' + f + '[data-ym="' + ym + '"]');
+          if (otherInput) {
+            otherInput.dataset.raw = '0';
+            if (document.activeElement === otherInput) {
+              otherInput.value = '';
+            } else {
+              otherInput.value = fmtCellMoneyDisplay(0);
+            }
           }
+        });
+      }
+    } else if (field === 'splitRate') {
+      // v7.4 나눔: 이 칸은 분류(splitField)의 참여율(%). 금액=급여×%, 참여율 셀=세 분류 합.
+      var sf = input.dataset.splitField;
+      if (val > 100) { val = 100; input.value = '100'; }
+      input.dataset.raw = String(val);
+      applyRateColor(input, val);
+      var roleSp = (state.personRoles && state.personRoles[personId]) || {};
+      var pci = normalizeCi(roleSp.cashOrInkind);
+      var cur = getCell(dataMap, project.id, ym, personId);
+      var rates = cur.rates
+        ? { cash: cur.rates.cash || 0, selfCash: cur.rates.selfCash || 0, inkind: cur.rates.inkind || 0 }
+        : (function () { var s = { cash: 0, selfCash: 0, inkind: 0 }; s[pci] = cur.rate || 0; return s; })();
+      rates[sf] = val;
+      var sal = getEffectiveMonthlySalary(person);
+      var sumRate = (rates.cash || 0) + (rates.selfCash || 0) + (rates.inkind || 0);
+      setCell(dataMap, project.id, ym, personId, {
+        rates: rates,
+        cash:     Math.round(sal * (rates.cash || 0) / 100),
+        selfCash: Math.round(sal * (rates.selfCash || 0) / 100),
+        inkind:   Math.round(sal * (rates.inkind || 0) / 100),
+        rate: sumRate
+      });
+      // 같은 행 참여율(합) 셀 갱신
+      var trSp = input.closest('tr');
+      if (trSp) {
+        var rateInp = trSp.querySelector('.pl-cell-input[data-field="rate"][data-ym="' + ym + '"]');
+        if (rateInp) {
+          rateInp.dataset.raw = String(sumRate);
+          rateInp.value = fmtCellRateDisplay(sumRate);
+          applyRateColor(rateInp, sumRate);
         }
       }
     } else {
@@ -2098,14 +2516,29 @@
     var dataMap = state.planned;
     var months  = getAllMonths(state.year);
     var role    = state.personRoles[pid];
-    var moneyField = role.cashOrInkind === '현물' ? 'inkind' : 'cash';
+    var moneyField = moneyFieldOf(role.cashOrInkind);   // v7.4: 지원금/현금/현물 중 해당 필드
     var batchItems = [];
 
     months.forEach(function (m) {
       var cell = getCell(dataMap, project.id, m.ym, pid);
-      var oldMoney = cell[moneyField] || 0;
       var rate     = cell.rate || 0;
       if (rate === 0) return;   // 참여율 없으면 건드리지 않음
+
+      // v7.4 나눔: split 인력은 cell.rates 기준으로 cash/selfCash/inkind 모두 재계산
+      if (role.split && cell.rates) {
+        var rr = cell.rates;
+        ['cash', 'selfCash', 'inkind'].forEach(function (f) {
+          var oldM = cell[f] || 0;
+          var newM = Math.round(newEffective * (+rr[f] || 0) / 100);
+          if (newM === oldM) return;
+          batchItems.push({ personId: pid, ym: m.ym, field: f, oldVal: oldM, newVal: newM });
+          var p = {}; p[f] = newM;
+          setCell(dataMap, project.id, m.ym, pid, p);
+        });
+        return;
+      }
+
+      var oldMoney = cell[moneyField] || 0;
       var newMoney = Math.round(newEffective * rate / 100);
       if (newMoney === oldMoney) return;
       batchItems.push({
@@ -2220,8 +2653,8 @@
     if (rate < 0)   rate = 0;
 
     var role = (state.personRoles && state.personRoles[personId]) || {};
-    var moneyField = role.cashOrInkind === '현물' ? 'inkind' : 'cash';
-    var otherField = (moneyField === 'cash') ? 'inkind' : 'cash';   // v5.3: 반대편 필드
+    var moneyField = moneyFieldOf(role.cashOrInkind);   // v7.4: 지원금/현금/현물
+    var otherFields = otherMoneyFields(moneyField);     // 나머지 두 금액 필드
 
     // v5.3: source 월(fromYm)의 실제 입력값을 그대로 가져옴.
     //   - 이전엔 monthlySalary × rate 로 재계산해서 버림/수동 조정값이 무시됐음.
@@ -2246,25 +2679,26 @@
         personId: personId, ym: m.ym, field: 'rate',
         oldVal: prev.rate || 0, newVal: rate
       });
-      // money 변경 (현재 정책에 해당하는 필드: cash 또는 inkind)
+      // money 변경 (현재 분류에 해당하는 필드: cash/selfCash/inkind)
       batchItems.push({
         personId: personId, ym: m.ym, field: moneyField,
         oldVal: prev[moneyField] || 0, newVal: autoAmount
       });
-      // v5.3: 반대편 필드도 0으로 덮어씀.
-      //   예: cashOrInkind='현물'로 바꾼 뒤 가로 채우기 → 옛 cash 값이 남는 버그 수정.
+      // v7.4: 나머지 두 금액 필드도 0으로 덮어씀 (분류 변경 후 옛값 잔존 방지).
       //   기존 값이 이미 0이면 undo entry 추가 안 함 (스택 절약).
-      var otherOld = prev[otherField] || 0;
-      if (otherOld !== 0) {
-        batchItems.push({
-          personId: personId, ym: m.ym, field: otherField,
-          oldVal: otherOld, newVal: 0
-        });
-      }
-      // setCell — rate + money(현재) + money(반대편 0) 한 번에
+      otherFields.forEach(function (of) {
+        var otherOld = prev[of] || 0;
+        if (otherOld !== 0) {
+          batchItems.push({
+            personId: personId, ym: m.ym, field: of,
+            oldVal: otherOld, newVal: 0
+          });
+        }
+      });
+      // setCell — rate + money(현재) + 나머지 금액 0 한 번에
       var patch = { rate: rate };
       patch[moneyField] = autoAmount;
-      patch[otherField] = 0;
+      otherFields.forEach(function (of) { patch[of] = 0; });
       setCell(dataMap, project.id, m.ym, personId, patch);
     });
 
@@ -2481,8 +2915,16 @@
     menu.className = 'pl-ctx-menu';
 
     // v5.3: 사용자 잠금 셀은 어느 필드든 '잠금 해제' 메뉴만 표시
+    //   v7.4.3: 단, 메모는 값이 아닌 주석이므로 잠금과 무관하게 추가/편집 허용
     if (isYmManuallyLocked(personId, ym)) {
+      var _lproj = getProject();
+      var _lcell = _lproj ? (state.planned[getLaborKey(_lproj.id, ym, personId)] || {}) : {};
+      var _lhasMemo = !!(_lcell.memo && _lcell.memo.trim());
       menu.innerHTML =
+        '<button type="button" class="pl-ctx-item" data-action="memo">' +
+          '💬 메모 ' + (_lhasMemo ? '편집' : '추가') +
+        '</button>' +
+        '<div class="pl-ctx-divider"></div>' +
         '<button type="button" class="pl-ctx-item" data-action="toggle-lock">' +
           '🔓 이 월 잠금 해제' +
         '</button>';
@@ -2493,6 +2935,15 @@
     }
 
     var html = '';
+    // v7.4.3 §4.1: 메모 — 모든 필드 공통, 맨 위
+    var _mproj = getProject();
+    var _mcell = _mproj ? (state.planned[getLaborKey(_mproj.id, ym, personId)] || {}) : {};
+    var _hasMemo = !!(_mcell.memo && _mcell.memo.trim());
+    html +=
+      '<button type="button" class="pl-ctx-item" data-action="memo">' +
+        '💬 메모 ' + (_hasMemo ? '편집' : '추가') +
+      '</button>' +
+      '<div class="pl-ctx-divider"></div>';
     if (field === 'rate') {
       // 참여율 셀 — 12월까지 채우기 + 이 월 잠그기
       html +=
@@ -2573,6 +3024,8 @@
       } else if (action === 'set-color') {
         var colorKey = btn.dataset.color || '';
         applyCellColor(personId, ym, field, colorKey || null);
+      } else if (action === 'memo') {
+        openMemoPopover(personId, ym, 'planned', { left: x, top: y });
       }
     });
   }
@@ -2582,6 +3035,138 @@
       _ctxMenuEl.parentNode.removeChild(_ctxMenuEl);
     }
     _ctxMenuEl = null;
+  }
+
+  // ====================================================================
+  // v7.4.3 §4.1: 셀 메모 — 모서리 마커 + 편집 팝오버
+  //   - 데이터: cell.memo (셀 키 {projectId}_{ym}_{personId}, 나눔도 동일 키)
+  //   - 진입: 우클릭 메뉴 "메모" 항목 / 메모 있는 셀의 모서리 마커 클릭
+  //   - 편집은 예상(planned) 탭만. 실제 탭은 읽기전용, 비교 탭은 마커 없음.
+  // ====================================================================
+  function buildMemoMarker(personId, ym, mode, memo) {
+    var mk = document.createElement('span');
+    mk.className = 'pl-memo-marker';
+    mk.dataset.personId = personId;
+    mk.dataset.ym = ym;
+    mk.dataset.mode = mode;
+    mk.setAttribute('aria-label', '메모');
+    mk.title = memo || '메모';
+    return mk;
+  }
+
+  var _memoPopEl = null;
+  function closeMemoPopover() {
+    if (_memoPopEl && _memoPopEl.parentNode) _memoPopEl.parentNode.removeChild(_memoPopEl);
+    _memoPopEl = null;
+    document.removeEventListener('mousedown', onMemoOutside, true);
+  }
+  function onMemoOutside(e) {
+    if (!_memoPopEl) return;
+    if (_memoPopEl.contains(e.target)) return;
+    if (e.target.closest && e.target.closest('.pl-memo-marker')) return;  // 다른 마커 클릭은 별도 처리
+    closeMemoPopover();
+  }
+  function onMemoMarkerClick(e) {
+    var mk = e.target.closest && e.target.closest('.pl-memo-marker');
+    if (!mk) return;
+    e.stopPropagation();
+    openMemoPopover(mk.dataset.personId, mk.dataset.ym, mk.dataset.mode || 'planned', mk.getBoundingClientRect());
+  }
+
+  // anchor = DOMRect 또는 {left, top}
+  function openMemoPopover(personId, ym, mode, anchor) {
+    closeMemoPopover();
+    hideCellContextMenu();
+    var project = getProject();
+    if (!project) return;
+    var editable = (mode === 'planned');
+    var dataMap  = (mode === 'actual') ? state.actual : state.planned;
+    var cell = getCell(dataMap, project.id, ym, personId);
+    var memo = cell.memo || '';
+    var person = (getPersons() || []).find(function (p) { return p.id === personId; });
+    var pname = person ? (person.name || '') : '';
+
+    var pop = document.createElement('div');
+    pop.className = 'pl-memo-popover';
+
+    var head = document.createElement('div');
+    head.className = 'pl-memo-pop-head';
+    head.appendChild(document.createTextNode('💬 ' + pname + ' '));
+    var ymSpan = document.createElement('span');
+    ymSpan.className = 'pl-memo-pop-ym';
+    ymSpan.textContent = ym;
+    head.appendChild(ymSpan);
+    if (!editable) {
+      head.appendChild(document.createTextNode(' (읽기 전용)'));
+    }
+    pop.appendChild(head);
+
+    var ta = document.createElement('textarea');
+    ta.className = 'pl-memo-pop-textarea';
+    ta.placeholder = '메모를 입력하세요';
+    ta.value = memo;
+    if (!editable) ta.readOnly = true;
+    pop.appendChild(ta);
+
+    var act = document.createElement('div');
+    act.className = 'pl-memo-pop-actions';
+    function mkBtn(cls, text) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'pl-memo-pop-btn ' + cls;
+      b.textContent = text;
+      return b;
+    }
+    if (editable) {
+      if (memo) act.appendChild(mkBtn('pl-memo-pop-del', '삭제'));
+      act.appendChild(mkBtn('pl-memo-pop-cancel', '취소'));
+      act.appendChild(mkBtn('pl-memo-pop-save', '저장'));
+    } else {
+      act.appendChild(mkBtn('pl-memo-pop-cancel', '닫기'));
+    }
+    pop.appendChild(act);
+
+    if (editable) {
+      var hint = document.createElement('div');
+      hint.className = 'pl-memo-pop-hint';
+      hint.textContent = 'Ctrl+Enter 저장 · Esc 취소';
+      pop.appendChild(hint);
+    }
+
+    document.body.appendChild(pop);
+    _memoPopEl = pop;
+
+    // 위치: anchor 우하단 근처, 화면 밖 보정
+    var ax = anchor ? (anchor.left != null ? anchor.left : (anchor.x || 0)) : 0;
+    var ay = anchor ? (anchor.bottom != null ? anchor.bottom : (anchor.top || 0)) : 0;
+    var r = pop.getBoundingClientRect();
+    pop.style.left = Math.max(8, Math.min(ax, window.innerWidth  - r.width  - 12)) + 'px';
+    pop.style.top  = Math.max(8, Math.min(ay + 6, window.innerHeight - r.height - 12)) + 'px';
+
+    function doSave() {
+      setCell(dataMap, project.id, ym, personId, { memo: ta.value.trim() });
+      scheduleSave(); closeMemoPopover(); renderAll();
+    }
+    function doDelete() {
+      setCell(dataMap, project.id, ym, personId, { memo: '' });
+      scheduleSave(); closeMemoPopover(); renderAll();
+    }
+    pop.addEventListener('click', function (e) {
+      if (e.target.closest('.pl-memo-pop-save')) doSave();
+      else if (e.target.closest('.pl-memo-pop-del')) doDelete();
+      else if (e.target.closest('.pl-memo-pop-cancel')) closeMemoPopover();
+    });
+    if (editable) {
+      ta.focus();
+      try { ta.setSelectionRange(ta.value.length, ta.value.length); } catch (err) {}
+    }
+    // 전역 셀 단축키(Ctrl+Z/R/C/V, 방향키)가 메모 입력을 가로채지 않게 차단
+    ta.addEventListener('keydown', function (e) {
+      e.stopPropagation();
+      if (e.key === 'Escape') { e.preventDefault(); closeMemoPopover(); }
+      else if (editable && (e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); doSave(); }
+    });
+    setTimeout(function () { document.addEventListener('mousedown', onMemoOutside, true); }, 0);
   }
 
   // 월 확정 버튼 — v5.1 변경
@@ -2597,8 +3182,11 @@
   //   드롭다운 선택 후엔 포커스가 머물 필요 없으므로 비용 부담 없음.
   function onRoleChange(e) {
     var sel = e.target;
-    if (!sel || sel.tagName !== 'SELECT') return;
-    if (!sel.classList.contains('pl-role-select')) return;
+    if (!sel) return;
+    // SELECT(기존/신규·분류·split구분) 또는 나눔 체크박스
+    var isRoleSelect = sel.tagName === 'SELECT' && sel.classList.contains('pl-role-select');
+    var isSplitCheck = sel.tagName === 'INPUT' && sel.type === 'checkbox' && sel.dataset.roleField === 'split';
+    if (!isRoleSelect && !isSplitCheck) return;
     var personId = sel.dataset.personId;
     var field    = sel.dataset.roleField;
     if (!personId || !field) return;
@@ -2607,11 +3195,69 @@
     if (!state.personRoles[personId]) {
       state.personRoles[personId] = { newOrExisting: '기존', cashOrInkind: '현금', subRole: '', monthlySalaryOverride: null };
     }
-    state.personRoles[personId][field] = sel.value;
-    scheduleSave();
+    var role = state.personRoles[personId];
 
-    // 모든 탭의 같은 인력 행을 동기화 — renderAll이 가장 확실
+    if (field === 'split') {
+      var on = sel.checked;
+      role.split = on;
+      if (on) {
+        // 나눔 ON: 현재 단일 분류 값을 기준으로 cell.rates 초기화(마이그레이션) + splitCis 세팅
+        migrateCellRatesForSplit(personId);
+        role.splitCis = defaultSplitCis(personId);
+      }
+      // OFF면 splitCis는 남겨둬도 무방(렌더 안 함). 데이터는 보존.
+    } else if (field === 'splitCi') {
+      // split 줄의 구분 드롭다운 — 해당 줄의 분류 교체
+      var idx = parseInt(sel.dataset.rowIndex, 10);
+      if (!Array.isArray(role.splitCis)) role.splitCis = defaultSplitCis(personId);
+      if (idx >= 0 && idx < role.splitCis.length) {
+        role.splitCis[idx] = sel.value;
+      }
+    } else {
+      role[field] = isSplitCheck ? sel.checked : sel.value;
+    }
+    scheduleSave();
     renderAll();
+  }
+
+  // v7.4: 나눔 켤 때 — 현재 단일 분류(cashOrInkind)에 cell.rate를 몰아 cell.rates 초기화.
+  //   이전 테스트로 어긋난 cell.rates를 현재 분류 기준으로 바로잡는 역할도 함.
+  function migrateCellRatesForSplit(personId) {
+    var role = state.personRoles[personId] || {};
+    var pf = moneyFieldOf(role.cashOrInkind);   // 주 분류 금액필드
+    var project = getProject();
+    if (!project) return;
+    ['planned', 'actual'].forEach(function (mk) {
+      var map = state[mk];
+      if (!map) return;
+      var allYms = getAllMonths(state.year).map(function (m) { return m.ym; });
+      allYms.forEach(function (ym) {
+        var key = getLaborKey(project.id, ym, personId);
+        var cell = map[key];
+        if (!cell) return;
+        var rate = cell.rate || 0;
+        // 주 분류에 rate 몰기, 나머지 0
+        var rates = { cash: 0, selfCash: 0, inkind: 0 };
+        rates[pf] = rate;
+        cell.rates = rates;
+        // 금액도 주 분류만 유지(나머지 0) — 일관성
+        ['cash', 'selfCash', 'inkind'].forEach(function (f) {
+          if (f !== pf) cell[f] = 0;
+        });
+      });
+    });
+  }
+
+  // v7.4: 나눔 기본 분류 줄 — [주 분류, 그와 다른 첫 분류] (2줄)
+  function defaultSplitCis(personId) {
+    var role = state.personRoles[personId] || {};
+    var primary = normalizeCi(role.cashOrInkind);
+    var hasSelfCash = projHasSelfCash(getProject());
+    var avail = ['현금'];
+    if (hasSelfCash) avail.push('자부담현금');
+    avail.push('현물');
+    var others = avail.filter(function (c) { return c !== primary; });
+    return [primary, others[0] || '현물'];
   }
 
   // v5 Step 4: subRole 텍스트 입력(input) 핸들러
@@ -2800,6 +3446,19 @@
     return dt.getFullYear() === y && dt.getMonth() === m - 1 && dt.getDate() === d;
   }
 
+  // v7.4.4: 지급일 입력 정규화 — 숫자만 8자리(20260601) → YYYY-MM-DD 자동 변환.
+  //   - 구분자(- . /)나 공백이 섞여도 숫자만 추려 8자리면 변환(이미 2026-06-01 형식도 동일 결과).
+  //   - 8자리가 아니면 원본(trim)을 그대로 반환 → isValidISODate가 형식 검증.
+  function normalizeDateInput(s) {
+    if (s == null) return s;
+    var t = String(s).trim();
+    var digits = t.replace(/\D/g, '');
+    if (digits.length === 8) {
+      return digits.slice(0, 4) + '-' + digits.slice(4, 6) + '-' + digits.slice(6, 8);
+    }
+    return t;
+  }
+
   function paidMonth(ym) {
     var project = getProject();
     if (!project) return;
@@ -2818,11 +3477,11 @@
       var msg1 = ymLabel + '은 ' + curPaidAt + ' 지급 완료 처리되어 있습니다.\n\n[확인] = 지급일 수정\n[취소] = 다음 단계 (지급 취소 옵션)';
       if (confirm(msg1)) {
         // 수정 분기
-        var newDate = prompt(ymLabel + ' 지급일 수정 (YYYY-MM-DD)', curPaidAt);
+        var newDate = prompt(ymLabel + ' 지급일 수정 (YYYY-MM-DD, 숫자 8자리도 가능)', curPaidAt);
         if (newDate === null) return;
-        newDate = newDate.trim();
+        newDate = normalizeDateInput(newDate);
         if (!isValidISODate(newDate)) {
-          showToast('날짜 형식이 올바르지 않습니다 (YYYY-MM-DD).', 'warn');
+          showToast('날짜 형식이 올바르지 않습니다 (YYYY-MM-DD 또는 숫자 8자리).', 'warn');
           return;
         }
         if (!state.meta[ym]) state.meta[ym] = {};
@@ -2846,11 +3505,11 @@
     }
 
     // 미지급 → 지급일 prompt (기본값 = 오늘)
-    var dateInput = prompt(ymLabel + ' 지급일을 입력하세요 (YYYY-MM-DD)', todayISODate());
+    var dateInput = prompt(ymLabel + ' 지급일을 입력하세요 (YYYY-MM-DD, 숫자 8자리도 가능)', todayISODate());
     if (dateInput === null) return;
-    dateInput = dateInput.trim();
+    dateInput = normalizeDateInput(dateInput);
     if (!isValidISODate(dateInput)) {
-      showToast('날짜 형식이 올바르지 않습니다 (YYYY-MM-DD).', 'warn');
+      showToast('날짜 형식이 올바르지 않습니다 (YYYY-MM-DD 또는 숫자 8자리).', 'warn');
       return;
     }
     if (!state.meta[ym]) state.meta[ym] = {};
@@ -3078,6 +3737,7 @@
       div.classList.toggle('is-active', div.id === 'tab-' + tab);
     });
     renderStickyBoxes();   // v5 Step 2: 누계는 탭별로 다름
+    renderSnapshotBtnVisibility();  // v7.4.4 §4.2: 📸는 예상 탭에서만
   }
 
   // ====================================================================
@@ -3249,6 +3909,8 @@
 
     // v5.2 Step 4.6: 셀 우클릭 → 컨텍스트 메뉴 (참여율 셀, 예상 탭만)
     document.addEventListener('contextmenu', onCellContextMenu);
+    // v7.4.3 §4.1: 메모 마커 클릭 → 팝오버
+    document.addEventListener('click', onMemoMarkerClick);
 
     // 컨텍스트 메뉴 바깥 클릭 / Esc 시 닫기
     document.addEventListener('click', function (e) {
@@ -3289,15 +3951,15 @@
 
         getPersons().forEach(function (person) {
           var role = (state.personRoles && state.personRoles[person.id]) || {};
-          var targetField = role.cashOrInkind === '현물' ? 'inkind' : 'cash';
-          var otherField  = (targetField === 'cash') ? 'inkind' : 'cash';   // v5.3: 반대편
+          var targetField = moneyFieldOf(role.cashOrInkind);   // v7.4
+          var otherFields = otherMoneyFields(targetField);
           months.forEach(function (m) {
             var cell = getCell(dataMap, project.id, m.ym, person.id);
             if (cell.rate > 0) {
               var amt = Math.round(getEffectiveMonthlySalary(person) * cell.rate / 100);
               var patch = {};
               patch[targetField] = amt;
-              patch[otherField]  = 0;   // v5.3: 반대편 필드도 0으로
+              otherFields.forEach(function (f) { patch[f] = 0; });   // 나머지 금액 0
               setCell(dataMap, project.id, m.ym, person.id, patch);
             }
           });
@@ -3396,9 +4058,11 @@
 
       // ── Ctrl+Z: 되돌리기 ──────────────────────────────
       if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
-        // 모달 열려있으면 패스
+        // 모달 열려있으면 패스 (셀 undo가 입력창 텍스트 편집을 가로채지 않게)
         var modal = document.getElementById('pl-add-modal');
         if (modal && !modal.hidden) return;
+        var snapModal = document.getElementById('pl-snapshot-modal');   // v7.4.4 §4.2
+        if (snapModal && !snapModal.hidden) return;
 
         e.preventDefault();
         undoLastCell();
@@ -3592,13 +4256,13 @@
     patch[entry.field] = oldVal;
     setCell(dataMap, project.id, entry.ym, entry.personId, patch);
 
-    // v5 Step 4: rate 되돌리기 시 personRoles에 따라 cash/inkind 중 적절한 쪽 복원
+    // v7.4: rate 되돌리기 시 personRoles에 따라 cash/selfCash/inkind 중 적절한 쪽 복원
     var targetMoneyField = null;
     if (entry.field === 'rate') {
       var person = _allPersons.find(function (p) { return p.id === entry.personId; });
       if (person) {
         var role = (state.personRoles && state.personRoles[entry.personId]) || {};
-        targetMoneyField = role.cashOrInkind === '현물' ? 'inkind' : 'cash';
+        targetMoneyField = moneyFieldOf(role.cashOrInkind);
         var oldMoney  = Math.round(getEffectiveMonthlySalary(person) * oldVal / 100);
         var p2 = {};
         p2[targetMoneyField] = oldMoney;
@@ -3734,6 +4398,604 @@
     renderAll();
     scheduleSave();
     showToast('↩️ 복사가 취소되었습니다.', 'info');
+  }
+
+  // ====================================================================
+  // v7.4.4 §4.2 — 예상 계획 스냅샷 (Phase H)
+  // --------------------------------------------------------------------
+  //  · 저장 단위: 1 문서 = 1 스냅샷 (컬렉션 projectLaborSnapshots, auto-id)
+  //    - 단일 문서 배열 누적은 1MB 한계 위험 → 스냅샷마다 독립 문서.
+  //    - 조회: where('projectId','==',pid) 단일 equality(자동 인덱스, 복합 인덱스 불필요) + JS 정렬.
+  //  · 담는 범위(사용자 확정): 예상 셀(planned) + personIds + personRoles.
+  //    - actual / meta(확정·지급) 은 미포함 — "예상 계획"의 스냅샷이므로.
+  //  · 복원(사용자 확정): 전체 덮어쓰기 + 복원 전 자동 백업 스냅샷(kind:'auto').
+  //  · 작성자: window.currentUser(있으면) — { uid, email, name }. 없으면 null.
+  //  · funding·결산·labor-dashboard 무영향: 별도 컬렉션, 기존 projectLabor 문서 키 변경 0.
+  // ====================================================================
+  var _snapshots = [];           // 현재 프로젝트의 스냅샷 캐시 (createdAt desc)
+  var _snapOpenId = null;        // 펼쳐진(내역/차이) 스냅샷 id (없으면 null)
+  var _snapOpenMode = 'view';    // 'view'(내역) | 'diff'(차이)
+  var EMPTY_SIG = '0|0|0|0|';
+
+  function plEsc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+  function plDeepCopy(o) {
+    try { return JSON.parse(JSON.stringify(o || {})); } catch (e) { return {}; }
+  }
+  function snapNum(x) { var n = Number(x); return isFinite(n) ? n : 0; }
+
+  function getCurrentUserInfo() {
+    var u = window.currentUser;
+    if (!u) return null;
+    return { uid: u.uid || '', email: u.email || '', name: u.name || u.email || '' };
+  }
+
+  // 셀의 "계획 시그니처" — 참여율·3분류 금액·나눔(rates)만 비교 (메모·색은 제외)
+  function snapCellPlanSig(cell) {
+    if (!cell) return '';
+    var r = (cell.rates && typeof cell.rates === 'object') ? JSON.stringify(cell.rates) : '';
+    return [snapNum(cell.rate), snapNum(cell.cash), snapNum(cell.selfCash), snapNum(cell.inkind), r].join('|');
+  }
+  function snapCellAmt(cell) {
+    return snapNum(cell && cell.cash) + snapNum(cell && cell.selfCash) + snapNum(cell && cell.inkind);
+  }
+  // 셀 키 {projectId}_{ym}_{personId} → { ym, personId } (labor-dashboard와 동일한 안전 파싱)
+  function parseSnapKey(key) {
+    var prefix = state.projectId + '_';
+    if (String(key).indexOf(prefix) !== 0) return null;
+    var rest = String(key).substring(prefix.length);  // {ym}_{personId}
+    if (rest.length < 9) return null;
+    return { ym: rest.substring(0, 7), personId: rest.substring(8) };
+  }
+  function snapPersonName(personId) {
+    var p = _allPersons.find(function (x) { return x.id === personId; });
+    return p ? (p.name || personId) : personId;
+  }
+  // planned 맵에서 "값이 있는" 셀 개수
+  function countPlanCells(planned) {
+    var n = 0;
+    Object.keys(planned || {}).forEach(function (k) {
+      if (snapCellPlanSig(planned[k]) !== EMPTY_SIG) n++;
+    });
+    return n;
+  }
+
+  // 스냅샷(planned) ↔ 현재(state.planned) 차이
+  function computeSnapshotDiff(snapPlanned) {
+    var cur = state.planned || {};
+    var snap = snapPlanned || {};
+    var keys = {};
+    Object.keys(snap).forEach(function (k) { keys[k] = 1; });
+    Object.keys(cur).forEach(function (k) { keys[k] = 1; });
+    var added = [], removed = [], changed = [];
+    Object.keys(keys).forEach(function (k) {
+      var info = parseSnapKey(k);
+      if (!info) return;
+      var sigS = snap[k] ? snapCellPlanSig(snap[k]) : '';
+      var sigC = cur[k]  ? snapCellPlanSig(cur[k])  : '';
+      var hasS = !!snap[k] && sigS !== EMPTY_SIG;
+      var hasC = !!cur[k]  && sigC !== EMPTY_SIG;
+      if (hasS && !hasC)      removed.push({ ym: info.ym, personId: info.personId, from: snap[k] });
+      else if (!hasS && hasC) added.push({ ym: info.ym, personId: info.personId, to: cur[k] });
+      else if (hasS && hasC && sigS !== sigC) changed.push({ ym: info.ym, personId: info.personId, from: snap[k], to: cur[k] });
+    });
+    return { added: added, removed: removed, changed: changed };
+  }
+
+  // ── Firestore I/O ──────────────────────────────────────────────────
+  function loadSnapshots() {
+    if (!state.projectId || !isFirestoreReady()) return Promise.resolve([]);
+    return db().collection(SNAP_COLL)
+      .where('projectId', '==', state.projectId)
+      .get()
+      .then(function (qs) {
+        var arr = [];
+        qs.forEach(function (doc) {
+          var d = doc.data() || {};
+          arr.push({
+            id:          doc.id,
+            label:       d.label || '(이름 없음)',
+            kind:        d.kind || 'manual',
+            createdAt:   d.createdAt || '',
+            author:      d.author || null,
+            cellCount:   typeof d.cellCount === 'number' ? d.cellCount : countPlanCells(d.planned),
+            personCount: Array.isArray(d.personIds) ? d.personIds.length : 0,
+            planned:     d.planned || {},
+            personIds:   Array.isArray(d.personIds) ? d.personIds : [],
+            personRoles: d.personRoles || {}
+          });
+        });
+        arr.sort(function (a, b) { return (b.createdAt || '').localeCompare(a.createdAt || ''); });
+        return arr;
+      });
+  }
+
+  function saveSnapshot(label, kind) {
+    if (!state.projectId || !isFirestoreReady()) return Promise.reject(new Error('Firestore 미연결'));
+    var doc = {
+      projectId:   state.projectId,
+      label:       label || '',
+      kind:        kind || 'manual',
+      createdAt:   new Date().toISOString(),
+      author:      getCurrentUserInfo(),
+      planned:     plDeepCopy(state.planned),
+      personIds:   plDeepCopy(state.personIds),
+      personRoles: plDeepCopy(state.personRoles),
+      cellCount:   countPlanCells(state.planned)
+    };
+    return db().collection(SNAP_COLL).add(doc);
+  }
+
+  function deleteSnapshotDoc(id) {
+    if (!isFirestoreReady()) return Promise.reject(new Error('Firestore 미연결'));
+    return db().collection(SNAP_COLL).doc(id).delete();
+  }
+
+  // ── 날짜/라벨 포맷 ──────────────────────────────────────────────────
+  function fmtSnapDate(iso) {
+    if (!iso) return '';
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return iso;
+    function p(n) { return (n < 10 ? '0' : '') + n; }
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) +
+           ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+  }
+
+  // ── 모달 ────────────────────────────────────────────────────────────
+  function openSnapshotModal() {
+    var modal = document.getElementById('pl-snapshot-modal');
+    if (!modal) return;
+    if (!state.projectId) { showToast('먼저 과제를 선택하세요.', 'warn'); return; }
+    _snapOpenId = null;
+    modal.hidden = false;
+    renderSnapshotModalBody();   // 즉시 현재 요약/폼 표시
+    // 리스트 로드
+    var listEl = document.getElementById('pl-snap-list');
+    if (listEl) listEl.innerHTML = '<div class="pl-snap-loading">불러오는 중…</div>';
+    loadSnapshots().then(function (arr) {
+      _snapshots = arr;
+      renderSnapshotList();
+    }).catch(function (e) {
+      console.error('스냅샷 로드 실패:', e);
+      if (listEl) listEl.innerHTML = '<div class="pl-snap-empty">목록을 불러오지 못했습니다.</div>';
+    });
+  }
+
+  function closeSnapshotModal() {
+    var modal = document.getElementById('pl-snapshot-modal');
+    if (modal) modal.hidden = true;
+    _snapOpenId = null;
+  }
+
+  // 모달 상단(현재 요약 + 저장 폼) 렌더
+  function renderSnapshotModalBody() {
+    var sumEl = document.getElementById('pl-snap-current-summary');
+    if (sumEl) {
+      var nPersons = state.personIds.length;
+      var nCells = countPlanCells(state.planned);
+      sumEl.innerHTML = '현재 예상 계획: <strong>' + nPersons + '명</strong> · <strong>' +
+        nCells + '개</strong> 입력 셀';
+    }
+  }
+
+  function renderSnapshotList() {
+    var listEl = document.getElementById('pl-snap-list');
+    if (!listEl) return;
+    if (!_snapshots.length) {
+      listEl.innerHTML = '<div class="pl-snap-empty">저장된 스냅샷이 없습니다. 위에서 현재 계획을 저장해 보세요.</div>';
+      return;
+    }
+    var html = _snapshots.map(function (s) {
+      var who = s.author ? plEsc(s.author.name || s.author.email || '') : '—';
+      var badge = (s.kind === 'auto')
+        ? '<span class="pl-snap-badge pl-snap-badge--auto">자동백업</span>'
+        : '';
+      var isOpen = (_snapOpenId === s.id);
+      var viewOpen = isOpen && _snapOpenMode === 'view';
+      var diffOpen = isOpen && _snapOpenMode === 'diff';
+      var panelHtml = !isOpen ? ''
+        : (_snapOpenMode === 'view' ? renderSnapshotViewHtml(s) : renderSnapshotDiffHtml(s));
+      var row =
+        '<div class="pl-snap-row' + (isOpen ? ' is-open' : '') + '" data-snap-id="' + plEsc(s.id) + '">' +
+          '<div class="pl-snap-row-main">' +
+            '<div class="pl-snap-row-info">' +
+              '<div class="pl-snap-row-label">' + plEsc(s.label) + badge + '</div>' +
+              '<div class="pl-snap-row-meta">' +
+                fmtSnapDate(s.createdAt) + ' · ' + who +
+                ' · ' + s.personCount + '명 · ' + s.cellCount + '셀' +
+              '</div>' +
+            '</div>' +
+            '<div class="pl-snap-row-actions">' +
+              '<button type="button" class="pl-snap-btn' + (viewOpen ? ' is-active' : '') + '" data-snap-act="view" data-snap-id="' + plEsc(s.id) + '">' + (viewOpen ? '내역 닫기' : '내역') + '</button>' +
+              '<button type="button" class="pl-snap-btn' + (diffOpen ? ' is-active' : '') + '" data-snap-act="diff" data-snap-id="' + plEsc(s.id) + '">' + (diffOpen ? '차이 닫기' : '차이') + '</button>' +
+              '<button type="button" class="pl-snap-btn pl-snap-btn--primary" data-snap-act="restore" data-snap-id="' + plEsc(s.id) + '">복원</button>' +
+              '<button type="button" class="pl-snap-btn pl-snap-btn--danger" data-snap-act="delete" data-snap-id="' + plEsc(s.id) + '">삭제</button>' +
+            '</div>' +
+          '</div>' +
+          panelHtml +
+        '</div>';
+      return row;
+    }).join('');
+    listEl.innerHTML = html;
+  }
+
+  // 내역 패널 HTML — 스냅샷에 저장된 예상 계획을 "표" 형태로 표시 (현재와 비교 안 함)
+  function renderSnapshotViewHtml(snap) {
+    var planned = snap.planned || {};
+    var roles = snap.personRoles || {};
+
+    // 인력별 { ym: cell } 묶기 + 등장 ym 수집 (값 있는 셀만)
+    var byPerson = {};
+    var ymSet = {};
+    Object.keys(planned).forEach(function (k) {
+      var info = parseSnapKey(k);
+      if (!info) return;
+      if (snapCellPlanSig(planned[k]) === EMPTY_SIG) return;
+      if (!byPerson[info.personId]) byPerson[info.personId] = {};
+      byPerson[info.personId][info.ym] = planned[k];
+      ymSet[info.ym] = 1;
+    });
+    var yms = Object.keys(ymSet).sort();
+
+    // 인력 순서: 스냅샷 personIds 우선, 빠진 인력은 뒤에
+    var order = [];
+    var seen = {};
+    (snap.personIds || []).forEach(function (pid) { if (!seen[pid]) { seen[pid] = 1; order.push(pid); } });
+    Object.keys(byPerson).forEach(function (pid) { if (!seen[pid]) { seen[pid] = 1; order.push(pid); } });
+
+    var dlBtn = '<button type="button" class="pl-snap-btn" data-snap-act="xlsx" data-snap-id="' + plEsc(snap.id) + '">⬇ 엑셀</button>';
+    var copyBtn = '<button type="button" class="pl-snap-btn" data-snap-act="copy" data-snap-id="' + plEsc(snap.id) + '">📋 시트 복사</button>';
+    var bar = '<div class="pl-snap-view-bar">' +
+      '<span class="pl-snap-view-when">📸 ' + fmtSnapDate(snap.createdAt) + ' 시점의 예상 계획</span>' +
+      '<span class="pl-snap-view-actions">' + copyBtn + dlBtn + '</span></div>';
+
+    if (!yms.length) {
+      return '<div class="pl-snap-diff">' + bar +
+        '<div class="pl-snap-diff-empty">이 스냅샷에는 입력된 예상 계획이 없습니다. (' +
+        (snap.personIds ? snap.personIds.length : 0) + '명 배정)</div></div>';
+    }
+
+    // 헤더 라벨: 단일 연도면 "N월", 여러 해 걸치면 "YYYY-MM"
+    var years = {};
+    yms.forEach(function (ym) { years[ym.substring(0, 4)] = 1; });
+    var oneYear = Object.keys(years).length === 1;
+    function ymHead(ym) { return oneYear ? (parseInt(ym.substring(5, 7), 10) + '월') : ym; }
+
+    var thead = '<tr><th class="pl-snap-th-name">이름</th><th class="pl-snap-th-ci">구분</th>' +
+      yms.map(function (ym) { return '<th>' + plEsc(ymHead(ym)) + '</th>'; }).join('') +
+      '<th class="pl-snap-th-sum">합계</th></tr>';
+
+    var tbody = order.map(function (pid) {
+      var cells = byPerson[pid] || {};
+      var role = roles[pid] || {};
+      var isSplit = role.split === true;   // ← 나눔은 사람 단위 role.split로 판정 (cell.rates 잔재 아님)
+      var ciLabel = role.cashOrInkind ? fundTypeLabel(role.cashOrInkind) : '';
+      var nameCell = plEsc(snapPersonName(pid)) +
+        (isSplit ? ' <span class="pl-snap-view-split">나눔</span>' : '');
+      var sum = 0;
+      var tds = yms.map(function (ym) {
+        var c = cells[ym];
+        if (c && snapCellPlanSig(c) !== EMPTY_SIG) {
+          var amt = snapCellAmt(c); sum += amt;
+          return '<td class="pl-snap-td-has">' +
+            '<div class="pl-snap-td-rate">' + snapNum(c.rate) + '%</div>' +
+            '<div class="pl-snap-td-amt">' + amt.toLocaleString('ko-KR') + '</div></td>';
+        }
+        return '<td class="pl-snap-td-empty">·</td>';
+      }).join('');
+      return '<tr><td class="pl-snap-td-name">' + nameCell + '</td>' +
+        '<td class="pl-snap-td-ci">' + plEsc(ciLabel) + '</td>' + tds +
+        '<td class="pl-snap-td-sum">' + sum.toLocaleString('ko-KR') + '</td></tr>';
+    }).join('');
+
+    return '<div class="pl-snap-diff">' + bar +
+      '<div class="pl-snap-table-wrap"><table class="pl-snap-table">' +
+        '<thead>' + thead + '</thead><tbody>' + tbody + '</tbody></table></div></div>';
+  }
+
+  // 현재 과제의 키워드 (파일명/제목용) — 다른 페이지와 동일 fallback
+  function getSnapKeyword() {
+    var proj = getProject();
+    if (!proj) return '';
+    return (proj.keywords || proj.keyword || proj.name || proj.projectName || proj.id || '').toString().trim();
+  }
+
+  // 스냅샷 → 표 AoA(배열의 배열) 빌드. 엑셀·클립보드가 공유.
+  function buildSnapshotAoa(snap) {
+    var planned = snap.planned || {};
+    var roles = snap.personRoles || {};
+    var byPerson = {};
+    var ymSet = {};
+    Object.keys(planned).forEach(function (k) {
+      var info = parseSnapKey(k);
+      if (!info) return;
+      if (snapCellPlanSig(planned[k]) === EMPTY_SIG) return;
+      if (!byPerson[info.personId]) byPerson[info.personId] = {};
+      byPerson[info.personId][info.ym] = planned[k];
+      ymSet[info.ym] = 1;
+    });
+    var yms = Object.keys(ymSet).sort();
+    var order = [];
+    var seen = {};
+    (snap.personIds || []).forEach(function (pid) { if (!seen[pid]) { seen[pid] = 1; order.push(pid); } });
+    Object.keys(byPerson).forEach(function (pid) { if (!seen[pid]) { seen[pid] = 1; order.push(pid); } });
+
+    var header = ['이름', '구분'];
+    yms.forEach(function (ym) { header.push(ym + ' 참여율(%)'); header.push(ym + ' 금액'); });
+    header.push('합계 금액');
+
+    var aoa = [header];
+    order.forEach(function (pid) {
+      var cells = byPerson[pid] || {};
+      var role = roles[pid] || {};
+      var ciLabel = role.cashOrInkind ? fundTypeLabel(role.cashOrInkind) : '';
+      var row = [snapPersonName(pid), ciLabel];
+      var sum = 0;
+      yms.forEach(function (ym) {
+        var c = cells[ym];
+        if (c && snapCellPlanSig(c) !== EMPTY_SIG) {
+          row.push(snapNum(c.rate));
+          var amt = snapCellAmt(c); row.push(amt); sum += amt;
+        } else { row.push(''); row.push(''); }
+      });
+      row.push(sum);
+      aoa.push(row);
+    });
+    return { aoa: aoa, hasData: yms.length > 0 };
+  }
+
+  function snapFileBase(snap) {
+    var kw = getSnapKeyword().replace(/[\\/:*?"<>|]/g, '_').slice(0, 20);
+    var safeLabel = String(snap.label || '스냅샷').replace(/[\\/:*?"<>|]/g, '_').slice(0, 30);
+    var safeDate = fmtSnapDate(snap.createdAt).replace(/[: ]/g, '-');
+    // 요청 형식: 키워드_스냅샷_{이름}_{날짜}
+    return (kw ? kw + '_' : '') + '스냅샷_' + safeLabel + '_' + safeDate;
+  }
+
+  // 스냅샷 → 엑셀 다운로드
+  function downloadSnapshotXlsx(id) {
+    var snap = _snapshots.find(function (s) { return s.id === id; });
+    if (!snap) return;
+    if (!window.XLSX) { showToast('엑셀 모듈을 불러오지 못했습니다.', 'error'); return; }
+    var built = buildSnapshotAoa(snap);
+    if (!built.hasData) { showToast('입력된 예상 계획이 없습니다.', 'info'); return; }
+    try {
+      var ws = XLSX.utils.aoa_to_sheet(built.aoa);
+      var wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, '스냅샷');
+      XLSX.writeFile(wb, snapFileBase(snap) + '.xlsx');
+      showToast('⬇ 엑셀 다운로드', 'success');
+    } catch (e) {
+      console.error('스냅샷 엑셀 실패:', e);
+      showToast('엑셀 생성 실패', 'error');
+    }
+  }
+
+  // 스냅샷 → 시트 붙여넣기용 TSV 클립보드 복사
+  function copySnapshotToClipboard(id) {
+    var snap = _snapshots.find(function (s) { return s.id === id; });
+    if (!snap) return;
+    var built = buildSnapshotAoa(snap);
+    if (!built.hasData) { showToast('입력된 예상 계획이 없습니다.', 'info'); return; }
+    var tsv = built.aoa.map(function (row) {
+      return row.map(function (v) { return (v == null ? '' : String(v)); }).join('\t');
+    }).join('\n');
+    var done = function () { showToast('📋 시트 붙여넣기용으로 복사됨', 'success'); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(tsv).then(done).catch(function () { snapFallbackCopy(tsv, done); });
+    } else {
+      snapFallbackCopy(tsv, done);
+    }
+  }
+  function snapFallbackCopy(text, cb) {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); cb && cb(); }
+    catch (e) { showToast('복사 실패 — 표를 직접 선택해 복사하세요.', 'error'); }
+    document.body.removeChild(ta);
+  }
+
+
+  // 차이 패널 HTML (스냅샷 = 과거/좌 기준, 현재 = 우)
+  function renderSnapshotDiffHtml(snap) {
+    var diff = computeSnapshotDiff(snap.planned);
+    var nA = diff.added.length, nC = diff.changed.length, nR = diff.removed.length;
+    if (!nA && !nC && !nR) {
+      return '<div class="pl-snap-diff"><div class="pl-snap-diff-empty">스냅샷 시점과 현재 예상 계획이 동일합니다.</div></div>';
+    }
+    // 인력별 그룹핑
+    var byPerson = {};
+    function push(item, type) {
+      var pid = item.personId;
+      if (!byPerson[pid]) byPerson[pid] = [];
+      byPerson[pid].push({ type: type, ym: item.ym, from: item.from, to: item.to });
+    }
+    diff.added.forEach(function (i) { push(i, 'add'); });
+    diff.changed.forEach(function (i) { push(i, 'chg'); });
+    diff.removed.forEach(function (i) { push(i, 'rm'); });
+
+    var pids = Object.keys(byPerson).sort(function (a, b) {
+      return snapPersonName(a).localeCompare(snapPersonName(b), 'ko');
+    });
+
+    var groupsHtml = pids.map(function (pid) {
+      var items = byPerson[pid].sort(function (a, b) { return a.ym.localeCompare(b.ym); });
+      var rows = items.map(function (it) {
+        var cls, txt;
+        if (it.type === 'add') {
+          cls = 'is-add'; txt = '추가 — ' + snapNum(it.to.rate) + '% / ' + snapCellAmt(it.to).toLocaleString('ko-KR') + '원';
+        } else if (it.type === 'rm') {
+          cls = 'is-rm'; txt = '삭제 — (이전 ' + snapNum(it.from.rate) + '% / ' + snapCellAmt(it.from).toLocaleString('ko-KR') + '원)';
+        } else {
+          cls = 'is-chg';
+          var rF = snapNum(it.from.rate), rT = snapNum(it.to.rate);
+          var aF = snapCellAmt(it.from), aT = snapCellAmt(it.to);
+          var parts = [];
+          if (rF !== rT) parts.push(rF + '% → ' + rT + '%');
+          if (aF !== aT) parts.push(aF.toLocaleString('ko-KR') + ' → ' + aT.toLocaleString('ko-KR') + '원');
+          txt = '변경 — ' + (parts.length ? parts.join(', ') : '나눔/분류 변경');
+        }
+        return '<div class="pl-snap-diff-item ' + cls + '"><span class="pl-snap-diff-ym">' + plEsc(it.ym) + '</span>' + plEsc(txt) + '</div>';
+      }).join('');
+      return '<div class="pl-snap-diff-group">' +
+               '<div class="pl-snap-diff-person">' + plEsc(snapPersonName(pid)) + '</div>' + rows +
+             '</div>';
+    }).join('');
+
+    return '<div class="pl-snap-diff">' +
+        '<div class="pl-snap-diff-counts">' +
+          '<span class="pl-snap-diff-c is-add">+추가 ' + nA + '</span>' +
+          '<span class="pl-snap-diff-c is-chg">~변경 ' + nC + '</span>' +
+          '<span class="pl-snap-diff-c is-rm">−삭제 ' + nR + '</span>' +
+          '<span class="pl-snap-diff-legend">스냅샷 → 현재 기준</span>' +
+        '</div>' + groupsHtml +
+      '</div>';
+  }
+
+  // ── 액션 ────────────────────────────────────────────────────────────
+  function onSaveSnapshotClick() {
+    var input = document.getElementById('pl-snap-label-input');
+    var label = input ? input.value.trim() : '';
+    if (!label) label = '스냅샷 ' + fmtSnapDate(new Date().toISOString());
+    var btn = document.getElementById('pl-snap-save-btn');
+    if (btn) { btn.disabled = true; btn.textContent = '저장 중…'; }
+    saveSnapshot(label, 'manual').then(function () {
+      if (input) input.value = '';
+      showToast('📸 스냅샷 저장됨 — ' + label, 'success');
+      return loadSnapshots();
+    }).then(function (arr) {
+      _snapshots = arr;
+      renderSnapshotList();
+    }).catch(function (e) {
+      console.error('스냅샷 저장 실패:', e);
+      showToast('스냅샷 저장 실패', 'error');
+    }).then(function () {
+      if (btn) { btn.disabled = false; btn.textContent = '📸 현재 계획 저장'; }
+    });
+  }
+
+  function onRestoreSnapshot(id) {
+    var snap = _snapshots.find(function (s) { return s.id === id; });
+    if (!snap) return;
+    var diff = computeSnapshotDiff(snap.planned);
+    var nChanges = diff.added.length + diff.changed.length + diff.removed.length;
+    var msg = '이 스냅샷("' + snap.label + '")으로 예상 계획을 복원합니다.\n\n' +
+      '· 현재 예상 셀·인력구성·역할이 모두 스냅샷 시점으로 덮어써집니다.\n' +
+      '· 변경되는 셀: ' + nChanges + '개.\n' +
+      '· 복원 직전 현재 상태가 자동 백업 스냅샷으로 저장됩니다.\n\n계속할까요?';
+    if (!confirm(msg)) return;
+
+    // 1) 복원 전 자동 백업
+    saveSnapshot('복원 전 자동백업 (' + fmtSnapDate(new Date().toISOString()) + ')', 'auto')
+      .then(function () {
+        // 2) 덮어쓰기 (확정 범위: planned + personIds + personRoles)
+        state.planned     = plDeepCopy(snap.planned);
+        state.personIds   = plDeepCopy(snap.personIds);
+        state.personRoles = plDeepCopy(snap.personRoles);
+        scheduleSave();
+        renderAll();
+        showToast('↩ "' + snap.label + '" 복원 완료 (자동백업 저장됨)', 'success');
+        return loadSnapshots();
+      })
+      .then(function (arr) {
+        _snapshots = arr;
+        renderSnapshotModalBody();
+        renderSnapshotList();
+      })
+      .catch(function (e) {
+        console.error('복원 실패:', e);
+        showToast('복원 실패 — 데이터는 변경되지 않았습니다.', 'error');
+      });
+  }
+
+  function onDeleteSnapshot(id) {
+    var snap = _snapshots.find(function (s) { return s.id === id; });
+    if (!snap) return;
+    if (!confirm('스냅샷 "' + snap.label + '"을(를) 삭제하시겠습니까?\n(현재 예상 계획 데이터에는 영향 없음)')) return;
+    deleteSnapshotDoc(id).then(function () {
+      if (_snapOpenId === id) _snapOpenId = null;
+      showToast('🗑 스냅샷 삭제됨', 'success');
+      return loadSnapshots();
+    }).then(function (arr) {
+      _snapshots = arr;
+      renderSnapshotList();
+    }).catch(function (e) {
+      console.error('스냅샷 삭제 실패:', e);
+      showToast('스냅샷 삭제 실패', 'error');
+    });
+  }
+
+  function onTogglePanel(id, mode) {
+    if (_snapOpenId === id && _snapOpenMode === mode) {
+      _snapOpenId = null;       // 같은 버튼 다시 → 닫기
+    } else {
+      _snapOpenId = id;
+      _snapOpenMode = mode;     // 다른 모드면 같은 행에서 패널만 전환
+    }
+    renderSnapshotList();
+  }
+
+  // 📸 버튼은 예상(planned) 탭에서만 노출
+  function renderSnapshotBtnVisibility() {
+    var btn = document.getElementById('pl-snapshot-btn');
+    if (btn) btn.style.display = (state.activeTab === 'planned') ? '' : 'none';
+  }
+
+  function bindSnapshotEvents() {
+    var openBtn = document.getElementById('pl-snapshot-btn');
+    if (openBtn) openBtn.addEventListener('click', openSnapshotModal);
+
+    var closeBtn = document.getElementById('pl-snap-close');
+    if (closeBtn) closeBtn.addEventListener('click', closeSnapshotModal);
+
+    var overlay = document.getElementById('pl-snapshot-modal');
+    if (overlay) {
+      overlay.addEventListener('click', function (e) {
+        if (e.target === overlay) closeSnapshotModal();
+      });
+    }
+
+    var saveBtn = document.getElementById('pl-snap-save-btn');
+    if (saveBtn) saveBtn.addEventListener('click', onSaveSnapshotClick);
+
+    var labelInput = document.getElementById('pl-snap-label-input');
+    if (labelInput) {
+      labelInput.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); onSaveSnapshotClick(); }
+      });
+    }
+
+    // 리스트 액션 (위임)
+    var listEl = document.getElementById('pl-snap-list');
+    if (listEl) {
+      listEl.addEventListener('click', function (e) {
+        var b = e.target.closest('[data-snap-act]');
+        if (!b) return;
+        var id = b.getAttribute('data-snap-id');
+        var act = b.getAttribute('data-snap-act');
+        if (act === 'restore') onRestoreSnapshot(id);
+        else if (act === 'delete') onDeleteSnapshot(id);
+        else if (act === 'diff') onTogglePanel(id, 'diff');
+        else if (act === 'view') onTogglePanel(id, 'view');
+        else if (act === 'xlsx') downloadSnapshotXlsx(id);
+        else if (act === 'copy') copySnapshotToClipboard(id);
+      });
+    }
+
+    // Esc 닫기
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') {
+        var m = document.getElementById('pl-snapshot-modal');
+        if (m && !m.hidden) closeSnapshotModal();
+      }
+    });
   }
 
   // ====================================================================
@@ -4371,6 +5633,7 @@
     loadProjects();
     bindEvents();
     bindModalEvents();
+    bindSnapshotEvents();   // v7.4.4 §4.2: 예상 계획 스냅샷
     bindKeyboard();
   }
 

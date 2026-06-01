@@ -49,7 +49,6 @@
     searchWrap: null,
     // 필터
     filterStatus: null,
-    filterCompany: null,
     filterDegree: null,
     filterLab: null,
     // 카드
@@ -2687,7 +2686,9 @@
     render();
   }
   function onFilterCompanyChange() {
-    _filter.company = el.filterCompany.value || 'all';
+    // CompanyFilter (회사 칩)로부터 호출됨. 인자: '' (전체) | '식스티' | '굿뉴스' | '패리티'
+    var company = (window.CompanyFilter && window.CompanyFilter.get) ? window.CompanyFilter.get() : '';
+    _filter.company = company || 'all';
     render();
   }
   function onFilterDegreeChange() {
@@ -2748,7 +2749,6 @@
     if (el.search)         el.search.addEventListener('input', onSearchInput);
     if (el.searchClear)    el.searchClear.addEventListener('click', onSearchClear);
     if (el.filterStatus)   el.filterStatus.addEventListener('change', onFilterStatusChange);
-    if (el.filterCompany)  el.filterCompany.addEventListener('change', onFilterCompanyChange);
     if (el.filterDegree)   el.filterDegree.addEventListener('change', onFilterDegreeChange);
     if (el.filterLab)      el.filterLab.addEventListener('change', onFilterLabChange);
     if (el.tbody)          el.tbody.addEventListener('click', onTableClick);
@@ -2768,7 +2768,6 @@
     el.searchWrap    = $('search-wrap');
 
     el.filterStatus     = $('filter-status');
-    el.filterCompany    = $('filter-company');
     el.filterDegree     = $('filter-degree');
     el.filterLab        = $('filter-lab');
 
@@ -2852,6 +2851,13 @@
 
     bindEvents();
     bindModalEvents();
+
+    // 회사 필터 칩 (전 페이지 공유)
+    if (window.CompanyFilter) {
+      var savedCompany = window.CompanyFilter.get();
+      _filter.company = savedCompany || 'all';
+      window.CompanyFilter.mountChips('pd-company-chips', onFilterCompanyChange);
+    }
 
     // Firestore 구독
     if (window.firestoreService && typeof window.firestoreService.subscribePersons === 'function') {

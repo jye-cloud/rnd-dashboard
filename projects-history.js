@@ -1162,6 +1162,13 @@
     function applyFilterAndRender(items) {
       items = Array.isArray(items) ? items : [];
       latestItems = items;
+
+      // 회사 필터 (전 페이지 공유)
+      var company = (window.CompanyFilter && window.CompanyFilter.get) ? window.CompanyFilter.get() : '';
+      if (company) {
+        items = items.filter(function (it) { return it && it.company === company; });
+      }
+
       var filterYear = getFilterYear();
       var statsYear = getStatsYear();
       var cutoff = statsYear + '-01-01';
@@ -1565,6 +1572,13 @@
       });
     } else {
       applyFilterAndRender([]);
+    }
+
+    // 회사 필터 칩 (전 페이지 공유)
+    if (window.CompanyFilter) {
+      window.CompanyFilter.mountChips('history-company-chips', function () {
+        applyFilterAndRender(latestItems);
+      });
     }
   }
 

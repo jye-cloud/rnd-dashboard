@@ -221,7 +221,7 @@
    *   - 수행/수행(계속)/수행(신규)/종료/미선정 카드 활성 시 표시
    *   - 유형별 카운트 + R&D 카운트 (회고/패턴 발견용)
    */
-  function updateFilterSummary(listItems, activeCardFilter) {
+  function updateFilterSummary(items, activeCardFilter, activeDivision, displayCount) {
     var el = document.getElementById('filter-summary-row');
     if (!el) return;
 
@@ -239,23 +239,26 @@
       return;
     }
 
-    // 유형별 + R&D 카운트
+    // 유형별 + R&D 카운트 (분류 선택과 무관하게 항상 전체 분해 — items = 분류 필터 전 모집단)
     var counts   = { '과제': 0, '지원사업': 0, '용역': 0, '기타': 0 };
     var rdCounts = { '과제': 0, '지원사업': 0, '용역': 0, '기타': 0 };
-    listItems.forEach(function (it) {
+    items.forEach(function (it) {
       var d = (it.division1 || it['구분1'] || '').toString();
       if (!counts.hasOwnProperty(d)) return;
       counts[d]++;
       var isRd = it.isRd === true || it.rd === true || it['R&D 여부'] === true;
       if (isRd) rdCounts[d]++;
     });
-    function pill(label, n, rd) {
+    function pill(div, n, rd) {
       var zero = n === 0 ? ' filter-summary-pill--zero' : '';
+      var active = (div === activeDivision) ? ' is-active' : '';
       var rdText = rd > 0 ? '<span class="filter-summary-rd">(R&amp;D ' + rd + ')</span>' : '';
-      return '<span class="filter-summary-pill' + zero + '">' + label + ' <strong>' + n + '</strong>' + rdText + '</span>';
+      return '<span class="filter-summary-pill clickable' + zero + active + '" data-summary-division="' + div + '" role="button" tabindex="0">' + div + ' <strong>' + n + '</strong>' + rdText + '</span>';
     }
+    var titleCount = (typeof displayCount === 'number') ? displayCount : items.length;
+    var titleText = titleMap[activeCardFilter] + (activeDivision ? ' · ' + activeDivision : '') + ' ' + titleCount + '건';
     el.innerHTML =
-      '<span class="filter-summary-title">' + titleMap[activeCardFilter] + ' ' + listItems.length + '건</span>' +
+      '<span class="filter-summary-title">' + titleText + '</span>' +
       '<span class="filter-summary-label">·  유형별 </span>' +
       pill('과제', counts['과제'], rdCounts['과제']) +
       pill('지원사업', counts['지원사업'], rdCounts['지원사업']) +
@@ -461,10 +464,7 @@
     setEl('stat-unselected', unselectedCnt);
     setEl('stat-year-sum', formatNum(yearSum));
 
-    // 당해 수주 총 지원금 + 하위 (계속/신규)
-    setEl('stat-ongoing-sum', formatNum(sujuTotal));
-    setEl('stat-continue-sum', formatNum(sujuContinue));
-    setEl('stat-new-sum', formatNum(sujuNew));
+    // (당해 수주 총 지원금 카드는 v7에서 제거 — 대시보드와 중복. sujuTotal/Continue/New 계산은 표 '당해 수주' 컬럼에서 사용하므로 유지)
 
     // 당해 입금 총 지원금 + 하위 (계속/신규)
     setEl('stat-continue-ipgm', formatNum(ipgmContinue));
@@ -479,9 +479,7 @@
     setEl('stat-actual-rate', rate + '%');
     setEl('stat-actual-remain', formatNum(remain));
 
-    // sub-section: filterYear 있을 때만 표시 (수주/입금/실제 셋 다)
-    var sumSub = document.getElementById('ongoing-sum-sub');
-    if (sumSub) sumSub.style.display = filterYear ? '' : 'none';
+    // sub-section: filterYear 있을 때만 표시 (입금/실제)
     var ipgmSub = document.getElementById('ipgm-sum-sub');
     if (ipgmSub) ipgmSub.style.display = filterYear ? '' : 'none';
     var actualSub = document.getElementById('actual-sum-sub');
@@ -741,6 +739,7 @@
     var activeCardFilter = null;
     var activeStatusFilter = null;
     var activeDivisionFilter = null;
+    var activeSummaryDivision = null;  // filter-summary-row 유형별 클릭 필터 (과제/지원사업/용역/기타), 기존 분류 pill과 독립. 활성 카드필터 ∩ 분류
     var activeExcludeDivisionFilter = null;
     var activeNewProposalOnly = false;
     var activeSearchQuery = '';
@@ -778,6 +777,14 @@
         var d = decodeURIComponent(division).trim();
         if (d === '과제' || d === '지원사업' || d === '용역' || d === '기타') {
           activeDivisionFilter = d;
+        }
+      }
+
+      var odiv = params.get('odiv');
+      if (odiv && activeCardFilter === 'ongoing') {
+        var od = decodeURIComponent(odiv).trim();
+        if (od === '과제' || od === '지원사업' || od === '기타') {
+          activeSummaryDivision = od;
         }
       }
 
@@ -940,7 +947,10 @@
       activeFiltersWrap.innerHTML = '';
 
       var chips = [];
-      if (activeCardFilter === 'ongoing')          chips.push({ label: '수행',         clear: function () { activeCardFilter = null; } });
+      if (activeCardFilter === 'ongoing') {
+        var ongoingLabel = activeSummaryDivision ? ('수행 · ' + activeSummaryDivision) : '수행';
+        chips.push({ label: ongoingLabel, clear: function () { activeCardFilter = null; activeSummaryDivision = null; } });
+      }
       else if (activeCardFilter === 'continue')    chips.push({ label: '수행 (계속)',  clear: function () { activeCardFilter = null; } });
       else if (activeCardFilter === 'new')         chips.push({ label: '수행 (신규)',  clear: function () { activeCardFilter = null; } });
       else if (activeCardFilter === 'unselected')  chips.push({ label: '미선정',          clear: function () { activeCardFilter = null; } });
@@ -967,127 +977,27 @@
       params.delete('filter');
       params.delete('status');
       params.delete('division');
+      params.delete('odiv');
       if (activeCardFilter)     params.set('filter', activeCardFilter);
       if (activeStatusFilter)   params.set('status', activeStatusFilter);
       if (activeDivisionFilter) params.set('division', activeDivisionFilter);
+      if (activeCardFilter === 'ongoing' && activeSummaryDivision) params.set('odiv', activeSummaryDivision);
       var query = params.toString();
       var newUrl = location.pathname + (query ? '?' + query : '') + location.hash;
       try { history.replaceState(null, '', newUrl); } catch (e) {}
     }
 
-    // Chart.js 인스턴스 (재렌더 시 destroy 후 재생성)
-    var monthlyChart = null;
-    var datalabelsRegistered = false;
-
-    /**
-     * 월별 신규 제안 차트 — 스택 막대(유형별 파스텔) + 월별 총합 라인 + 데이터 라벨
-     */
-    function renderMonthlyProposalChart(items, filterYear) {
-      var canvas = document.getElementById('monthly-proposal-chart');
-      if (!canvas || typeof Chart === 'undefined') return;
-
-      // datalabels 플러그인 등록 (1회만)
-      if (!datalabelsRegistered && typeof ChartDataLabels !== 'undefined') {
-        Chart.register(ChartDataLabels);
-        datalabelsRegistered = true;
-      }
-
-      // 유형별 12개월 카운트
-      var byType = {
-        '과제':     new Array(12).fill(0),
-        '지원사업': new Array(12).fill(0),
-        '용역':     new Array(12).fill(0),
-        '기타':     new Array(12).fill(0)
-      };
-      items.forEach(function (it) {
-        var sd = (it.submitDate || it['제출일'] || '').toString();
-        if (!sd) return;
-        if (filterYear && sd.slice(0, 4) !== filterYear) return;
-        var mo = parseInt(sd.slice(5, 7), 10);
-        if (isNaN(mo) || mo < 1 || mo > 12) return;
-        var d = (it.division1 || it['구분1'] || '기타').toString();
-        if (byType.hasOwnProperty(d)) byType[d][mo - 1] += 1;
-      });
-
-      // 월별 총합 (유형별 막대 합계)
-      var monthlyTotal = new Array(12).fill(0);
-      for (var i = 0; i < 12; i++) {
-        monthlyTotal[i] = byType['과제'][i] + byType['지원사업'][i] + byType['용역'][i] + byType['기타'][i];
-      }
-
-      if (monthlyChart) {
-        try { monthlyChart.destroy(); } catch (e) {}
-      }
-
-      // 막대 datalabels — 안에 흰글씨 숫자, 0이면 표시 안 함
-      var barDatalabels = {
-        color: '#374151',
-        font: { weight: '700', size: 10 },
-        formatter: function (v) { return v > 0 ? v : ''; }
-      };
-
-      monthlyChart = new Chart(canvas.getContext('2d'), {
-        type: 'bar',
-        data: {
-          labels: ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'],
-          datasets: [
-            { label: '과제',     data: byType['과제'],     backgroundColor: '#dbeafe', borderColor: '#bfdbfe', borderWidth: 1, stack: 'monthly', order: 2, datalabels: barDatalabels },
-            { label: '지원사업', data: byType['지원사업'], backgroundColor: '#d1fae5', borderColor: '#a7f3d0', borderWidth: 1, stack: 'monthly', order: 2, datalabels: barDatalabels },
-            { label: '용역',     data: byType['용역'],     backgroundColor: '#ffedd5', borderColor: '#fed7aa', borderWidth: 1, stack: 'monthly', order: 2, datalabels: barDatalabels },
-            { label: '기타',     data: byType['기타'],     backgroundColor: '#f3f4f6', borderColor: '#e5e7eb', borderWidth: 1, stack: 'monthly', order: 2, datalabels: barDatalabels },
-            {
-              type: 'line',
-              label: '월별 총합',
-              data: monthlyTotal,
-              borderColor: '#1d4ed8',
-              backgroundColor: 'rgba(29, 78, 216, 0.08)',
-              tension: 0,
-              pointBackgroundColor: '#1d4ed8',
-              pointRadius: 3,
-              pointHoverRadius: 5,
-              borderWidth: 1.8,
-              fill: false,
-              order: 0,
-              datalabels: {
-                anchor: 'end',
-                align: 'top',
-                offset: 4,
-                color: '#1d4ed8',
-                font: { weight: '700', size: 11 },
-                formatter: function (v) { return v > 0 ? v : ''; }
-              }
-            }
-          ]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          interaction: { mode: 'index', intersect: false },
-          layout: { padding: { top: 28 } },
-          scales: {
-            x: { stacked: true, grid: { display: false } },
-            y: { stacked: true, beginAtZero: true, ticks: { precision: 0, stepSize: 1 }, grid: { color: '#f3f4f6' } }
-          },
-          plugins: {
-            legend: {
-              position: 'bottom',
-              labels: { boxWidth: 14, boxHeight: 14, padding: 12, font: { size: 12 } }
-            },
-            tooltip: {
-              callbacks: {
-                label: function (ctx) {
-                  return ctx.dataset.label + ': ' + ctx.parsed.y + '건';
-                }
-              }
-            }
-          }
-        }
-      });
-    }
 
     function applyFilterAndRender(items) {
       items = Array.isArray(items) ? items : [];
       latestItems = items;
+
+      // 회사 필터 (전 페이지 공유) — 이후 모든 통계/필터 단계에 적용
+      var company = (window.CompanyFilter && window.CompanyFilter.get) ? window.CompanyFilter.get() : '';
+      if (company) {
+        items = items.filter(function (it) { return it && it.company === company; });
+      }
+
       var filterYear = getFilterYear();
       var statsYear = getStatsYear();
       var cutoff = statsYear + '-01-01';
@@ -1173,6 +1083,14 @@
       });
 
       // 엑셀 내보내기를 위해 현재 보이는 아이템 보관
+      // summaryBase = 카드/검색 등으로 필터된 집합 (유형별 분해의 모집단 — 분류 선택과 무관하게 전체 분해 유지)
+      var summaryBase = listItems;
+      // filter-summary-row 유형별 클릭 시: 활성 카드필터 ∩ 분류 → 표시 목록만 좁힘
+      if (activeCardFilter && activeSummaryDivision) {
+        listItems = listItems.filter(function (it) {
+          return projectMatchesDivision(it, activeSummaryDivision);
+        });
+      }
       lastFilteredItems = listItems;
 
       // 통계는 항상 연도 기준 전체 (모든 필터 무시 — 그래야 카드/pill 숫자가 의미를 가짐)
@@ -1183,8 +1101,6 @@
         var el = document.getElementById('stat-div-' + d);
         if (el) el.textContent = divisionCounts[d];
       });
-      // 월별 신규 제안 차트 렌더
-      renderMonthlyProposalChart(submitYearItems, filterYear);
 
       // 카드 가시성:
       //   - "수행" 통합 카드: 항상 표시
@@ -1192,6 +1108,10 @@
       var ongoingSub = document.getElementById('ongoing-sub');
       if (ongoingSub) {
         ongoingSub.style.display = filterYear ? '' : 'none';
+      }
+      // 카드 필터가 없으면 유형별 분류 선택도 해제
+      if (!activeCardFilter && activeSummaryDivision) {
+        activeSummaryDivision = null;
       }
       // 전체 모드로 전환 → sub-section 필터(continue/new/ended)는 모두 ongoing으로 통합 또는 해제
       if (!filterYear && (activeCardFilter === 'continue' || activeCardFilter === 'new' || activeCardFilter === 'ended')) {
@@ -1208,7 +1128,7 @@
       if (subEnded)    subEnded.classList.toggle('active', activeCardFilter === 'ended');
 
       renderTable(listItems, colVis, filterYear, projectEditHandler);
-      updateFilterSummary(listItems, activeCardFilter);
+      updateFilterSummary(summaryBase, activeCardFilter, activeSummaryDivision, listItems.length);
 
       if (filterHint) {
         var listLabel = filterYear ? filterYear + '년' : '전체';
@@ -1243,6 +1163,7 @@
           activeCardFilter = f;
           activeStatusFilter = null;
         }
+        activeSummaryDivision = null;  // 카드 필터 바뀌면 유형별 분류 선택 초기화
         syncURL();
         applyFilterAndRender(latestItems);
       }
@@ -1268,6 +1189,26 @@
         applyFilterAndRender(latestItems);
       });
     });
+
+    // filter-summary-row 유형별 클릭 → 활성 카드필터 ∩ 분류 (위임: 매 렌더마다 innerHTML 재생성되므로)
+    var filterSummaryRow = document.getElementById('filter-summary-row');
+    if (filterSummaryRow) {
+      function summaryDivisionHandle(target) {
+        var pill = target.closest ? target.closest('[data-summary-division]') : null;
+        if (!pill) return;
+        var d = pill.getAttribute('data-summary-division');
+        activeSummaryDivision = (activeSummaryDivision === d) ? null : d;
+        syncURL();
+        applyFilterAndRender(latestItems);
+      }
+      filterSummaryRow.addEventListener('click', function (e) { summaryDivisionHandle(e.target); });
+      filterSummaryRow.addEventListener('keydown', function (e) {
+        if ((e.key === 'Enter' || e.key === ' ') && e.target && e.target.getAttribute && e.target.getAttribute('data-summary-division')) {
+          e.preventDefault();
+          summaryDivisionHandle(e.target);
+        }
+      });
+    }
 
     // "총 제안" 헤더 클릭 → 분류 필터 해제 (전체 보기)
     var divisionClearTrigger = document.getElementById('division-clear-trigger');
@@ -1432,6 +1373,13 @@
       });
     } else {
       applyFilterAndRender([]);
+    }
+
+    // 회사 필터 칩 (전 페이지 공유)
+    if (window.CompanyFilter) {
+      window.CompanyFilter.mountChips('projects-company-chips', function () {
+        applyFilterAndRender(latestItems);
+      });
     }
   }
 

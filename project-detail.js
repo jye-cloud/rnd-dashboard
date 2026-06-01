@@ -126,13 +126,13 @@
     var titleEl = document.getElementById('detail-title');
     var subtitleEl = document.getElementById('detail-subtitle');
     if (isNewMode) {
-      if (titleEl) titleEl.textContent = '[R&DM] 과제 등록';
+      if (titleEl) titleEl.textContent = '📝 과제 정보 등록';
       if (subtitleEl) subtitleEl.textContent = '새 R&D 과제 정보를 입력합니다.';
-      document.title = '[R&DM] 과제 등록';
+      document.title = '📝 과제 정보 등록';
     } else {
-      if (titleEl) titleEl.textContent = '[R&DM] 과제 수정';
+      if (titleEl) titleEl.textContent = '📝 과제 정보 수정';
       if (subtitleEl) subtitleEl.textContent = '과제 정보를 수정합니다.';
-      document.title = '[R&DM] 과제 수정';
+      document.title = '📝 과제 정보 수정';
     }
   }
 
@@ -1301,6 +1301,8 @@
     var modeVal = item.laborMode
       ? item.laborMode
       : (item.laborRefund === false ? 'participation_only' : 'refund_participation');
+    // 'participation_only'(환급X+참여율만) 모드는 v7.1에서 제거됨 → 안전 폴백
+    if (modeVal === 'participation_only') modeVal = 'refund_participation';
     var modeRadio = document.querySelector('input[name="project-laborMode"][value="' + modeVal + '"]');
     if (modeRadio) modeRadio.checked = true;
 

@@ -9,6 +9,15 @@
  *
  * 단계 1 (현재): 데이터 로드 + 골격 placeholder 채우기
  *   ※ 집계 로직은 단계별로 채워나감 (1번 카드부터 7번 액션 아이템까지)
+ *
+ * [금액 3분류 — §3.4, v7.4~] 셀 금액 필드는 다음 3종이다.
+ *   - cell.cash     = '지원금'(정부지원금, 환급 O)
+ *   - cell.selfCash = '현금'(자부담 현금, 환급 X)
+ *   - cell.inkind   = '현물'(자부담 현물, 환급 X)
+ *   이 대시보드는 "환급(=지원금)" 관점이라 금액 집계에 cell.cash 만 더한다.
+ *   selfCash/inkind 는 환급 대상이 아니므로 추이·진척 등에 합산하지 않음(의도).
+ *   참여율은 cell.rate(나눔 시 3분류 합)만 보면 되므로 분류와 무관.
+ *   ⇒ 자부담현금(selfCash) 추가는 이 페이지에 영향 없음(읽지 않음). v7.4.2 점검 완료.
  */
 (function () {
   'use strict';
@@ -296,6 +305,7 @@
   }
 
   // -------- 2) 월별 환급 추이 그래프 --------
+  // (환급 = 지원금이므로 cell.cash 만 집계 — selfCash/inkind 제외. §3.4)
   function renderTrendChart() {
     var canvas = document.getElementById('ld-trend-chart');
     if (!canvas || !window.Chart) return;
@@ -378,6 +388,7 @@
   }
 
   // -------- 3) 프로젝트별 환급 진척 --------
+  // (환급 진척도 지원금 기준 — plannedSum/actualSum 은 cell.cash 만. §3.4)
   function renderProjectProgress() {
     var listEl = document.getElementById('ld-project-list');
     if (!listEl) return;

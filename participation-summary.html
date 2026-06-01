@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>참여율 합계 · CI_R&DM</title>
+<title>참여율</title>
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="sidebar.css">
 <style>
@@ -262,6 +262,7 @@
     font-size: 0.82rem;
   }
   #page-participation-summary .ps-cell-type--cash { color: var(--text-primary); }
+  #page-participation-summary .ps-cell-type--self { color: var(--text-primary); }   /* v7.4: 현금(자부담) — 지원금 행과 동일 톤, 별도 구분 없음 */
   #page-participation-summary .ps-cell-type--kind { color: #64748b; }
 
   /* 현물 행은 배경 연한 회색 */
@@ -412,8 +413,16 @@
     border-radius: 0.5rem;
     background: #fff;
   }
-  body .ps-detail-item-name {
+  body .ps-detail-item-rate {
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--primary-color);
+    flex-shrink: 0;
+  }
+  /* v7.2 §2.4: 항목 표시 축소(키워드/참여율/환급액) */
+  body .ps-detail-item-keyword {
     font-size: 0.88rem;
+    font-weight: 600;
     color: var(--text-primary);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -421,11 +430,23 @@
     flex: 1;
     margin-right: 0.5rem;
   }
-  body .ps-detail-item-rate {
+  body .ps-detail-item-figures {
+    display: flex;
+    align-items: baseline;
+    gap: 0.75rem;
+    flex-shrink: 0;
+  }
+  body .ps-detail-item-refund {
     font-weight: 700;
     font-variant-numeric: tabular-nums;
-    color: var(--primary-color);
-    flex-shrink: 0;
+    color: var(--text-primary);
+    min-width: 4.5rem;
+    text-align: right;
+  }
+  body .ps-detail-item-unconfirmed {
+    font-weight: 500;
+    font-size: 0.8rem;
+    color: var(--text-secondary, #9ca3af);
   }
   body .ps-detail-empty {
     padding: 2rem 0;
@@ -453,8 +474,37 @@
 
 <div class="dashboard">
 
-  <!-- 공통 사이드바 -->
-  <div id="sidebar-mount"></div>
+  <!-- 공통 사이드바 — 첫 페인트부터 메뉴가 채워진 상태로 보이도록 전체 정적 마크업을 둔다.
+       sidebar.js가 이 aside(aside.sidebar)를 최신 메뉴로 교체한다(방식 2).
+       (빈 placeholder를 두면 sidebar.js 실행 전까지 넓은 빈 사이드바가 보였다가
+        채워지면서 "칸이 늘어났다 줄어드는" 깜빡임이 생기므로, 다른 페이지처럼 전체 마크업을 둔다.) -->
+  <aside class="sidebar" id="sidebar" aria-label="메인 메뉴" style="height:100vh;min-height:100vh">
+    <div class="sidebar-header">
+      <button type="button" class="sidebar-toggle" id="sidebar-toggle" aria-label="메뉴 접기/펼치기" title="메뉴 접기/펼치기">☰</button>
+      <h1 class="sidebar-title">CI_R&DM</h1>
+    </div>
+    <nav class="sidebar-nav">
+      <a href="projects-history.html" class="sidebar-link" id="nav-history"><span class="sidebar-link-icon" aria-hidden="true">📜</span><span class="sidebar-link-text">수행 현황</span></a>
+      <a href="index.html#/calendar" class="sidebar-link" id="nav-calendar"><span class="sidebar-link-icon" aria-hidden="true">📅</span><span class="sidebar-link-text">일정 관리</span></a>
+      <div class="sidebar-divider" aria-hidden="true"></div>
+      <a href="dashboard.html" class="sidebar-link" id="nav-dashboard"><span class="sidebar-link-icon" aria-hidden="true">🏠</span><span class="sidebar-link-text">대시보드</span></a>
+      <a href="funding.html" class="sidebar-link" id="nav-funding"><span class="sidebar-link-icon" aria-hidden="true">💸</span><span class="sidebar-link-text">자금 관리</span></a>
+      <a href="projects.html" class="sidebar-link" id="nav-projects"><span class="sidebar-link-icon" aria-hidden="true">📋</span><span class="sidebar-link-text">과제 관리</span></a>
+      <a href="projects-summary.html" class="sidebar-link" id="nav-projects-summary"><span class="sidebar-link-icon" aria-hidden="true">🪪</span><span class="sidebar-link-text">과제별 상세</span></a>
+      <div class="sidebar-divider" aria-hidden="true"></div>
+      <a href="persons-dashboard.html" class="sidebar-link sidebar-link--parent" id="nav-persons-dashboard"><span class="sidebar-link-icon" aria-hidden="true">👥</span><span class="sidebar-link-text">인력 대시보드</span><button type="button" class="sidebar-expand-toggle" data-parent="nav-persons-dashboard" aria-label="하위 메뉴 펼치기/접기" aria-expanded="true">▾</button></a>
+      <a href="persons-master.html" class="sidebar-link sidebar-link--child" id="nav-persons-master" data-parent="nav-persons-dashboard"><span class="sidebar-link-icon" aria-hidden="true">👤</span><span class="sidebar-link-text">마스터</span></a>
+      <a href="persons-detail.html" class="sidebar-link sidebar-link--child" id="nav-persons-detail" data-parent="nav-persons-dashboard"><span class="sidebar-link-icon" aria-hidden="true">📑</span><span class="sidebar-link-text">상세</span></a>
+      <a href="participation-summary.html" class="sidebar-link sidebar-link--child active" id="nav-participation-summary" data-parent="nav-persons-dashboard"><span class="sidebar-link-icon" aria-hidden="true">📊</span><span class="sidebar-link-text">참여율</span></a>
+      <a href="settlement-report.html" class="sidebar-link sidebar-link--child" id="nav-settlement-report" data-parent="nav-persons-dashboard"><span class="sidebar-link-icon" aria-hidden="true">🧾</span><span class="sidebar-link-text">결산 보고서</span></a>
+      <a href="lab.html" class="sidebar-link sidebar-link--child" id="nav-lab" data-parent="nav-persons-dashboard"><span class="sidebar-link-icon" aria-hidden="true">🔬</span><span class="sidebar-link-text">기업부설연구소</span></a>
+      <a href="certificates.html" class="sidebar-link sidebar-link--child" id="nav-certificates" data-parent="nav-persons-dashboard"><span class="sidebar-link-icon" aria-hidden="true">🗃️</span><span class="sidebar-link-text">자격증</span></a>
+      <div class="sidebar-divider" aria-hidden="true"></div>
+      <a href="labor-dashboard.html" class="sidebar-link sidebar-link--parent" id="nav-labor-dashboard"><span class="sidebar-link-icon" aria-hidden="true">📈</span><span class="sidebar-link-text">인건비 대시보드</span><button type="button" class="sidebar-expand-toggle" data-parent="nav-labor-dashboard" aria-label="하위 메뉴 펼치기/접기" aria-expanded="true">▾</button></a>
+      <a href="project-labor.html" class="sidebar-link sidebar-link--child" id="nav-project-labor" data-parent="nav-labor-dashboard"><span class="sidebar-link-icon" aria-hidden="true">💰</span><span class="sidebar-link-text">프로젝트별 인건비</span></a>
+      <a href="project-budget.html" class="sidebar-link sidebar-link--child" id="nav-project-budget" data-parent="nav-labor-dashboard"><span class="sidebar-link-icon" aria-hidden="true">💵</span><span class="sidebar-link-text">인건비 예산</span></a>
+    </nav>
+  </aside>
 
   <div class="main-area">
     <div class="container">
@@ -462,7 +512,7 @@
       <div id="page-participation-summary" class="page active">
 
         <header class="header">
-          <h1 class="header-title">참여율 합계</h1>
+          <h1 class="header-title">📊 참여율</h1>
           <p style="margin-top:0.4rem; color:var(--text-secondary); font-size:0.9rem;">
             한 인력이 모든 과제에서 받은 월별 참여율을 합산하여 100% 초과 위험을 사전에 감지합니다.
             <span style="margin-left:0.5rem; color:#94a3b8;">데이터 출처: project-labor</span>
@@ -505,12 +555,13 @@
 
           <div class="ps-toolbar-divider"></div>
 
-          <!-- 구분 (현금/현물) -->
+          <!-- 구분 (지원금/현금/현물) — v7.4 -->
           <div class="ps-toolbar-group">
             <span class="ps-toolbar-label">구분</span>
             <div class="ps-type-filter" id="ps-type-filter">
               <button type="button" class="ps-type-btn is-active" data-type="all">전체</button>
-              <button type="button" class="ps-type-btn" data-type="cash">현금</button>
+              <button type="button" class="ps-type-btn" data-type="cash">지원금</button>
+              <button type="button" class="ps-type-btn" data-type="self" id="ps-type-btn-self" style="display:none;">현금</button>
               <button type="button" class="ps-type-btn" data-type="kind">현물</button>
             </div>
           </div>
@@ -736,7 +787,8 @@
         db().collection(LABOR_COLL).doc(docId + '_meta').get()
           .then(function (snap) {
             return { projectId: proj.id, kind: 'meta',
-                     personRoles: (snap.exists && snap.data().personRoles) ? snap.data().personRoles : {} };
+                     personRoles: (snap.exists && snap.data().personRoles) ? snap.data().personRoles : {},
+                     meta:        (snap.exists && snap.data().meta)        ? snap.data().meta        : {} };
           })
       );
     });
@@ -744,10 +796,11 @@
     Promise.all(promises).then(function (results) {
       var cache = {};
       results.forEach(function (r) {
-        if (!cache[r.projectId]) cache[r.projectId] = { planned: {}, actual: {}, personRoles: {} };
+        if (!cache[r.projectId]) cache[r.projectId] = { planned: {}, actual: {}, personRoles: {}, meta: {} };
         if (r.kind === 'planned')      cache[r.projectId].planned     = r.cells;
         else if (r.kind === 'actual')  cache[r.projectId].actual      = r.cells;
-        else if (r.kind === 'meta')    cache[r.projectId].personRoles = r.personRoles;
+        else if (r.kind === 'meta')  { cache[r.projectId].personRoles = r.personRoles;
+                                       cache[r.projectId].meta        = r.meta; }
       });
       _laborCache = cache;
       _laborCacheYear = year;
@@ -792,9 +845,15 @@
   // 따라서:
   //   한 인력 P의 월 M 현금 참여율 = Σ (P를 '현금'으로 잡은 과제들의 rate)
   //   한 인력 P의 월 M 현물 참여율 = Σ (P를 '현물'으로 잡은 과제들의 rate)
+  // v7.4 §3.4: 금액 3분류 라벨 — 데이터 키 '현금'=지원금, '자부담현금'=현금, '현물'=현물
+  var PS_FUND_LABELS = { '현금': '지원금', '자부담현금': '현금', '현물': '현물' };
+  function psFundLabel(ci) { return PS_FUND_LABELS[ci] || ci; }
+  // cashOrInkind 정규화 — '현물'/'자부담현금'만 보존, 그 외는 '현금'(지원금)
+  function psNormalizeCi(ci) { return (ci === '현물' || ci === '자부담현금') ? ci : '현금'; }
+
   function getPersonMonthly(personId, ym, mode) {
     var projects = getActiveProjects();
-    var totalCash = 0, totalKind = 0;
+    var totalCash = 0, totalSelf = 0, totalKind = 0;   // v7.4: 지원금/현금(자부담)/현물
     var breakdown = [];
 
     projects.forEach(function (pj) {
@@ -810,22 +869,75 @@
       var rate = +cell.rate || 0;
       if (rate <= 0) return;
 
-      // 이 과제에서 이 사람이 '현금'인지 '현물'인지
+      // v7.4: 이 과제에서 이 사람의 분류 — 지원금('현금') / 현금('자부담현금') / 현물('현물')
       var roles = bucket.personRoles || {};
       var role  = roles[personId] || {};
-      var ci    = role.cashOrInkind === '현물' ? '현물' : '현금'; // 기본값 '현금'
+
+      // v7.4 나눔: role.split이 켜진 인력만 cell.rates로 분류별 분배. 그 외엔 단일 분류로 전체 rate.
+      if (role.split && cell.rates && (typeof cell.rates.cash === 'number' || typeof cell.rates.selfCash === 'number' || typeof cell.rates.inkind === 'number')) {
+        var rCash = +cell.rates.cash || 0;
+        var rSelf = +cell.rates.selfCash || 0;
+        var rKind = +cell.rates.inkind || 0;
+        totalCash += rCash;
+        totalSelf += rSelf;
+        totalKind += rKind;
+        // 분해 패널: 분류별로 항목 분리(0 초과만)
+        var actualCellsS = bucket.actual || {};
+        var actualCellS  = actualCellsS[key] || null;
+        var ymMetaS      = (bucket.meta || {})[ym] || {};
+        var confirmedS   = !!ymMetaS.confirmed;
+        var splitDefs = [
+          { ci: '현금', r: rCash, refund: actualCellS ? (+actualCellS.cash || 0) : 0 },
+          { ci: '자부담현금', r: rSelf, refund: 0 },
+          { ci: '현물', r: rKind, refund: 0 }
+        ];
+        splitDefs.forEach(function (sd) {
+          if (sd.r <= 0) return;
+          breakdown.push({
+            projectId: pj.id,
+            projectName: pj.name || pj.projectName || pj.id,
+            keyword: pj.keywords || pj['키워드'] || (pj.name || pj.projectName || pj.id),
+            rate: sd.r,
+            cashOrInkind: sd.ci,
+            refundCash: sd.refund,
+            refundConfirmed: confirmedS
+          });
+        });
+        return;
+      }
+
+      var ci = psNormalizeCi(role.cashOrInkind);
 
       if (ci === '현물') totalKind += rate;
-      else               totalCash += rate;
+      else if (ci === '자부담현금') totalSelf += rate;
+      else totalCash += rate;   // '현금'(=지원금)
+
+      // v7.2 §2.4 실제 환급 금액 (환급 대상은 지원금뿐 — 자부담현금/현물은 actual.cash=0이라 자연히 0)
+      //   A-1: 참여율 토글(planned/actual)과 무관하게 항상 actual 셀의 cash 를 본다.
+      //   B-2: funding 정합 — `${projectId}_meta`.meta[ym].confirmed === true 인 월만 환급액으로 인정.
+      //        확정 전(cash 값이 있어도 잠정치)에는 refundConfirmed=false → 패널에서 '미확정' 표시.
+      //        confirmed 는 과제별·월별이라 같은 사람의 한 달 분해 안에서도 과제마다 갈릴 수 있다.
+      var actualCells     = bucket.actual || {};
+      var actualCell      = actualCells[key] || null;
+      var refundCash      = actualCell ? (+actualCell.cash || 0) : 0;
+      var ymMeta          = (bucket.meta || {})[ym] || {};
+      var refundConfirmed = !!ymMeta.confirmed;
 
       breakdown.push({
         projectId: pj.id,
         projectName: pj.name || pj.projectName || pj.id,
+        keyword: pj.keywords || pj['키워드'] || (pj.name || pj.projectName || pj.id),
         rate: rate,
-        cashOrInkind: ci
+        cashOrInkind: ci,   // v7.4: 3-value ('현금'|'자부담현금'|'현물')
+        refundCash: refundCash,
+        refundConfirmed: refundConfirmed
       });
     });
-    return { cash: totalCash, kind: totalKind, total: totalCash + totalKind, breakdown: breakdown };
+    return {
+      cash: totalCash, self: totalSelf, kind: totalKind,
+      total: totalCash + totalSelf + totalKind,
+      breakdown: breakdown
+    };
   }
 
   // ── 색깔 코딩 (기획서 §1.2) ──────────────────────────
@@ -873,30 +985,38 @@
       return true;
     });
 
-    // 2) 각 인력의 12개월 cash/kind 계산
-    //    sumCash/sumKind = 단순 합, monthsCash/monthsKind = rate>0인 월의 개수
+    // 2) 각 인력의 12개월 cash/self/kind 계산  (v7.4: self=자부담현금)
+    //    sum* = 단순 합, months* = rate>0인 월의 개수
     //    avg = sum / months (B방식: 참여한 월만의 평균)
     var rows = people.map(function (p) {
       var months = [];
-      var sumCash = 0, sumKind = 0;
-      var monthsCash = 0, monthsKind = 0;
+      var sumCash = 0, sumSelf = 0, sumKind = 0;
+      var monthsCash = 0, monthsSelf = 0, monthsKind = 0;
       for (var m = 1; m <= 12; m++) {
         var r = getPersonMonthly(p.id, ymOf(m), state.mode);
         months.push(r);
         if (r.cash > 0) { sumCash += r.cash; monthsCash++; }
+        if (r.self > 0) { sumSelf += r.self; monthsSelf++; }
         if (r.kind > 0) { sumKind += r.kind; monthsKind++; }
       }
       var avgCash = monthsCash > 0 ? sumCash / monthsCash : 0;
+      var avgSelf = monthsSelf > 0 ? sumSelf / monthsSelf : 0;
       var avgKind = monthsKind > 0 ? sumKind / monthsKind : 0;
-      var hasAny = (sumCash > 0 || sumKind > 0);
+      var hasAny = (sumCash > 0 || sumSelf > 0 || sumKind > 0);
       return {
         person: p, months: months,
-        sumCash: sumCash, sumKind: sumKind,
-        monthsCash: monthsCash, monthsKind: monthsKind,
-        avgCash: avgCash, avgKind: avgKind,
+        sumCash: sumCash, sumSelf: sumSelf, sumKind: sumKind,
+        monthsCash: monthsCash, monthsSelf: monthsSelf, monthsKind: monthsKind,
+        avgCash: avgCash, avgSelf: avgSelf, avgKind: avgKind,
         hasAny: hasAny
       };
     });
+
+    // v7.4: 자부담현금(현금) 분류가 이 연도 데이터에 하나라도 있을 때만 현금 행/필터 노출 (대원칙)
+    var hasSelfData = rows.some(function (r) { return r.sumSelf > 0; });
+    // 현금 데이터가 없는데 현금 필터가 켜져 있으면 전체로 복귀
+    if (!hasSelfData && state.typeFilter === 'self') state.typeFilter = 'all';
+    updateSelfFilterVisibility(hasSelfData);
 
     // 3-a) 미배정 카운트 — 회사 필터·이름 검색 기준에서 한 달도 안 잡힌 사람 수
     //      (배지 표시용. 구분 필터·미배정 토글과 무관하게 항상 계산)
@@ -911,6 +1031,7 @@
       // 기본 모드: 참여율 있는 사람만 + 구분 필터 반영
       rows = rows.filter(function (r) {
         if (state.typeFilter === 'cash') return r.sumCash > 0;
+        if (state.typeFilter === 'self') return r.sumSelf > 0;
         if (state.typeFilter === 'kind') return r.sumKind > 0;
         return r.hasAny;
       });
@@ -944,50 +1065,39 @@
         return;
       }
 
-      // 4-b) 기본 모드: 인력마다 현금/현물 2행 (둘 다 항상 표시 — 시각 정렬)
-      //      구분 필터가 'cash'면 현금만, 'kind'면 현물만, 'all'이면 둘 다.
-      var showCash = state.typeFilter === 'all' || state.typeFilter === 'cash';
-      var showKind = state.typeFilter === 'all' || state.typeFilter === 'kind';
-      var nameCellRowspan = (showCash && showKind) ? 2 : 1;
+      // 4-b) 기본 모드: 인력마다 지원금/[현금]/현물 행 (시각 정렬 위해 항상 표시)
+      //      구분 필터로 특정 버킷만, 'all'이면 전부. 현금(자부담)은 hasSelfData일 때만.
+      //      v7.4: 데이터 키 cash='지원금', self='현금'(자부담), kind='현물'
+      var buckets = [];
+      if (state.typeFilter === 'all' || state.typeFilter === 'cash') {
+        buckets.push({ field: 'cash', type: 'cash', label: '지원금', rowCls: 'ps-row--cash', typeCls: 'ps-cell-type--cash', avg: row.avgCash, monthsCnt: row.monthsCash });
+      }
+      if (hasSelfData && (state.typeFilter === 'all' || state.typeFilter === 'self')) {
+        buckets.push({ field: 'self', type: 'self', label: '현금', rowCls: 'ps-row--self', typeCls: 'ps-cell-type--self', avg: row.avgSelf, monthsCnt: row.monthsSelf });
+      }
+      if (state.typeFilter === 'all' || state.typeFilter === 'kind') {
+        buckets.push({ field: 'kind', type: 'kind', label: '현물', rowCls: 'ps-row--kind', typeCls: 'ps-cell-type--kind', avg: row.avgKind, monthsCnt: row.monthsKind });
+      }
 
-      // 현금 행
-      if (showCash) {
-        html += '<tr class="ps-row ps-row--cash" data-person-id="' + escapeHtml(p.id) + '">';
-        html += '<td class="ps-cell-name" rowspan="' + nameCellRowspan + '">' + escapeHtml(p.name) + '</td>';
-        html += '<td class="ps-cell-3ch5g" rowspan="' + nameCellRowspan + '"><span class="ps-3ch5g-placeholder">—</span></td>';
-        html += '<td class="ps-cell-type ps-cell-type--cash">현금</td>';
+      buckets.forEach(function (b, bi) {
+        html += '<tr class="ps-row ' + b.rowCls + '" data-person-id="' + escapeHtml(p.id) + '">';
+        // 이름/3책5공 셀은 첫 버킷 행에만, rowspan=버킷 개수
+        if (bi === 0) {
+          html += '<td class="ps-cell-name" rowspan="' + buckets.length + '">' + escapeHtml(p.name) + '</td>';
+          html += '<td class="ps-cell-3ch5g" rowspan="' + buckets.length + '"><span class="ps-3ch5g-placeholder">—</span></td>';
+        }
+        html += '<td class="ps-cell-type ' + b.typeCls + '">' + b.label + '</td>';
         for (var m = 1; m <= 12; m++) {
-          var v = row.months[m - 1].cash;
+          var v = row.months[m - 1][b.field];
           var cls = rateClass(v);
           var txt = v > 0 ? v + '%' : '—';
-          html += '<td class="ps-cell-month ' + cls + '" data-person-id="' + escapeHtml(p.id) + '" data-month="' + m + '" data-type="cash">' + txt + '</td>';
+          html += '<td class="ps-cell-month ' + cls + '" data-person-id="' + escapeHtml(p.id) + '" data-month="' + m + '" data-type="' + b.type + '">' + txt + '</td>';
         }
-        var annualClass = row.avgCash > 100 ? 'ps-cell-annual--over' : '';
-        var annualCashText = row.monthsCash > 0 ? (Math.round(row.avgCash) + '%') : '—';
-        html += '<td class="ps-cell-annual ' + annualClass + '">' + annualCashText + '</td>';
+        var annualClass = b.avg > 100 ? 'ps-cell-annual--over' : '';
+        var annualText = b.monthsCnt > 0 ? (Math.round(b.avg) + '%') : '—';
+        html += '<td class="ps-cell-annual ' + annualClass + '">' + annualText + '</td>';
         html += '</tr>';
-      }
-
-      // 현물 행 (현물 합이 0이어도 항상 표시 — 시각 정렬)
-      if (showKind) {
-        html += '<tr class="ps-row ps-row--kind" data-person-id="' + escapeHtml(p.id) + '">';
-        if (!showCash) {
-          // 구분 필터가 'kind'일 땐 위에 현금 행이 없으니 이름/3책5공 셀을 여기서 그림
-          html += '<td class="ps-cell-name">' + escapeHtml(p.name) + '</td>';
-          html += '<td class="ps-cell-3ch5g"><span class="ps-3ch5g-placeholder">—</span></td>';
-        }
-        html += '<td class="ps-cell-type ps-cell-type--kind">현물</td>';
-        for (var m2 = 1; m2 <= 12; m2++) {
-          var v2 = row.months[m2 - 1].kind;
-          var cls2 = rateClass(v2);
-          var txt2 = v2 > 0 ? v2 + '%' : '—';
-          html += '<td class="ps-cell-month ' + cls2 + '" data-person-id="' + escapeHtml(p.id) + '" data-month="' + m2 + '" data-type="kind">' + txt2 + '</td>';
-        }
-        var annualClass2 = row.avgKind > 100 ? 'ps-cell-annual--over' : '';
-        var annualKindText = row.monthsKind > 0 ? (Math.round(row.avgKind) + '%') : '—';
-        html += '<td class="ps-cell-annual ' + annualClass2 + '">' + annualKindText + '</td>';
-        html += '</tr>';
-      }
+      });
     });
     tbody.innerHTML = html;
 
@@ -1010,6 +1120,19 @@
       badge.hidden = false;
     } else {
       badge.hidden = true;
+    }
+  }
+
+  // v7.4: 자부담현금(현금) 구분 버튼은 해당 연도 데이터에 자부담현금 분류가 있을 때만 노출
+  function updateSelfFilterVisibility(hasSelfData) {
+    var btn = document.getElementById('ps-type-btn-self');
+    if (!btn) return;
+    btn.style.display = hasSelfData ? '' : 'none';
+    if (!hasSelfData && btn.classList.contains('is-active')) {
+      // 숨기는데 활성 상태였으면 '전체'로 활성 이동 (state.typeFilter는 renderTable에서 이미 'all'로 복귀)
+      document.querySelectorAll('#ps-type-filter .ps-type-btn').forEach(function (b) {
+        b.classList.toggle('is-active', b.getAttribute('data-type') === 'all');
+      });
     }
   }
 
@@ -1036,30 +1159,44 @@
 
     document.getElementById('ps-detail-title').textContent = person.name + ' · ' + month + '월';
     var modeLabel = state.mode === 'actual' ? '실제' : '예상';
-    var typeLabel = type === 'cash' ? '현금' : (type === 'kind' ? '현물' : '전체');
+    var typeLabel = type === 'cash' ? '지원금' : (type === 'self' ? '현금' : (type === 'kind' ? '현물' : '전체'));
     document.getElementById('ps-detail-subtitle').textContent =
       state.year + '년 · ' + modeLabel + ' · ' + typeLabel + ' 기준';
 
-    var totalValue = type === 'cash' ? r.cash : (type === 'kind' ? r.kind : r.total);
-    document.getElementById('ps-detail-total').textContent = totalValue + '%';
-    document.getElementById('ps-detail-total').style.color =
-      totalValue > 100 ? '#dc2626' : 'var(--text-primary)';
-
     var list = document.getElementById('ps-detail-list');
-    // 클릭한 type(cash/kind)에 해당하는 과제만 분해 표시
+    // 클릭한 type에 해당하는 과제만 분해 표시 (v7.4: 지원금/현금/현물 3분기)
     //   - 한 과제 안에서 그 사람의 cashOrInkind 가 type과 일치할 때만 보여줌
     var items = r.breakdown.filter(function (b) {
-      if (type === 'cash') return b.cashOrInkind === '현금';
+      if (type === 'cash') return b.cashOrInkind === '현금';        // 지원금
+      if (type === 'self') return b.cashOrInkind === '자부담현금';   // 현금(자부담)
       if (type === 'kind') return b.cashOrInkind === '현물';
       return true;
     });
+
+    // 합계: 참여율(%) + 실제 환급 합(confirmed 월만, B-2). 환급 0이면 % 만 표시.
+    var totalValue = type === 'cash' ? r.cash : (type === 'self' ? r.self : (type === 'kind' ? r.kind : r.total));
+    var totalRefund = items.reduce(function (s, b) {
+      return s + (b.refundConfirmed ? b.refundCash : 0);
+    }, 0);
+    var totalEl = document.getElementById('ps-detail-total');
+    totalEl.textContent = totalValue + '%' +
+      (totalRefund > 0 ? ' · ' + totalRefund.toLocaleString('ko-KR') + '원' : '');
+    totalEl.style.color = totalValue > 100 ? '#dc2626' : 'var(--text-primary)';
+
     if (items.length === 0) {
       list.innerHTML = '<div class="ps-detail-empty">해당 월에 참여한 과제가 없습니다.</div>';
     } else {
+      // v7.2 §2.4: 키워드 / 참여율 / 실제 환급액 3요소만. 과제 풀네임 제거.
       list.innerHTML = items.map(function (b) {
+        var refundHtml = b.refundConfirmed
+          ? (b.refundCash.toLocaleString('ko-KR') + '원')
+          : '<span class="ps-detail-item-unconfirmed">미확정</span>';
         return '<div class="ps-detail-item">' +
-                 '<div class="ps-detail-item-name">' + escapeHtml(b.projectName) + '</div>' +
-                 '<div class="ps-detail-item-rate">' + b.rate + '%</div>' +
+                 '<div class="ps-detail-item-keyword">' + escapeHtml(b.keyword) + '</div>' +
+                 '<div class="ps-detail-item-figures">' +
+                   '<span class="ps-detail-item-rate">' + b.rate + '%</span>' +
+                   '<span class="ps-detail-item-refund">' + refundHtml + '</span>' +
+                 '</div>' +
                '</div>';
       }).join('');
     }

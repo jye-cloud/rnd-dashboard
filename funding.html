@@ -7,7 +7,7 @@
   </script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>[R&DM] 자금 관리</title>
+  <title>자금 관리</title>
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="sidebar.css">
   <style>
@@ -71,6 +71,114 @@
       font-size: 0.7rem;
       color: #9ca3af;
       margin-top: 0.25rem;
+    }
+
+    /* 카드 안 세부 행 (전체/과제/기타) — v6.2 */
+    .projects-stat-breakdown {
+      margin-top: 0.6rem;
+      padding-top: 0.55rem;
+      border-top: 1px solid #f1f5f9;
+      display: flex;
+      flex-direction: column;
+      gap: 0.3rem;
+    }
+    .projects-stat-breakdown-row {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      font-size: 0.82rem;
+    }
+    .projects-stat-breakdown-label {
+      color: #6b7280;
+      font-weight: 500;
+    }
+    .projects-stat-breakdown-value {
+      color: #374151;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* 지원금 입금 요약 카드 (v6.2) — 6개 가로 정렬, 카드 안에 과제/기타 분리 */
+    .funding-summary {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 0.75rem;
+      margin: 0 0 1.5rem 0;
+    }
+    @media (max-width: 1200px) {
+      .funding-summary { grid-template-columns: repeat(3, 1fr); }
+    }
+    @media (max-width: 700px) {
+      .funding-summary { grid-template-columns: repeat(2, 1fr); }
+    }
+    .funding-summary-card {
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 0.55rem;
+      padding: 0.75rem 0.9rem;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+      display: flex;
+      flex-direction: column;
+    }
+    /* 입금액 카드 = 초록 톤, 미수 = 빨강 톤 */
+    .funding-summary-card--month-actual { background: #f5fcf7; border-color: #d3ebd9; }
+    .funding-summary-card--year-actual  { background: #f5fcf7; border-color: #d3ebd9; }
+    .funding-summary-card--month-unpaid { background: #fef2f2; border-color: #fecaca; }
+    .funding-summary-card--year-unpaid  { background: #fef2f2; border-color: #fecaca; }
+
+    .funding-summary-label {
+      font-size: 0.76rem;
+      color: #6b7280;
+      font-weight: 500;
+      line-height: 1.3;
+    }
+    .funding-summary-value {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: #111827;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      line-height: 1.1;
+      margin-top: 0.4rem;
+    }
+    .funding-summary-value small {
+      font-size: 0.78rem;
+      font-weight: 500;
+      color: #6b7280;
+      margin-left: 0.15rem;
+    }
+    .funding-summary-card--month-actual .funding-summary-value { color: #15803d; }
+    .funding-summary-card--year-actual  .funding-summary-value { color: #15803d; }
+    .funding-summary-card--month-unpaid .funding-summary-value { color: #b91c1c; }
+    .funding-summary-card--year-unpaid  .funding-summary-value { color: #b91c1c; }
+
+    /* 카드 안 분리 행 (과제/기타) */
+    .funding-summary-breakdown {
+      margin-top: 0.55rem;
+      padding-top: 0.5rem;
+      border-top: 1px solid #f1f5f9;
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+    .funding-summary-card--month-actual .funding-summary-breakdown,
+    .funding-summary-card--year-actual  .funding-summary-breakdown { border-top-color: #d9ecdf; }
+    .funding-summary-card--month-unpaid .funding-summary-breakdown,
+    .funding-summary-card--year-unpaid  .funding-summary-breakdown { border-top-color: #f9d5d5; }
+    .funding-summary-breakdown-row {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      font-size: 0.76rem;
+    }
+    .funding-summary-breakdown-label {
+      color: #6b7280;
+      font-weight: 500;
+    }
+    .funding-summary-breakdown-value {
+      color: #374151;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
     }
 
     /* 자금 관리 페이지 — 카드 그룹 타이틀 */
@@ -214,7 +322,7 @@
       text-align: center;
       vertical-align: middle;
     }
-    .funding-matrix th:first-child, .funding-matrix td.f-name {
+    .funding-matrix td.f-name {
       text-align: left;
     }
     .funding-matrix--month { min-width: 1400px; }
@@ -232,15 +340,41 @@
       font-size: 0.78rem;
       border-bottom: 1px solid #e5e7eb;
     }
-    .funding-matrix .f-th-kind { width: 60px; }
-    .funding-matrix .f-name { font-weight: 500; padding-left: 0.85rem; color: #111827; }
+    .funding-matrix .f-th-kind { width: 76px; }
+    .funding-matrix .f-name {
+      font-weight: 500;
+      padding-left: 0.85rem;
+      color: #111827;
+      width: 200px;       /* 콘텐츠 위주로 너비 고정 — 빈 가로 공간 회수 */
+      max-width: 240px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      vertical-align: middle !important;    /* rowspan=3에서 세로 가운데 — 다른 룰 덮어쓰기 강제 */
+      text-align: left !important;          /* 가로 좌측 정렬도 강제 */
+    }
     .funding-matrix .f-cha { font-size: 0.78rem; color: #9ca3af; margin-left: 0.25rem; }
+
+    /* 과제/기타 분류 배지 (v6.2) — 표 안 과제명 옆 */
+    .funding-matrix .f-division-badge {
+      display: inline-block;
+      font-size: 0.68rem;
+      font-weight: 600;
+      padding: 0.1rem 0.4rem;
+      border-radius: 0.3rem;
+      margin-right: 0.35rem;
+      vertical-align: middle;
+      letter-spacing: -0.01em;
+    }
+    .funding-matrix .f-division-badge--task  { background: #dbeafe; color: #1d4ed8; }
+    .funding-matrix .f-division-badge--other { background: #f3f4f6; color: #6b7280; }
 
     .funding-matrix .f-kind {
       font-size: 0.78rem;
       font-weight: 600;
       padding: 0.3rem 0.5rem;
       text-align: center;
+      white-space: nowrap;    /* "누적차이"가 한 줄에 들어가도록 */
     }
     .funding-matrix .f-kind-planned {
       background: #f5f8ff;
@@ -255,7 +389,7 @@
     .funding-matrix .f-row-pair-bot td { border-bottom: 1px solid #f3f4f6; }
     .funding-matrix tbody tr.f-row-pair-bot:nth-last-of-type(3) td { border-bottom: none; }
 
-    .funding-matrix .f-cell { padding: 0.5rem 0.6rem; font-size: 0.88rem; color: #111827; }
+    .funding-matrix .f-cell { padding: 0.4rem 0.6rem; font-size: 0.88rem; color: #111827; }
     .funding-matrix .f-cell small { color: #9ca3af; font-weight: 400; font-size: 0.78rem; }
     .funding-matrix .f-cell-empty { color: #d1d5db; }
     .funding-matrix .f-cell-unpaid { color: #cbd5e1; }
@@ -264,6 +398,25 @@
     .funding-matrix .f-cell-resolved { color: #9ca3af; }
     .funding-matrix .f-cell-resolved s { text-decoration: line-through; text-decoration-thickness: 1.5px; }
     .funding-matrix .f-cell-over { color: #9333ea; font-weight: 600; }
+    /* 완료된 과제의 예정 셀 — 취소선 + 진한 회색 */
+    .funding-matrix .f-cell-planned-done {
+      color: #6b7280;
+      text-decoration: line-through;
+      text-decoration-thickness: 1.5px;
+      text-decoration-color: #9ca3af;
+    }
+    .funding-matrix .f-kind-planned-done {
+      background: #f3f4f6 !important;
+      color: #9ca3af !important;
+      text-decoration: line-through;
+      text-decoration-thickness: 1.5px;
+    }
+    .funding-matrix .f-row-planned-done .f-cell-total {
+      color: #6b7280;
+      text-decoration: line-through;
+      text-decoration-thickness: 1.5px;
+      text-decoration-color: #9ca3af;
+    }
     .funding-matrix .f-cell-remaining {
       display: block;
       font-size: 0.72rem;
@@ -310,6 +463,216 @@
 
     /* 페이지 전체 너비 고정 */
     /* .container는 style.css의 전역 룰을 사용 */
+
+    /* ============================================================
+       자금관리 페이지 — 메인 탭 (v6.2)
+       [입금 일정] | [인건비 환급]
+       - funding-view-toggle(분기/월)와 시각적으로 명확히 구분되도록
+         더 크고 라인-언더라인 형태로
+       ============================================================ */
+    .funding-main-tabs {
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+      border-bottom: 1px solid #e5e7eb;
+      margin-bottom: 1.25rem;
+    }
+    .funding-main-tab {
+      padding: 0.7rem 1.25rem;
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: #6b7280;
+      background: transparent;
+      border: none;
+      border-bottom: 2px solid transparent;
+      cursor: pointer;
+      transition: color 0.15s, border-color 0.15s;
+      margin-bottom: -1px;
+    }
+    .funding-main-tab:hover {
+      color: #374151;
+    }
+    .funding-main-tab.is-active {
+      color: #2563eb;
+      border-bottom-color: #2563eb;
+    }
+    .funding-tab-panel {
+      display: none;
+    }
+    .funding-tab-panel.is-active {
+      display: block;
+    }
+
+    /* ============================================================
+       인건비 환급 추적 섹션 (v6.2 — P0-2)
+       - 데이터 소스: projectLabor 컬렉션 (planned/actual/meta)
+       - 표 구조: funding-matrix 패턴 차용 (예상/실제 2행 페어)
+       ============================================================ */
+    .labor-refund-section {
+      margin-top: 1.5rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid #e5e7eb;
+    }
+    .labor-refund-header {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      margin-bottom: 0.75rem;
+    }
+    .labor-refund-header h2 {
+      font-size: 1.1rem;
+      margin: 0;
+      color: #111827;
+    }
+    .labor-refund-header-hint {
+      font-size: 0.78rem;
+      color: #6b7280;
+    }
+    .labor-refund-controls {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.75rem;
+      margin: 0.5rem 0 1rem 0;
+      padding: 0.75rem 1rem;
+      background: #fafbfc;
+      border: 1px solid #e5e7eb;
+      border-radius: 0.55rem;
+    }
+    .labor-refund-controls .labor-refund-label {
+      font-size: 0.82rem;
+      color: #4b5563;
+      font-weight: 500;
+    }
+
+    /* 인건비 환급 요약 카드 (v6.2) — 6개 가로 정렬 */
+    .labor-refund-summary {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 0.75rem;
+      margin: 0.5rem 0 1rem 0;
+    }
+    @media (max-width: 1200px) {
+      .labor-refund-summary { grid-template-columns: repeat(3, 1fr); }
+    }
+    @media (max-width: 700px) {
+      .labor-refund-summary { grid-template-columns: repeat(2, 1fr); }
+    }
+    .labor-summary-card {
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 0.55rem;
+      padding: 0.75rem 0.9rem;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+      min-height: 78px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    /* 이번 달 그룹 (좀 더 강조) — 환급은 파랑 톤, 환급률은 보라 톤 */
+    .labor-summary-card--month-refund { background: #f5f8ff; border-color: #dbe5f9; }
+    .labor-summary-card--year-refund  { background: #f5f8ff; border-color: #dbe5f9; }
+    .labor-summary-card--month-rate   { background: #f9f5ff; border-color: #e9d5ff; }
+    .labor-summary-card--year-rate    { background: #f9f5ff; border-color: #e9d5ff; }
+
+    .labor-summary-label {
+      font-size: 0.76rem;
+      color: #6b7280;
+      font-weight: 500;
+      line-height: 1.3;
+    }
+    .labor-summary-value {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: #111827;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      line-height: 1.1;
+      margin-top: 0.4rem;
+    }
+    .labor-summary-value small {
+      font-size: 0.78rem;
+      font-weight: 500;
+      color: #6b7280;
+      margin-left: 0.15rem;
+    }
+    .labor-summary-card--month-refund .labor-summary-value { color: #1d4ed8; }
+    .labor-summary-card--year-refund  .labor-summary-value { color: #1d4ed8; }
+    .labor-summary-card--month-rate   .labor-summary-value { color: #7e22ce; }
+    .labor-summary-card--year-rate    .labor-summary-value { color: #7e22ce; }
+
+    .labor-refund-info {
+      font-size: 0.82rem;
+      color: #6b7280;
+      margin-bottom: 0.75rem;
+      padding: 0.55rem 0.85rem;
+      background: #f9fafb;
+      border-left: 3px solid #93c5fd;
+      border-radius: 0.25rem;
+    }
+    /* 환급 추적 표 — funding-matrix와 같은 룰을 일부 재사용하되,
+       3행 페어(예상/실제/차이)이므로 별도 클래스로 격리 */
+    .labor-refund-matrix .f-row-trio-top td { border-bottom: none; }
+    .labor-refund-matrix .f-row-trio-mid td { border-bottom: none; }
+    /* 과제 간 경계 — 마지막 행에 진한 선 + 살짝 패딩 (단, 라벨 셀은 제외하여 텍스트 정렬 보존) */
+    .labor-refund-matrix .f-row-trio-bot td {
+      border-bottom: 2px solid #d1d5db;
+    }
+    .labor-refund-matrix .f-row-trio-bot td:not(.f-kind):not(.f-name) {
+      padding-bottom: 0.75rem;
+    }
+    /* 과제명 셀은 rowspan=3이라 f-row-trio-top에 속하므로 별도 처리 — 같은 구분선 적용 */
+    .labor-refund-matrix .f-row-trio-top td.f-name {
+      border-bottom: 2px solid #d1d5db;
+    }
+    .labor-refund-matrix .f-row-trio-top td:not(.f-kind):not(.f-name) {
+      padding-top: 0.75rem;
+    }
+    .labor-refund-matrix .f-kind-diff {
+      background: #fef9f3;
+      color: #92400e;
+      font-size: 0.78rem;
+      font-weight: 600;
+      padding: 0.3rem 0.5rem;
+      text-align: center;
+    }
+    .labor-refund-matrix .f-cell-diff-positive { color: #b91c1c; font-weight: 600; }   /* 미수 (양수) */
+    .labor-refund-matrix .f-cell-diff-zero     { color: #9ca3af; }
+    /* 완료 배지 — 미수 행의 합계 셀에서 사용 */
+    .labor-refund-matrix .f-completed-badge {
+      display: inline-block;
+      padding: 0.15rem 0.55rem;
+      border-radius: 999px;
+      background: #d1fae5;
+      color: #047857;
+      font-size: 0.78rem;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+    }
+    /* (구버전 호환용 — 더 이상 사용 안 함)
+       f-cell-diff-pre, f-cell-diff-pre-muted, f-cell-diff-negative */
+    .labor-refund-matrix .f-cell-unconfirmed   { color: #cbd5e1; }
+    .labor-refund-matrix .f-cell-unconfirmed small { color: #cbd5e1; }
+    /* 인건비 환급 표의 mid 행(실제)은 초록 — 단, 빈 셀과 미확정 셀은 회색 유지 */
+    .labor-refund-matrix .f-row-trio-mid td.f-cell:not(.f-cell-empty):not(.f-cell-unconfirmed) { color: #15803d; }
+    /* 합계 행 (모든 과제 합) — 셀 배경은 회색, 라벨 컬럼은 자기 색 유지 */
+    .labor-refund-matrix .f-row-grand-top td,
+    .labor-refund-matrix .f-row-grand-mid td,
+    .labor-refund-matrix .f-row-grand-bot td {
+      font-weight: 700;
+      background: #f3f4f6;
+    }
+    .labor-refund-matrix .f-row-grand-top td { border-top: 2px solid #e5e7eb; }
+    .labor-refund-matrix .f-row-grand-top td.f-kind-planned { background: #eff3fa; }
+    .labor-refund-matrix .f-row-grand-mid td.f-kind-actual  { background: #eef7f1; }
+    .labor-refund-matrix .f-row-grand-bot td.f-kind-diff    { background: #fef9f3; }
+    .labor-refund-loading {
+      padding: 2rem;
+      text-align: center;
+      color: #9ca3af;
+      font-size: 0.9rem;
+    }
   </style>
 </head>
 <body>
@@ -343,10 +706,17 @@
     <main class="main-area">
       <div class="container">
         <header class="header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.75rem">
-          <h1 class="header-title">[R&DM] 자금 관리</h1>
+          <h1 class="header-title">💸 자금 관리</h1>
         </header>
 
-        <div class="projects-filter-bar" style="display:flex; align-items:center; gap:1rem; margin-bottom:1.5rem;">
+        <!-- 메인 탭: 입금 일정 / 인건비 환급 (v6.2) -->
+        <div class="funding-main-tabs" role="tablist" aria-label="자금 관리 탭">
+          <button type="button" class="funding-main-tab is-active" data-tab="payments" role="tab" aria-selected="true">💸 지원금 입금 일정</button>
+          <button type="button" class="funding-main-tab" data-tab="refund" role="tab" aria-selected="false">💰 인건비 환급</button>
+        </div>
+
+        <!-- 공통 필터: 연도 + 회사 + 분기/월 토글 (두 탭이 공유) -->
+        <div class="projects-filter-bar" style="display:flex; align-items:center; gap:1rem; margin-bottom:1.5rem; flex-wrap:wrap;">
           <label for="funding-year-filter" style="font-size:0.9rem; color:#4b5563;">연도 필터:</label>
           <select id="funding-year-filter" class="ui-select" style="min-width:120px;padding:0.5rem 0.75rem;border-radius:0.5rem;border:1px solid var(--border-color)">
             <option value="2026" selected>2026년</option>
@@ -355,39 +725,133 @@
             <option value="2023">2023년</option>
             <option value="2022">2022년</option>
           </select>
+
+          <span style="font-size:0.9rem; color:#4b5563;">회사:</span>
+          <div class="company-chips" id="funding-company-chips">
+            <button type="button" class="company-chip is-active" data-company="">전체</button>
+            <button type="button" class="company-chip" data-company="식스티">식스티</button>
+            <button type="button" class="company-chip" data-company="굿뉴스">굿뉴스</button>
+            <button type="button" class="company-chip" data-company="패리티">패리티</button>
+          </div>
+
           <div style="flex:1"></div>
           <div class="funding-view-toggle" role="group" aria-label="표시 단위">
-            <button type="button" class="ui-btn ui-btn--ghost view-toggle-btn active" data-view="quarter">분기별</button>
-            <button type="button" class="ui-btn ui-btn--ghost view-toggle-btn" data-view="month">월별</button>
+            <button type="button" class="ui-btn ui-btn--ghost view-toggle-btn active" data-view="month">월별</button>
+            <button type="button" class="ui-btn ui-btn--ghost view-toggle-btn" data-view="quarter">분기별</button>
           </div>
         </div>
 
-        <!-- 카드 그룹 1: 과제 -->
-        <div class="funding-cards-block">
-          <h2 class="funding-cards-title">과제</h2>
-          <section class="projects-stats-grid" aria-label="과제 자금 요약">
-            <div class="projects-stat-card projects-stat-card--ongoing">
-              <div class="projects-stat-label">당해 수주 총 지원금</div>
-              <div class="projects-stat-value projects-stat--success" id="funding-suju-total">0</div>
-              <div class="projects-stat-sub-hint">그 해 시작된 연차의 지원금</div>
+        <!-- ============================================================
+             탭 1: 입금 일정 (기존 자금관리 컨텐츠)
+             ============================================================ -->
+        <div class="funding-tab-panel is-active" id="funding-tab-payments" role="tabpanel">
+
+        <!-- 요약 카드 — v6.2: 6개 (이번 달 / 누적) × (입금 예정 / 입금 / 미수), 과제/기타 분리 -->
+        <section class="funding-summary" aria-label="지원금 입금 요약">
+          <!-- 이번 달 -->
+          <div class="funding-summary-card funding-summary-card--month">
+            <div class="funding-summary-label" id="funding-sum-month-plan-label">입금 예정액</div>
+            <div class="funding-summary-value">
+              <span id="funding-sum-month-plan">0</span><small> 원</small>
             </div>
-            <div class="projects-stat-card projects-stat-card--ongoing">
-              <div class="projects-stat-label">당해에 입금되는 총 지원금</div>
-              <div class="projects-stat-value" id="funding-ipgm-total">0</div>
-              <div class="projects-stat-sub-hint">회계연도 분배 기준</div>
+            <div class="funding-summary-breakdown">
+              <div class="funding-summary-breakdown-row">
+                <span class="funding-summary-breakdown-label">과제</span>
+                <span class="funding-summary-breakdown-value" id="funding-sum-month-plan-task">0</span>
+              </div>
+              <div class="funding-summary-breakdown-row">
+                <span class="funding-summary-breakdown-label">기타</span>
+                <span class="funding-summary-breakdown-value" id="funding-sum-month-plan-other">0</span>
+              </div>
             </div>
-            <div class="projects-stat-card projects-stat-card--ongoing">
-              <div class="projects-stat-label">실제 수령 합계</div>
-              <div class="projects-stat-value" id="funding-actual-total" style="color:#15803d">0</div>
-              <div class="projects-stat-sub-hint">입금 일정의 실제 금액 합</div>
+          </div>
+
+          <div class="funding-summary-card funding-summary-card--month-actual">
+            <div class="funding-summary-label" id="funding-sum-month-actual-label">입금액</div>
+            <div class="funding-summary-value">
+              <span id="funding-sum-month-actual">0</span><small> 원</small>
             </div>
-            <div class="projects-stat-card projects-stat-card--ongoing">
-              <div class="projects-stat-label">미수 (예정 - 실제)</div>
-              <div class="projects-stat-value" id="funding-unpaid-total" style="color:#b91c1c">0</div>
-              <div class="projects-stat-sub-hint">예정 금액 대비 미수령</div>
+            <div class="funding-summary-breakdown">
+              <div class="funding-summary-breakdown-row">
+                <span class="funding-summary-breakdown-label">과제</span>
+                <span class="funding-summary-breakdown-value" id="funding-sum-month-actual-task">0</span>
+              </div>
+              <div class="funding-summary-breakdown-row">
+                <span class="funding-summary-breakdown-label">기타</span>
+                <span class="funding-summary-breakdown-value" id="funding-sum-month-actual-other">0</span>
+              </div>
             </div>
-          </section>
-        </div>
+          </div>
+
+          <div class="funding-summary-card funding-summary-card--month-unpaid">
+            <div class="funding-summary-label" id="funding-sum-month-rate-label">미수</div>
+            <div class="funding-summary-value">
+              <span id="funding-sum-month-rate">0</span><small> 원</small>
+            </div>
+            <div class="funding-summary-breakdown">
+              <div class="funding-summary-breakdown-row">
+                <span class="funding-summary-breakdown-label">과제</span>
+                <span class="funding-summary-breakdown-value" id="funding-sum-month-rate-task">0</span>
+              </div>
+              <div class="funding-summary-breakdown-row">
+                <span class="funding-summary-breakdown-label">기타</span>
+                <span class="funding-summary-breakdown-value" id="funding-sum-month-rate-other">0</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 누적 -->
+          <div class="funding-summary-card funding-summary-card--year">
+            <div class="funding-summary-label" id="funding-sum-year-plan-label">누적 입금 예정액</div>
+            <div class="funding-summary-value">
+              <span id="funding-sum-year-plan">0</span><small> 원</small>
+            </div>
+            <div class="funding-summary-breakdown">
+              <div class="funding-summary-breakdown-row">
+                <span class="funding-summary-breakdown-label">과제</span>
+                <span class="funding-summary-breakdown-value" id="funding-sum-year-plan-task">0</span>
+              </div>
+              <div class="funding-summary-breakdown-row">
+                <span class="funding-summary-breakdown-label">기타</span>
+                <span class="funding-summary-breakdown-value" id="funding-sum-year-plan-other">0</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="funding-summary-card funding-summary-card--year-actual">
+            <div class="funding-summary-label" id="funding-sum-year-actual-label">누적 입금액</div>
+            <div class="funding-summary-value">
+              <span id="funding-sum-year-actual">0</span><small> 원</small>
+            </div>
+            <div class="funding-summary-breakdown">
+              <div class="funding-summary-breakdown-row">
+                <span class="funding-summary-breakdown-label">과제</span>
+                <span class="funding-summary-breakdown-value" id="funding-sum-year-actual-task">0</span>
+              </div>
+              <div class="funding-summary-breakdown-row">
+                <span class="funding-summary-breakdown-label">기타</span>
+                <span class="funding-summary-breakdown-value" id="funding-sum-year-actual-other">0</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="funding-summary-card funding-summary-card--year-unpaid">
+            <div class="funding-summary-label" id="funding-sum-year-rate-label">누적 미수</div>
+            <div class="funding-summary-value">
+              <span id="funding-sum-year-rate">0</span><small> 원</small>
+            </div>
+            <div class="funding-summary-breakdown">
+              <div class="funding-summary-breakdown-row">
+                <span class="funding-summary-breakdown-label">과제</span>
+                <span class="funding-summary-breakdown-value" id="funding-sum-year-rate-task">0</span>
+              </div>
+              <div class="funding-summary-breakdown-row">
+                <span class="funding-summary-breakdown-label">기타</span>
+                <span class="funding-summary-breakdown-value" id="funding-sum-year-rate-other">0</span>
+              </div>
+            </div>
+          </div>
+        </section>
 
         <!-- 카드 그룹 2: 용역  *** 임시 숨김: 나중에 살릴 때 style="display:none" 제거 *** -->
         <div class="funding-cards-block" style="display:none">
@@ -416,17 +880,83 @@
           </section>
         </div>
 
-        <!-- 분기별/월별 cash flow (지원금 과제만) -->
+        <!-- 과제별 입금 추적 표 (지원금 과제만, 누적 차이 방식) -->
         <section style="margin-top:1.5rem;">
-          <h2 style="font-size:1.1rem; margin:0 0 0.75rem 0; color:#111827;">시기별 입금 현황</h2>
-          <div id="funding-period-bar"></div>
-        </section>
-
-        <!-- 과제별 입금 일정 표 (지원금 과제만) -->
-        <section style="margin-top:1.5rem;">
-          <h2 style="font-size:1.1rem; margin:0 0 0.75rem 0; color:#111827;">과제별 입금 일정</h2>
+          <h2 style="font-size:1.1rem; margin:0 0 0.75rem 0; color:#111827;">과제별 지원금 입금 추적</h2>
           <div id="funding-project-table"></div>
         </section>
+
+        </div><!-- /#funding-tab-payments -->
+
+        <!-- ============================================================
+             탭 2: 인건비 환급 (v6.2 — P0-2)
+             ============================================================ -->
+        <div class="funding-tab-panel" id="funding-tab-refund" role="tabpanel">
+
+        <!-- ============================================================
+             인건비 환급 추적 (v6.2 — P0-2)
+             - 데이터: projectLabor 컬렉션 (planned.cells / actual.cells / meta.meta.confirmed)
+             - 환급 = cash 필드 합 (현물 inkind는 환급 대상 아님)
+             - 실제는 meta[ym].confirmed === true 인 월만 신뢰 → 미확정 월은 회색 dash
+             ============================================================ -->
+        <section class="labor-refund-section" style="margin-top:0; padding-top:0; border-top:none;">
+          <div class="labor-refund-header">
+            <h2>💰 인건비 환급 추적</h2>
+            <span class="labor-refund-header-hint">월별 예상 환급액(예상 인건비 cash 합) vs 실제 환급액(확정된 월의 cash 합)</span>
+          </div>
+
+          <!-- 요약 카드 — 이번 달 / 누적 (환급 예정액 / 환급액 / 환급률) -->
+          <section class="labor-refund-summary" aria-label="인건비 환급 요약">
+            <div class="labor-summary-card labor-summary-card--month">
+              <div class="labor-summary-label" id="labor-sum-month-pay-label">환급 예정액</div>
+              <div class="labor-summary-value">
+                <span id="labor-sum-month-pay">0</span><small> 원</small>
+              </div>
+            </div>
+            <div class="labor-summary-card labor-summary-card--month-refund">
+              <div class="labor-summary-label" id="labor-sum-month-refund-label">환급액</div>
+              <div class="labor-summary-value">
+                <span id="labor-sum-month-refund">0</span><small> 원</small>
+              </div>
+            </div>
+            <div class="labor-summary-card labor-summary-card--month-rate">
+              <div class="labor-summary-label" id="labor-sum-month-rate-label">환급률</div>
+              <div class="labor-summary-value">
+                <span id="labor-sum-month-rate">0</span><small> %</small>
+              </div>
+            </div>
+            <div class="labor-summary-card labor-summary-card--year">
+              <div class="labor-summary-label" id="labor-sum-year-pay-label">누적 환급 예정액</div>
+              <div class="labor-summary-value">
+                <span id="labor-sum-year-pay">0</span><small> 원</small>
+              </div>
+            </div>
+            <div class="labor-summary-card labor-summary-card--year-refund">
+              <div class="labor-summary-label" id="labor-sum-year-refund-label">누적 환급액</div>
+              <div class="labor-summary-value">
+                <span id="labor-sum-year-refund">0</span><small> 원</small>
+              </div>
+            </div>
+            <div class="labor-summary-card labor-summary-card--year-rate">
+              <div class="labor-summary-label" id="labor-sum-year-rate-label">누적 환급률</div>
+              <div class="labor-summary-value">
+                <span id="labor-sum-year-rate">0</span><small> %</small>
+              </div>
+            </div>
+          </section>
+
+          <div class="labor-refund-info">
+            예상 = projectLabor의 예상 탭 cash 합. 실제 = 확정된 월(meta.confirmed=true)의 실제 탭 cash 합.
+            <strong>미수</strong> = 그 달까지 처리됐어야 할 금액 중 아직 처리 안 된 금액 (= 누적 예상 − 누적 실제, 양수만).
+            첫 미확정 월 이후부터는 회색 — 로 표시됩니다 (확정 전엔 신뢰할 수 없는 값).
+            예상보다 많이 환급된 경우는 표시되지 않으며, 다 처리되면 합계에
+            <span class="f-completed-badge">✓ 완료</span> 가 표시됩니다.
+          </div>
+
+          <div id="labor-refund-table"></div>
+        </section>
+
+        </div><!-- /#funding-tab-refund -->
 
       </div>
     </main>

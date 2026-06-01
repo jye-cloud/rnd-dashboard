@@ -1,0 +1,697 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>결산 보고서</title>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="sidebar.css">
+<style>
+  /* ============================================================
+     settlement-report 페이지 전용 스타일 (sr- 프리픽스)
+     - participation-summary 의 툴바/테이블 룩앤필을 차용
+     - 모든 셀렉터는 #page-settlement-report 안에 격리
+     ============================================================ */
+
+  #page-settlement-report .sr-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.85rem 1rem;
+    background: #fff;
+    border: 1px solid var(--border-color);
+    border-radius: 0.6rem;
+    margin-bottom: 1rem;
+  }
+  #page-settlement-report .sr-toolbar-group {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  #page-settlement-report .sr-toolbar-label {
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+    font-weight: 600;
+  }
+  #page-settlement-report .sr-toolbar-divider {
+    width: 1px;
+    height: 1.4rem;
+    background: var(--border-color);
+  }
+  #page-settlement-report .sr-year-select {
+    padding: 0.4rem 0.6rem;
+    border: 1px solid var(--border-color);
+    border-radius: 0.45rem;
+    font-size: 0.9rem;
+    background: #fff;
+  }
+  /* 회사 칩 — participation 과 동일 클래스(company-chips) 차용하되 자체 정의 */
+  #page-settlement-report .company-chips { display: flex; gap: 0.4rem; }
+  #page-settlement-report .company-chip {
+    padding: 0.38rem 0.8rem;
+    border: 1px solid var(--border-color);
+    border-radius: 999px;
+    background: #fff;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    cursor: pointer;
+  }
+  #page-settlement-report .company-chip.is-active {
+    background: var(--primary-color);
+    border-color: var(--primary-color);
+    color: #fff;
+    font-weight: 600;
+  }
+  #page-settlement-report .sr-actions {
+    margin-left: auto;
+    display: flex;
+    gap: 0.5rem;
+  }
+  #page-settlement-report .sr-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.45rem 0.85rem;
+    border: 1px solid var(--border-color);
+    border-radius: 0.45rem;
+    background: #fff;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    cursor: pointer;
+  }
+  #page-settlement-report .sr-btn:hover { background: #f1f5f9; }
+  #page-settlement-report .sr-btn--primary {
+    background: #16a34a;
+    border-color: #16a34a;
+    color: #fff;
+  }
+  #page-settlement-report .sr-btn--primary:hover { background: #15803d; }
+  #page-settlement-report .sr-btn[disabled] { opacity: 0.5; cursor: not-allowed; }
+
+  /* 미확정 경고 */
+  #page-settlement-report .sr-warning {
+    border: 1px solid #fcd34d;
+    background: #fffbeb;
+    color: #92400e;
+    border-radius: 0.5rem;
+    padding: 0.7rem 0.9rem;
+    margin-bottom: 1rem;
+    font-size: 0.85rem;
+    line-height: 1.5;
+  }
+  #page-settlement-report .sr-warning-title { font-weight: 700; margin-right: 0.4rem; }
+  #page-settlement-report .sr-warning[hidden] { display: none; }
+
+  /* 표 */
+  #page-settlement-report .sr-table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--border-color);
+    border-radius: 0.6rem;
+    background: #fff;
+  }
+  #page-settlement-report .sr-table {
+    border-collapse: collapse;
+    width: 100%;
+    min-width: 1100px;
+    font-size: 0.84rem;
+  }
+  #page-settlement-report .sr-table th,
+  #page-settlement-report .sr-table td {
+    border: 1px solid var(--border-color);
+    padding: 0.5rem 0.6rem;
+    text-align: right;
+    white-space: nowrap;
+  }
+  #page-settlement-report .sr-table thead th {
+    background: #f8fafc;
+    color: var(--text-secondary);
+    font-weight: 700;
+    text-align: center;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+  }
+  #page-settlement-report .sr-table td.sr-td-name { text-align: center; font-weight: 600; color: var(--text-primary); background: #fff; }
+  #page-settlement-report .sr-table td.sr-td-birth { text-align: center; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+  #page-settlement-report .sr-table td.sr-td-project { text-align: center; font-weight: 600; color: var(--text-primary); }
+  #page-settlement-report .sr-td-month { font-variant-numeric: tabular-nums; color: var(--text-primary); }
+  #page-settlement-report .sr-td-empty { color: #cbd5e1; }
+
+  /* 인력 그룹 구분선 (마지막 과제행 td + 이름/생년월일 rowspan 셀 하단) */
+  #page-settlement-report .sr-table tr.sr-group-end td,
+  #page-settlement-report .sr-table td.sr-group-end { border-bottom: 2px solid #cbd5e1; }
+
+  #page-settlement-report .sr-empty {
+    text-align: center;
+    color: var(--text-secondary);
+    padding: 2.5rem 0;
+  }
+</style>
+</head>
+<body>
+
+<div class="dashboard">
+
+  <!-- 공통 사이드바 — 첫 페인트부터 메뉴가 채워진 상태로 보이도록 전체 정적 마크업을 둔다.
+       sidebar.js가 이 aside(aside.sidebar)를 최신 메뉴로 교체한다(방식 2).
+       (빈 placeholder를 두면 sidebar.js 실행 전까지 넓은 빈 사이드바가 보였다가
+        채워지면서 "칸이 늘어났다 줄어드는" 깜빡임이 생기므로, 다른 페이지처럼 전체 마크업을 둔다.) -->
+  <aside class="sidebar" id="sidebar" aria-label="메인 메뉴" style="height:100vh;min-height:100vh">
+    <div class="sidebar-header">
+      <button type="button" class="sidebar-toggle" id="sidebar-toggle" aria-label="메뉴 접기/펼치기" title="메뉴 접기/펼치기">☰</button>
+      <h1 class="sidebar-title">CI_R&DM</h1>
+    </div>
+    <nav class="sidebar-nav">
+      <a href="projects-history.html" class="sidebar-link" id="nav-history"><span class="sidebar-link-icon" aria-hidden="true">📜</span><span class="sidebar-link-text">수행 현황</span></a>
+      <a href="index.html#/calendar" class="sidebar-link" id="nav-calendar"><span class="sidebar-link-icon" aria-hidden="true">📅</span><span class="sidebar-link-text">일정 관리</span></a>
+      <div class="sidebar-divider" aria-hidden="true"></div>
+      <a href="dashboard.html" class="sidebar-link" id="nav-dashboard"><span class="sidebar-link-icon" aria-hidden="true">🏠</span><span class="sidebar-link-text">대시보드</span></a>
+      <a href="funding.html" class="sidebar-link" id="nav-funding"><span class="sidebar-link-icon" aria-hidden="true">💸</span><span class="sidebar-link-text">자금 관리</span></a>
+      <a href="projects.html" class="sidebar-link" id="nav-projects"><span class="sidebar-link-icon" aria-hidden="true">📋</span><span class="sidebar-link-text">과제 관리</span></a>
+      <a href="projects-summary.html" class="sidebar-link" id="nav-projects-summary"><span class="sidebar-link-icon" aria-hidden="true">🪪</span><span class="sidebar-link-text">과제별 상세</span></a>
+      <div class="sidebar-divider" aria-hidden="true"></div>
+      <a href="persons-dashboard.html" class="sidebar-link sidebar-link--parent" id="nav-persons-dashboard"><span class="sidebar-link-icon" aria-hidden="true">👥</span><span class="sidebar-link-text">인력 대시보드</span><button type="button" class="sidebar-expand-toggle" data-parent="nav-persons-dashboard" aria-label="하위 메뉴 펼치기/접기" aria-expanded="true">▾</button></a>
+      <a href="persons-master.html" class="sidebar-link sidebar-link--child" id="nav-persons-master" data-parent="nav-persons-dashboard"><span class="sidebar-link-icon" aria-hidden="true">👤</span><span class="sidebar-link-text">마스터</span></a>
+      <a href="persons-detail.html" class="sidebar-link sidebar-link--child" id="nav-persons-detail" data-parent="nav-persons-dashboard"><span class="sidebar-link-icon" aria-hidden="true">📑</span><span class="sidebar-link-text">상세</span></a>
+      <a href="participation-summary.html" class="sidebar-link sidebar-link--child" id="nav-participation-summary" data-parent="nav-persons-dashboard"><span class="sidebar-link-icon" aria-hidden="true">📊</span><span class="sidebar-link-text">참여율</span></a>
+      <a href="settlement-report.html" class="sidebar-link sidebar-link--child active" id="nav-settlement-report" data-parent="nav-persons-dashboard"><span class="sidebar-link-icon" aria-hidden="true">🧾</span><span class="sidebar-link-text">결산 보고서</span></a>
+      <a href="lab.html" class="sidebar-link sidebar-link--child" id="nav-lab" data-parent="nav-persons-dashboard"><span class="sidebar-link-icon" aria-hidden="true">🔬</span><span class="sidebar-link-text">기업부설연구소</span></a>
+      <a href="certificates.html" class="sidebar-link sidebar-link--child" id="nav-certificates" data-parent="nav-persons-dashboard"><span class="sidebar-link-icon" aria-hidden="true">🗃️</span><span class="sidebar-link-text">자격증</span></a>
+      <div class="sidebar-divider" aria-hidden="true"></div>
+      <a href="labor-dashboard.html" class="sidebar-link sidebar-link--parent" id="nav-labor-dashboard"><span class="sidebar-link-icon" aria-hidden="true">📈</span><span class="sidebar-link-text">인건비 대시보드</span><button type="button" class="sidebar-expand-toggle" data-parent="nav-labor-dashboard" aria-label="하위 메뉴 펼치기/접기" aria-expanded="true">▾</button></a>
+      <a href="project-labor.html" class="sidebar-link sidebar-link--child" id="nav-project-labor" data-parent="nav-labor-dashboard"><span class="sidebar-link-icon" aria-hidden="true">💰</span><span class="sidebar-link-text">프로젝트별 인건비</span></a>
+      <a href="project-budget.html" class="sidebar-link sidebar-link--child" id="nav-project-budget" data-parent="nav-labor-dashboard"><span class="sidebar-link-icon" aria-hidden="true">💵</span><span class="sidebar-link-text">인건비 예산</span></a>
+    </nav>
+  </aside>
+
+  <main class="main-area">
+    <div class="container">
+
+      <div id="page-settlement-report" class="page active">
+
+        <header class="header">
+          <h1 class="header-title">🧾 결산 보고서</h1>
+          <p style="margin-top:0.4rem; color:var(--text-secondary); font-size:0.9rem;">
+            인력 × 과제별로 그 해 받은 <strong>지원금(정부지원금)</strong>을 월별로 집계합니다.
+            확정(confirmed)된 월만 집계되며, 미확정 월은 경고로 표시됩니다.
+            <span style="margin-left:0.5rem; color:#94a3b8;">데이터 출처: project-labor (actual, 지원금)</span>
+          </p>
+        </header>
+
+        <!-- 상단 컨트롤 바 -->
+        <div class="sr-toolbar">
+          <!-- 연도 -->
+          <div class="sr-toolbar-group">
+            <span class="sr-toolbar-label">연도</span>
+            <select id="sr-year" class="sr-year-select"><!-- JS --></select>
+          </div>
+
+          <div class="sr-toolbar-divider"></div>
+
+          <!-- 회사 칩 -->
+          <div class="sr-toolbar-group">
+            <div class="company-chips" id="sr-company-chips">
+              <button type="button" class="company-chip is-active" data-company="">전체</button>
+              <button type="button" class="company-chip" data-company="식스티">식스티</button>
+              <button type="button" class="company-chip" data-company="굿뉴스">굿뉴스</button>
+              <button type="button" class="company-chip" data-company="패리티">패리티</button>
+            </div>
+          </div>
+
+          <!-- 출력 액션 -->
+          <div class="sr-actions">
+            <button type="button" class="sr-btn" id="sr-copy-btn" title="표 전체를 탭 구분(TSV)으로 복사 — 스프레드시트에 붙여넣기">
+              📋 복사
+            </button>
+            <button type="button" class="sr-btn sr-btn--primary" id="sr-xlsx-btn" title="엑셀(.xlsx)로 내려받기">
+              📊 엑셀 다운로드
+            </button>
+          </div>
+        </div>
+
+        <!-- 미확정 경고 -->
+        <div class="sr-warning" id="sr-warning" hidden></div>
+
+        <!-- 메인 표 -->
+        <div class="sr-table-wrap">
+          <table class="sr-table">
+            <thead>
+              <tr>
+                <th class="sr-th-name">이름</th>
+                <th class="sr-th-birth">생년월일</th>
+                <th class="sr-th-project">연구과제명</th>
+                <th>1월</th><th>2월</th><th>3월</th><th>4월</th><th>5월</th><th>6월</th>
+                <th>7월</th><th>8월</th><th>9월</th><th>10월</th><th>11월</th><th>12월</th>
+              </tr>
+            </thead>
+            <tbody id="sr-tbody"><!-- JS --></tbody>
+          </table>
+        </div>
+
+      </div>
+    </div>
+  </main>
+
+</div>
+
+<!-- Firebase / Firestore (다른 페이지들과 동일한 로드 패턴) -->
+<script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-auth-compat.js"></script>
+<script src="firebase-config.example.js"></script>
+<script src="firebase-config.js"></script>
+<script src="firebase.js"></script>
+<script src="auth-guard.js"></script>
+<script src="firestore-service.js"></script>
+<script src="sidebar.js"></script>
+<!-- 엑셀 출력 (project-budget 과 동일 버전) -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  // ── 상태 ─────────────────────────────────────────────
+  var state = {
+    year: new Date().getFullYear(),
+    company: ''
+  };
+
+  // ── Firestore 데이터 어댑터 (participation-summary 와 동일 패턴) ──
+  //   - 인력/과제 마스터: window.firestoreService.subscribePersons / subscribeProjects
+  //   - 인건비 셀: 컬렉션 'projectLabor', 문서 `${projectId}_actual` / `${projectId}_meta`
+  //     셀 키: `${projectId}_${ym}_${personId}` (ym = 'YYYY-MM'), 셀 값: { rate, cash, inkind, memo }
+  //   - 지원금 = cell.cash (정부지원금, 환급 대상). confirmed 월만 집계(meta[ym].confirmed).
+  var LABOR_COLL = 'projectLabor';
+  var _allProjects = [];
+  var _allPersons  = [];
+  var _laborCache  = {};   // { [projectId]: { actual: cells, personRoles, meta } }
+  var _laborCacheYear = null;
+  var _lastBuild = null;   // 마지막 buildSettlement 결과 (엑셀/복사용)
+
+  function db() { return window.__firebaseDb || null; }
+  function isFirestoreReady() {
+    return !!(window.__firebaseConfigured && window.__firebaseDb);
+  }
+
+  // 과제가 해당 연도에 활성인지 — participation-summary.isProjectActiveInYear 동일 로직
+  function isProjectActiveInYear(proj, year) {
+    if (!proj || !proj.laborManaged) return false;
+    var s = String(proj.status || '');
+    if (s.indexOf('수행') < 0) return false;
+    var yb = proj.yearBudgets || proj.budgets || [];
+    if (!Array.isArray(yb) || yb.length === 0) {
+      var start = proj.researchStart || proj.startDate || proj.submitDate || '';
+      var end   = proj.researchEnd   || proj.endDate   || '';
+      if (!start) return true;
+      var sy = parseInt(start.substring(0, 4), 10);
+      var ey = end ? parseInt(end.substring(0, 4), 10) : sy;
+      return sy <= year && year <= ey;
+    }
+    return yb.some(function (b) {
+      var bs = parseInt((b.start || b.startDate || '').substring(0, 4), 10);
+      var be = parseInt((b.end   || b.endDate   || '').substring(0, 4), 10);
+      if (!bs) return true;
+      if (!be) be = bs;
+      return bs <= year && year <= be;
+    });
+  }
+
+  function getActiveProjects() {
+    return _allProjects.filter(function (p) { return isProjectActiveInYear(p, state.year); });
+  }
+
+  // 연도가 바뀌면 그 연도 활성 과제의 actual + meta 문서를 한꺼번에 로드
+  //   (결산은 actual.cash 지원금 + meta.confirmed 만 필요 → planned 는 로드하지 않음)
+  function loadLaborForYear() {
+    if (!isFirestoreReady()) {
+      _laborCache = {};
+      _laborCacheYear = state.year;
+      renderReport();
+      return;
+    }
+    var year = state.year;
+    var projects = getActiveProjects();
+
+    if (_laborCacheYear === year && Object.keys(_laborCache).length >= projects.length) {
+      renderReport();
+      return;
+    }
+
+    showLoading(true);
+
+    var promises = [];
+    projects.forEach(function (proj) {
+      var docId = proj.id;
+      promises.push(
+        db().collection(LABOR_COLL).doc(docId + '_actual').get()
+          .then(function (snap) {
+            return { projectId: proj.id, kind: 'actual',
+                     cells: (snap.exists && snap.data().cells) ? snap.data().cells : {} };
+          })
+      );
+      promises.push(
+        db().collection(LABOR_COLL).doc(docId + '_meta').get()
+          .then(function (snap) {
+            return { projectId: proj.id, kind: 'meta',
+                     personRoles: (snap.exists && snap.data().personRoles) ? snap.data().personRoles : {},
+                     meta:        (snap.exists && snap.data().meta)        ? snap.data().meta        : {} };
+          })
+      );
+    });
+
+    Promise.all(promises).then(function (results) {
+      var cache = {};
+      results.forEach(function (r) {
+        if (!cache[r.projectId]) cache[r.projectId] = { actual: {}, personRoles: {}, meta: {} };
+        if (r.kind === 'actual')    cache[r.projectId].actual      = r.cells;
+        else if (r.kind === 'meta') { cache[r.projectId].personRoles = r.personRoles;
+                                      cache[r.projectId].meta        = r.meta; }
+      });
+      _laborCache = cache;
+      _laborCacheYear = year;
+      renderReport();
+    }).catch(function (err) {
+      console.error('projectLabor 로드 실패:', err);
+      _laborCache = {};
+      _laborCacheYear = year;
+      showLoading(false);
+      renderReport();
+    });
+  }
+
+  function showLoading(on) {
+    var tbody = document.getElementById('sr-tbody');
+    if (!tbody) return;
+    if (on) tbody.innerHTML = '<tr><td colspan="15" class="sr-empty">데이터를 불러오는 중…</td></tr>';
+  }
+
+  // ── 헬퍼 ─────────────────────────────────────────────
+  function ymOf(month) { return state.year + '-' + (month < 10 ? '0' + month : month); }
+
+  function escapeHtml(s) {
+    if (s == null) return '';
+    return String(s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function fmtWon(n) {
+    n = +n || 0;
+    return n.toLocaleString('ko-KR');
+  }
+
+  function keywordOf(pj) {
+    return pj.keywords || pj['키워드'] || pj.name || pj.projectName || pj.id;
+  }
+
+  // ── 핵심 집계: 인력 × 과제 × 12개월 지원금(confirmed actual.cash) ──
+  //
+  //   지원금 = actual.cells[`${pjId}_${ym}_${personId}`].cash
+  //   confirmed 월만 합산(meta[ym].confirmed). 미확정인데 cash>0이면 집계 제외 + 경고.
+  //   (현물 인력은 cash 가 0이라 자연히 제외됨 — 지원금만 본다.)
+  function buildSettlement() {
+    var persons = _allPersons
+      .filter(function (p) { return p && (p.status === 'active' || p.status == null || p.status === ''); })
+      .filter(function (p) { return !(state.company && p.company !== state.company); });
+    var projects = getActiveProjects();
+
+    var personRows = [];   // [{ person, projectRows, personTotal, personMonths }]
+    var warnings = [];     // [{ personName, projectName, months:[..] }]
+
+    persons.forEach(function (p) {
+      var projectRows = [];
+      var personMonths = [0,0,0,0,0,0,0,0,0,0,0,0];
+      var personTotal = 0;
+
+      projects.forEach(function (pj) {
+        var bucket = _laborCache[pj.id];
+        if (!bucket) return;
+        var actual = bucket.actual || {};
+        var meta   = bucket.meta || {};
+
+        var months = [0,0,0,0,0,0,0,0,0,0,0,0];
+        var total = 0;
+        var hasConfirmedCash = false;
+        var unconfirmedMonths = [];
+
+        for (var m = 1; m <= 12; m++) {
+          var ym = ymOf(m);
+          var key = pj.id + '_' + ym + '_' + p.id;
+          var cell = actual[key];
+          if (!cell) continue;
+          var cash = +cell.cash || 0;
+          if (cash <= 0) continue;
+          var confirmed = !!(meta[ym] && meta[ym].confirmed);
+          if (confirmed) {
+            months[m - 1] = cash;
+            total += cash;
+            personMonths[m - 1] += cash;
+            personTotal += cash;
+            hasConfirmedCash = true;
+          } else {
+            unconfirmedMonths.push(m);   // 잠정 cash 있으나 미확정 → 집계 제외
+          }
+        }
+
+        if (hasConfirmedCash || unconfirmedMonths.length) {
+          projectRows.push({
+            projectName: keywordOf(pj),
+            months: months,
+            total: total,
+            unconfirmedMonths: unconfirmedMonths
+          });
+          if (unconfirmedMonths.length) {
+            warnings.push({ personName: p.name || '(이름없음)', projectName: keywordOf(pj), months: unconfirmedMonths });
+          }
+        }
+      });
+
+      if (projectRows.length) {
+        // 과제명 가나다 정렬(보기 안정)
+        projectRows.sort(function (a, b) { return String(a.projectName).localeCompare(String(b.projectName), 'ko'); });
+        personRows.push({ person: p, projectRows: projectRows, personTotal: personTotal, personMonths: personMonths });
+      }
+    });
+
+    // 인력명 가나다 정렬
+    personRows.sort(function (a, b) { return String(a.person.name || '').localeCompare(String(b.person.name || ''), 'ko'); });
+
+    return { personRows: personRows, warnings: warnings };
+  }
+
+  // ── 렌더 ─────────────────────────────────────────────
+  function renderReport() {
+    var tbody = document.getElementById('sr-tbody');
+    if (!tbody) return;
+
+    var build = buildSettlement();
+    _lastBuild = build;
+
+    // 미확정 경고
+    var warnBox = document.getElementById('sr-warning');
+    if (build.warnings.length) {
+      var lines = build.warnings.map(function (w) {
+        return escapeHtml(w.personName) + ' · ' + escapeHtml(w.projectName) + ' (' + w.months.join('·') + '월)';
+      });
+      warnBox.innerHTML = '<span class="sr-warning-title">⚠️ 미확정 ' + build.warnings.length + '건 — 결산 누락 주의</span>' +
+        lines.join(' / ');
+      warnBox.hidden = false;
+    } else {
+      warnBox.hidden = true;
+      warnBox.innerHTML = '';
+    }
+
+    // 표
+    if (!build.personRows.length) {
+      tbody.innerHTML = '<tr><td colspan="15" class="sr-empty">' +
+        (isFirestoreReady() ? '확정된 지원금 내역이 없습니다.' : 'Firestore 연결을 확인하세요.') + '</td></tr>';
+      setActionsEnabled(false);
+      return;
+    }
+
+    var monthCells = function (months) {
+      var h = '';
+      for (var i = 0; i < 12; i++) {
+        h += (months[i] > 0)
+          ? '<td class="sr-td-month">' + fmtWon(months[i]) + '</td>'
+          : '<td class="sr-td-month sr-td-empty">·</td>';
+      }
+      return h;
+    };
+
+    var html = '';
+    build.personRows.forEach(function (pr) {
+      var rowspan = pr.projectRows.length; // 과제 행 수 (소계 없음)
+      var birth = pr.person.birthDate || '';
+      var lastIdx = pr.projectRows.length - 1;
+
+      pr.projectRows.forEach(function (row, idx) {
+        var isLast = (idx === lastIdx);
+        html += '<tr' + (isLast ? ' class="sr-group-end"' : '') + '>';
+        if (idx === 0) {
+          var endCls = (lastIdx === 0) ? ' sr-group-end' : ''; // 과제 1개면 첫 행이 곧 마지막
+          html += '<td class="sr-td-name' + endCls + '" rowspan="' + rowspan + '">' + escapeHtml(pr.person.name) + '</td>';
+          html += '<td class="sr-td-birth' + endCls + '" rowspan="' + rowspan + '">' + escapeHtml(birth) + '</td>';
+        }
+        html += '<td class="sr-td-project">' + escapeHtml(row.projectName) + '</td>';
+        html += monthCells(row.months);
+        html += '</tr>';
+      });
+    });
+
+    tbody.innerHTML = html;
+    setActionsEnabled(true);
+    showLoading(false);
+  }
+
+  function setActionsEnabled(on) {
+    var x = document.getElementById('sr-xlsx-btn');
+    var c = document.getElementById('sr-copy-btn');
+    if (x) x.disabled = !on;
+    if (c) c.disabled = !on;
+  }
+
+  // ── 출력: 평면 AOA (회계 양식 — 소계·총계 제외) ──────────────
+  //   헤더: 이름 / 생년월일 / 연구과제명 / 1~12월
+  //   각 (인력 × 과제) 행마다 이름·생년월일 반복.
+  function buildAOA() {
+    var header = ['이름', '생년월일', '연구과제명',
+                  '1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
+    var aoa = [header];
+    if (!_lastBuild) return aoa;
+    _lastBuild.personRows.forEach(function (pr) {
+      var birth = pr.person.birthDate || '';
+      pr.projectRows.forEach(function (row) {
+        var line = [pr.person.name || '', birth, row.projectName];
+        for (var i = 0; i < 12; i++) line.push(row.months[i] || 0);
+        aoa.push(line);
+      });
+    });
+    return aoa;
+  }
+
+  function makeFilename(ext) {
+    var co = state.company ? ('_' + state.company) : '';
+    return '결산보고서_' + state.year + co + '.' + ext;
+  }
+
+  function exportXlsx() {
+    if (typeof XLSX === 'undefined') { alert('엑셀 라이브러리를 불러오지 못했습니다.'); return; }
+    var aoa = buildAOA();
+    if (aoa.length <= 1) { alert('내보낼 데이터가 없습니다.'); return; }
+    var ws = XLSX.utils.aoa_to_sheet(aoa);
+    var wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, '결산');
+    XLSX.writeFile(wb, makeFilename('xlsx'));
+  }
+
+  function copyTsv() {
+    var aoa = buildAOA();
+    if (aoa.length <= 1) { alert('복사할 데이터가 없습니다.'); return; }
+    var tsv = aoa.map(function (row) { return row.join('\t'); }).join('\n');
+    var done = function () {
+      var btn = document.getElementById('sr-copy-btn');
+      if (!btn) return;
+      var old = btn.textContent;
+      btn.textContent = '✅ 복사됨';
+      setTimeout(function () { btn.textContent = old; }, 1500);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(tsv).then(done).catch(function () { fallbackCopy(tsv, done); });
+    } else {
+      fallbackCopy(tsv, done);
+    }
+  }
+
+  function fallbackCopy(text, cb) {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); cb && cb(); }
+    catch (e) { alert('복사에 실패했습니다. 수동으로 선택해 주세요.'); }
+    document.body.removeChild(ta);
+  }
+
+  // ── 컨트롤 ───────────────────────────────────────────
+  function initYearSelect() {
+    var sel = document.getElementById('sr-year');
+    var now = new Date().getFullYear();
+    var html = '';
+    for (var y = now + 1; y >= now - 5; y--) {
+      html += '<option value="' + y + '"' + (y === state.year ? ' selected' : '') + '>' + y + '년</option>';
+    }
+    sel.innerHTML = html;
+    sel.addEventListener('change', function () {
+      state.year = parseInt(sel.value, 10);
+      _laborCache = {}; _laborCacheYear = null;
+      loadLaborForYear();
+    });
+  }
+
+  function bindControls() {
+    document.querySelectorAll('#sr-company-chips .company-chip').forEach(function (chip) {
+      chip.addEventListener('click', function () {
+        document.querySelectorAll('#sr-company-chips .company-chip').forEach(function (c) { c.classList.remove('is-active'); });
+        chip.classList.add('is-active');
+        state.company = chip.getAttribute('data-company') || '';
+        renderReport();
+      });
+    });
+
+    var xlsxBtn = document.getElementById('sr-xlsx-btn');
+    if (xlsxBtn) xlsxBtn.addEventListener('click', exportXlsx);
+    var copyBtn = document.getElementById('sr-copy-btn');
+    if (copyBtn) copyBtn.addEventListener('click', copyTsv);
+  }
+
+  // ── 초기화 ───────────────────────────────────────────
+  function init() {
+    initYearSelect();
+    bindControls();
+    setActionsEnabled(false);
+
+    if (!window.firestoreService) {
+      var tbody = document.getElementById('sr-tbody');
+      if (tbody) {
+        tbody.innerHTML = '<tr><td colspan="15" class="sr-empty">' +
+          'firestoreService를 불러올 수 없습니다. firebase-config.js / firebase.js / firestore-service.js 로드 상태를 확인하세요.</td></tr>';
+      }
+      return;
+    }
+
+    showLoading(true);
+
+    window.firestoreService.subscribeProjects(function (projects) {
+      _allProjects = Array.isArray(projects) ? projects : [];
+      loadLaborForYear();
+    });
+
+    window.firestoreService.subscribePersons(function (persons) {
+      _allPersons = Array.isArray(persons) ? persons : [];
+      if (_laborCacheYear === state.year) renderReport();
+    });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+
+  // 외부 공개 (디버깅용)
+  window.settlementReport = {
+    refresh: renderReport,
+    reload:  function () { _laborCache = {}; _laborCacheYear = null; loadLaborForYear(); },
+    state:   state,
+    build:   buildSettlement
+  };
+})();
+</script>
+
+</body>
+</html>

@@ -152,16 +152,25 @@
     return html;
   }
 
+  // 마지막으로 받은 items 캐시 (회사 필터 변경 시 재렌더용)
+  var _lastItems = [];
+
   function render(items) {
+    if (Array.isArray(items)) _lastItems = items;
     var grid = $('summary-grid');
     var empty = $('summary-empty');
     var count = $('summary-count');
     if (!grid || !empty) return;
 
-    // 필터: 용역 제외 + 수행 중
-    var filtered = items.filter(function (it) {
+    // 회사 필터 (전 페이지 공유)
+    var company = (window.CompanyFilter && window.CompanyFilter.get) ? window.CompanyFilter.get() : '';
+
+    // 필터: 용역 제외 + 수행 중 + 회사 일치
+    var filtered = _lastItems.filter(function (it) {
       if ((it.division1 || '') === '용역') return false;
-      return isOngoingNow(it);
+      if (!isOngoingNow(it)) return false;
+      if (company && it.company !== company) return false;
+      return true;
     });
 
     // 정렬: 시작일 오름차순 (오래된 것부터)
@@ -213,6 +222,13 @@
     if (pdfBtn) {
       pdfBtn.addEventListener('click', function () {
         window.open('projects-summary-pdf.html', '_blank');
+      });
+    }
+
+    // 회사 필터 칩 (전 페이지 공유)
+    if (window.CompanyFilter) {
+      window.CompanyFilter.mountChips('ps-company-chips', function () {
+        render();   // 캐시된 _lastItems 로 재렌더
       });
     }
 
