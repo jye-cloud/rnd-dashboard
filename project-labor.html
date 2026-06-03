@@ -688,6 +688,9 @@
     }
     /* 뱃지/✕는 줄이지 않음 */
     .pl-name-badges-inline { display: flex; gap: 0.25rem; flex-shrink: 0; }
+    /* C2 §4.8: 3책5공 관리 과제 책임자 행 강조 — 배경 살짝 + 이름 볼드·색 (뱃지 없음) */
+    tr.pl-row--manager > td { background: #fff7ed; }
+    tr.pl-row--manager .pl-name-text { font-weight: 800; color: #c2410c; }
     /* v7.4: 이름 줄에 인라인으로 들어간 기존/신규 셀렉트 — 컴팩트 */
     .pl-name-row .pl-role-select {
       flex-shrink: 0;
@@ -1047,6 +1050,14 @@
       padding: 1rem 1.25rem; border-bottom: 1px solid var(--border-color);
     }
     .pl-modal-title { font-size: 1.05rem; font-weight: 700; margin: 0; color: var(--text-primary); }
+    /* C2: 3책5공 대상 칩 + 모달 책/공 한도 초과 강조 */
+    .pl-modal-ch5g-chip {
+      display: inline-flex; align-items: center; gap: 0.2rem;
+      font-size: 0.7rem; font-weight: 700; color: #7c2d12;
+      background: #ffedd5; border: 1px solid #fdba74;
+      border-radius: 999px; padding: 0.08rem 0.5rem; margin-left: 0.4rem; vertical-align: middle;
+    }
+    .pl-modal-person-stats-count.pl-ch5g-over { color: #dc2626; font-weight: 700; }
     .pl-modal-close {
       background: transparent; border: none; font-size: 1.5rem; line-height: 1;
       color: var(--text-secondary); cursor: pointer; padding: 0.25rem 0.5rem; border-radius: 0.35rem;
@@ -1291,6 +1302,28 @@
     }
 
     .pl-modal-result-list { display: flex; flex-direction: column; gap: 0.4rem; }
+    /* C4: 신규/기존 필터 버튼 */
+    .pl-ne-filter-btn {
+      padding: 0.2rem 0.55rem;
+      border: 1px solid var(--border-color);
+      border-radius: 999px;
+      background: #fff;
+      cursor: pointer;
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+    }
+    .pl-ne-filter-btn.is-active { background: #eef2ff; border-color: #c7d2fe; color: #4338ca; font-weight: 600; }
+    .pl-modal-ne-badge {
+      display: inline-block;
+      font-size: 0.68rem;
+      font-weight: 600;
+      padding: 0.05rem 0.4rem;
+      border-radius: 999px;
+      margin-left: 0.3rem;
+    }
+    .pl-modal-ne-badge--new     { background: #ede9fe; color: #6d28d9; }
+    .pl-modal-ne-badge--exist   { background: #f1f5f9; color: #64748b; }
+    .pl-modal-ne-badge--unknown { background: #fef3c7; color: #92400e; }
     .pl-modal-person-row {
       display: flex; align-items: center; gap: 0.75rem;
       padding: 0.65rem 0.85rem; border: 1px solid var(--border-color);
@@ -1922,7 +1955,7 @@
   <div class="pl-modal-overlay" id="pl-add-modal" hidden>
     <div class="pl-modal-panel" role="dialog" aria-modal="true" aria-labelledby="pl-modal-title">
       <div class="pl-modal-header">
-        <h2 class="pl-modal-title" id="pl-modal-title">👥 인력 추가</h2>
+        <h2 class="pl-modal-title" id="pl-modal-title">👥 인력 추가 <span id="pl-modal-ch5g-chip" class="pl-modal-ch5g-chip" style="display:none;">3책5공 대상</span></h2>
         <button type="button" class="pl-modal-close" id="pl-modal-close" aria-label="닫기">×</button>
       </div>
       <div class="pl-modal-body">
@@ -1953,7 +1986,16 @@
         </div>
 
         <!-- 검색 결과 -->
-        <div class="pl-modal-section-title">전체 인력</div>
+        <div class="pl-modal-section-title" style="display:flex; align-items:center; justify-content:space-between; gap:0.5rem; flex-wrap:wrap;">
+          <span>전체 인력</span>
+          <span id="pl-modal-ne-filter" style="display:none; align-items:center; gap:0.3rem; font-weight:400;">
+            <button type="button" class="pl-ne-filter-btn is-active" data-ne="">전체</button>
+            <button type="button" class="pl-ne-filter-btn" data-ne="신규">신규</button>
+            <button type="button" class="pl-ne-filter-btn" data-ne="기존">기존</button>
+            <button type="button" id="pl-modal-rejudge-btn" title="현재 규칙으로 추가된 인력 신규/기존 전체 재판정"
+                    style="margin-left:0.4rem; padding:0.2rem 0.5rem; border:1px solid var(--border-color); border-radius:0.35rem; background:#fff; cursor:pointer; font-size:0.75rem;">↻ 일괄 재판정</button>
+          </span>
+        </div>
         <div id="pl-modal-result-list" class="pl-modal-result-list"></div>
 
         <div id="pl-modal-empty" class="pl-modal-empty" style="display:none;">
@@ -2015,6 +2057,7 @@
   <script src="firebase.js"></script>
   <script src="auth-guard.js"></script>
   <script src="firestore-service.js"></script>
+  <script src="three-five-rule.js"></script>
   <script src="sidebar.js"></script>
   <!-- v5.2 Step 6: 엑셀 업로드 (SheetJS) -->
   <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>

@@ -586,6 +586,11 @@
       r.type === 'youth_required' ? 'youth-req' :
       r.type === 'youth_additional' ? 'youth-add' : 'normal'
     );
+    // C2 §4.8: 3책5공 관리 과제의 책임자 행 색 강조
+    var _projForMgr = getProject();
+    if (_projForMgr && _projForMgr.is3ch5gManaged && r.personId && r.personId === _projForMgr.managerPersonId) {
+      clsRow += ' pb-row-manager';
+    }
     var nameDisplay = r.personName || '';
     var rowTotal = calcRowTotal(r);
     var rowCash = calcRowCash(r);

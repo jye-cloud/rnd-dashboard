@@ -155,6 +155,66 @@
       .pd-row-2col { grid-template-columns: 1fr; }
     }
 
+    /* v8 §3.6: 상단 3박스 한 행 */
+    .pd-row-3col {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0.75rem;
+      margin-bottom: 1.5rem;
+      align-items: start;
+    }
+    @media (max-width: 1200px) {
+      .pd-row-3col { grid-template-columns: 1fr; }
+    }
+    /* 월별 입퇴사 막대 (의존성 없는 div 막대) */
+    .pd-mbar {
+      display: flex;
+      align-items: flex-end;
+      gap: 3px;
+      height: 56px;
+    }
+    .pd-mbar-col {
+      position: relative;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      min-width: 0;
+      cursor: default;
+    }
+    .pd-mbar-stack {
+      width: 100%;
+      height: 40px;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      gap: 1px;
+    }
+    .pd-mbar-bar { width: 45%; border-radius: 2px 2px 0 0; min-height: 0; }
+    .pd-mbar-bar--j { background: #34d399; }
+    .pd-mbar-bar--l { background: #f87171; }
+    .pd-mbar-label { font-size: 0.6rem; color: var(--text-secondary); }
+    /* 즉시 뜨는 커스텀 호버 툴팁 */
+    .pd-mbar-col:hover::after {
+      content: attr(data-tip);
+      position: absolute;
+      bottom: calc(100% + 4px);
+      left: 50%;
+      transform: translateX(-50%);
+      background: #1f2937;
+      color: #fff;
+      font-size: 0.68rem;
+      line-height: 1.3;
+      padding: 0.25rem 0.45rem;
+      border-radius: 0.35rem;
+      white-space: nowrap;
+      z-index: 20;
+      pointer-events: none;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.18);
+    }
+    .pd-mbar-col:hover { background: rgba(0,0,0,0.03); border-radius: 3px; }
+
     /* 입퇴사 큰 숫자 묶음 */
     .pd-jl-mainrow {
       display: grid;
@@ -470,100 +530,55 @@
             </a>
           </div>
         </header>
+        <!-- 회사 칩 필터 (rnd-company-filter 공유, 페이지 전체 스코프) -->
+        <div class="company-chips" id="pd-company-chips" role="group" aria-label="회사 필터" style="margin-bottom:1rem;">
+          <button type="button" class="company-chip is-active" data-company="">전체</button>
+          <button type="button" class="company-chip" data-company="식스티">식스티</button>
+          <button type="button" class="company-chip" data-company="굿뉴스">굿뉴스</button>
+          <button type="button" class="company-chip" data-company="패리티">패리티</button>
+        </div>
 
-        <!-- ============================================================
-             1단: 인원 현황 (전체/재직/퇴직 + 회사별 3사)
-             ============================================================ -->
-        <section aria-label="인원 현황">
-          <h2 class="pd-section-title" style="margin-bottom:0.75rem">
-            <span aria-hidden="true">👤</span> 인원 현황
-          </h2>
+        <!-- 상단 한 행: 동일 박스 3개 -->
+        <div class="pd-row-3col">
 
-          <!-- 상단 한 줄: 전체 / 재직 / 퇴직 -->
-          <div class="pd-stats-grid">
-            <div class="pd-stat-card pd-stat-card--accent">
-              <div class="pd-stat-label">전체 인력</div>
-              <div class="pd-stat-value">
-                <span id="pd-stat-total">0</span><span class="pd-stat-value-unit">명</span>
-              </div>
-              <div class="pd-stat-sub-hint" id="pd-stat-total-sub">재직 0 · 퇴직 0</div>
+          <!-- 박스 1: 인력 현황 (재직 중심) -->
+          <section class="pd-section-box" aria-label="인력 현황">
+            <div class="pd-section-header">
+              <h2 class="pd-section-title"><span aria-hidden="true">👤</span> 인력 현황</h2>
+              <div class="pd-section-meta" id="pd-hc-scope">전체</div>
             </div>
-            <div class="pd-stat-card">
-              <div class="pd-stat-label">재직 인력</div>
-              <div class="pd-stat-value" style="color:#059669">
-                <span id="pd-stat-active">0</span><span class="pd-stat-value-unit">명</span>
+            <div class="pd-snapshot-main">
+              <div>
+                <span class="pd-snapshot-bignum" id="pd-hc-active">0</span><span class="pd-snapshot-bignum-unit">명 재직</span>
               </div>
-              <div class="pd-stat-sub-hint" id="pd-stat-active-sub">남 0 · 여 0</div>
+              <div class="pd-snapshot-cap" id="pd-hc-gender">남 0 · 여 0</div>
             </div>
-            <div class="pd-stat-card pd-stat-card--exited">
-              <div class="pd-stat-label">퇴직</div>
-              <div class="pd-stat-value">
-                <span id="pd-stat-exited">0</span><span class="pd-stat-value-unit">명</span>
+            <div class="pd-snapshot-bycompany" id="pd-hc-bycompany">
+              <div class="pd-snapshot-bycompany-item pd-snapshot-bycompany-item--sixty">
+                <div class="pd-snapshot-bycompany-label">식스티</div>
+                <div class="pd-snapshot-bycompany-value" id="pd-hc-sixty">0</div>
               </div>
-              <div class="pd-stat-sub-hint">퇴직 처리됨</div>
+              <div class="pd-snapshot-bycompany-item pd-snapshot-bycompany-item--goodnews">
+                <div class="pd-snapshot-bycompany-label">굿뉴스</div>
+                <div class="pd-snapshot-bycompany-value" id="pd-hc-goodnews">0</div>
+              </div>
+              <div class="pd-snapshot-bycompany-item pd-snapshot-bycompany-item--parity">
+                <div class="pd-snapshot-bycompany-label">패리티</div>
+                <div class="pd-snapshot-bycompany-value" id="pd-hc-parity">0</div>
+              </div>
             </div>
-          </div>
+            <p class="pd-footnote" style="margin-top:0.6rem;">* 건강보험 가입자명부 기준 · 식스티는 자회사 겸직자 제외</p>
+          </section>
 
-          <!-- 하단 한 줄: 회사별 3사 + 청년 -->
-          <div class="pd-stats-grid">
-            <div class="pd-stat-card pd-stat-card--sixty">
-              <div class="pd-stat-label">식스티</div>
-              <div class="pd-stat-value">
-                <span id="pd-stat-sixty">0</span><span class="pd-stat-value-unit">명</span>
-              </div>
-              <div class="pd-stat-sub-hint" id="pd-stat-sixty-sub">남 0 · 여 0</div>
-            </div>
-            <div class="pd-stat-card pd-stat-card--goodnews">
-              <div class="pd-stat-label">굿뉴스</div>
-              <div class="pd-stat-value">
-                <span id="pd-stat-goodnews">0</span><span class="pd-stat-value-unit">명</span>
-              </div>
-              <div class="pd-stat-sub-hint" id="pd-stat-goodnews-sub">남 0 · 여 0</div>
-            </div>
-            <div class="pd-stat-card pd-stat-card--parity">
-              <div class="pd-stat-label">패리티</div>
-              <div class="pd-stat-value">
-                <span id="pd-stat-parity">0</span><span class="pd-stat-value-unit">명</span>
-              </div>
-              <div class="pd-stat-sub-hint" id="pd-stat-parity-sub">남 0 · 여 0</div>
-            </div>
-            <div class="pd-stat-card pd-stat-card--youth">
-              <div class="pd-stat-label">청년 인력</div>
-              <div class="pd-stat-value">
-                <span id="pd-stat-youth">0</span><span class="pd-stat-value-unit">명</span>
-              </div>
-              <div class="pd-stat-sub-hint">만 34세 이하 재직 인력</div>
-            </div>
-          </div>
-          <p class="pd-footnote">
-            * 건강보험 가입자명부 기준 · 식스티(모회사) 카운트에서 자회사 겸직자는 제외됨
-          </p>
-        </section>
-
-        <!-- ============================================================
-             2단: 입·퇴사 현황 + 시점별 재직 인원
-             ============================================================ -->
-        <div class="pd-row-2col">
-          <!-- 좌: 입·퇴사 현황 -->
+          <!-- 박스 2: 입·퇴사 현황 + 월별 막대 -->
           <section class="pd-section-box" aria-label="입퇴사 현황">
             <div class="pd-section-header">
-              <h2 class="pd-section-title">
-                <span aria-hidden="true">📊</span> 입·퇴사 현황
-              </h2>
+              <h2 class="pd-section-title"><span aria-hidden="true">📊</span> 입·퇴사 현황</h2>
               <div class="pd-controls">
-                <label>
-                  연도
-                  <select id="pd-jl-year" aria-label="입퇴사 조회 연도"></select>
-                </label>
-                <label>
-                  월
-                  <select id="pd-jl-month" aria-label="입퇴사 조회 월">
-                    <option value="">연간</option>
-                  </select>
-                </label>
+                <label>연도 <select id="pd-jl-year" aria-label="입퇴사 조회 연도"></select></label>
+                <label>월 <select id="pd-jl-month" aria-label="입퇴사 조회 월"><option value="">연간</option></select></label>
               </div>
             </div>
-
             <div class="pd-jl-mainrow">
               <div class="pd-jl-item pd-jl-item--joined">
                 <div class="pd-jl-num" id="pd-jl-joined">0</div>
@@ -574,30 +589,31 @@
                 <div class="pd-jl-cap">퇴사</div>
               </div>
             </div>
-
             <div>
               <div style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:0.4rem;font-weight:500">회사별 입사 / 퇴사</div>
               <div class="pd-jl-bycompany" id="pd-jl-bycompany"></div>
             </div>
+            <div style="margin-top:0.85rem;">
+              <div style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:0.3rem;font-weight:500">
+                월별 입·퇴사 <span style="color:#047857">■입사</span> <span style="color:#dc2626">■퇴사</span>
+              </div>
+              <div class="pd-mbar" id="pd-jl-monthly" aria-label="월별 입퇴사 막대"></div>
+            </div>
           </section>
 
-          <!-- 우: 시점별 재직 인원 -->
+          <!-- 박스 3: 시점별 재직 인원 -->
           <section class="pd-section-box" aria-label="시점별 재직 인원">
             <div class="pd-section-header">
-              <h2 class="pd-section-title">
-                <span aria-hidden="true">📅</span> 시점별 재직 인원
-              </h2>
+              <h2 class="pd-section-title"><span aria-hidden="true">📅</span> 시점별 재직 인원</h2>
               <div class="pd-section-meta" id="pd-snapshot-meta">📌 오늘 기준</div>
             </div>
-
             <div class="pd-snapshot-main">
               <div>
                 <span class="pd-snapshot-bignum" id="pd-snapshot-total">0</span><span class="pd-snapshot-bignum-unit">명 재직</span>
               </div>
               <div class="pd-snapshot-cap">겸직 포함 · 4대보험 가입자명부 기준</div>
             </div>
-
-            <div class="pd-snapshot-bycompany">
+            <div class="pd-snapshot-bycompany" id="pd-snapshot-bycompany-wrap">
               <div class="pd-snapshot-bycompany-item pd-snapshot-bycompany-item--sixty">
                 <div class="pd-snapshot-bycompany-label">식스티</div>
                 <div class="pd-snapshot-bycompany-value" id="pd-snapshot-sixty">0</div>
@@ -611,67 +627,15 @@
                 <div class="pd-snapshot-bycompany-value" id="pd-snapshot-parity">0</div>
               </div>
             </div>
-
             <div class="pd-controls" style="border-top:1px solid var(--border-color);padding-top:0.75rem">
               <span style="color:var(--text-secondary);font-size:0.78rem">🔍 다른 시점</span>
-              <label>
-                연도
-                <select id="pd-snapshot-year" aria-label="시점 조회 연도"></select>
-              </label>
-              <label>
-                월
-                <select id="pd-snapshot-month" aria-label="시점 조회 월"></select>
-              </label>
-              <button type="button" id="pd-snapshot-query-btn" class="is-primary">조회</button>
+              <label>연도 <select id="pd-snapshot-year" aria-label="시점 조회 연도"></select></label>
+              <label>월 <select id="pd-snapshot-month" aria-label="시점 조회 월"></select></label>
               <button type="button" id="pd-snapshot-today-btn" title="오늘 기준으로 돌아가기">📌 오늘로</button>
             </div>
           </section>
+
         </div>
-
-        <!-- ============================================================
-             3단: 청년 인력 상세
-             ============================================================ -->
-        <section class="pd-section-box" aria-label="청년 인력" style="margin-bottom:1.5rem">
-          <div class="pd-section-header">
-            <h2 class="pd-section-title">
-              <span aria-hidden="true">🎯</span> 청년 인력 (만 34세 이하)
-            </h2>
-            <div class="pd-section-meta">재직 인력 기준</div>
-          </div>
-
-          <div class="pd-youth-grid">
-            <!-- 좌: 전체 청년 -->
-            <div class="pd-youth-main">
-              <div>
-                <span class="pd-youth-bignum" id="pd-youth-total">0</span>
-                <span style="font-size:1rem;color:var(--text-secondary);margin-left:0.25rem">명</span>
-              </div>
-              <div class="pd-youth-cap">전체 청년 인력</div>
-              <div class="pd-youth-gender" id="pd-youth-gender">남 0 · 여 0</div>
-            </div>
-
-            <!-- 우: 회사별 분포 -->
-            <div class="pd-youth-bycompany">
-              <div class="pd-youth-bycompany-row pd-youth-bycompany-row--sixty">
-                <div class="pd-youth-bycompany-name">식스티</div>
-                <div class="pd-youth-bycompany-bar"><div class="pd-youth-bycompany-bar-fill" id="pd-youth-sixty-bar" style="width:0%"></div></div>
-                <div class="pd-youth-bycompany-num" id="pd-youth-sixty">0명</div>
-              </div>
-              <div class="pd-youth-bycompany-row pd-youth-bycompany-row--goodnews">
-                <div class="pd-youth-bycompany-name">굿뉴스</div>
-                <div class="pd-youth-bycompany-bar"><div class="pd-youth-bycompany-bar-fill" id="pd-youth-goodnews-bar" style="width:0%"></div></div>
-                <div class="pd-youth-bycompany-num" id="pd-youth-goodnews">0명</div>
-              </div>
-              <div class="pd-youth-bycompany-row pd-youth-bycompany-row--parity">
-                <div class="pd-youth-bycompany-name">패리티</div>
-                <div class="pd-youth-bycompany-bar"><div class="pd-youth-bycompany-bar-fill" id="pd-youth-parity-bar" style="width:0%"></div></div>
-                <div class="pd-youth-bycompany-num" id="pd-youth-parity">0명</div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <!-- 로딩 표시 -->
         <div class="pd-loading" id="pd-loading" hidden>데이터를 불러오는 중...</div>
       </div>
     </main>

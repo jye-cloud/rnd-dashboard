@@ -255,6 +255,15 @@
     color: #cbd5e1;
     font-style: italic;
   }
+  /* C2: 3책5공 값 — 책/공, 한도 초과 시 빨강 */
+  #page-participation-summary .ps-3ch5g-value {
+    font-weight: 700;
+    color: #334155;
+    cursor: default;
+  }
+  #page-participation-summary .ps-3ch5g-over {
+    color: #dc2626;
+  }
 
   /* 구분 (현금/현물) */
   #page-participation-summary .ps-cell-type {
@@ -649,6 +658,7 @@
 <script src="firebase.js"></script>
 <script src="auth-guard.js"></script>
 <script src="firestore-service.js"></script>
+<script src="three-five-rule.js"></script>
 <script src="sidebar.js"></script>
 <script>
 /* ============================================================
@@ -739,6 +749,40 @@
     return _allProjects.filter(function (p) {
       return isProjectActiveInYear(p, state.year);
     });
+  }
+
+  // C2 §4.8: 3책5공 — 한 사람의 책/공 카운트 (현재 연도 조회 시에만 의미)
+  //   대상 = is3ch5gManaged + 수행 중. 명단(roster)은 _laborCache.personRoles 키 또는 proj.personIds.
+  //   책임자(managerPersonId)는 명단 여부 무관 인정(헬퍼 내부 처리).
+  function compute3ch5gFor(personId) {
+    if (!window.ThreeFiveRule) return null;
+    return window.ThreeFiveRule.countForPerson(personId, _allProjects, function (p) {
+      var pid = p.id || p.docId;
+      var cache = _laborCache[pid];
+      if (cache && cache.personRoles) return Object.keys(cache.personRoles);
+      if (Array.isArray(p.personIds)) return p.personIds;
+      return [];
+    });
+  }
+  // 현재 연도 조회 중인지 (3책5공은 현 시점 의미만 → 과거 연도 미출력)
+  function isCurrentYearView() {
+    return state.year === new Date().getFullYear();
+  }
+  // 3책5공 셀 HTML — 현재 연도 + 카운트 있을 때만 "책/공", 그 외 placeholder
+  function build3ch5gCellHtml(personId, rowspan) {
+    var rs = rowspan && rowspan > 1 ? ' rowspan="' + rowspan + '"' : '';
+    if (!isCurrentYearView() || !window.ThreeFiveRule) {
+      return '<td class="ps-cell-3ch5g"' + rs + '><span class="ps-3ch5g-placeholder">—</span></td>';
+    }
+    var c = compute3ch5gFor(personId);
+    if (!c || c.total === 0) {
+      return '<td class="ps-cell-3ch5g"' + rs + '><span class="ps-3ch5g-placeholder">—</span></td>';
+    }
+    var over = window.ThreeFiveRule.isOverLimit(c.chaek, c.gong);
+    var cls = over ? 'ps-3ch5g-value ps-3ch5g-over' : 'ps-3ch5g-value';
+    var title = '책 ' + c.chaek + ' / 공 ' + c.gong + ' (책≤3, 책+공≤5)' + (over ? ' · 한도 초과' : '');
+    return '<td class="ps-cell-3ch5g"' + rs + '><span class="' + cls + '" title="' + escapeHtml(title) + '">'
+      + window.ThreeFiveRule.format(c.chaek, c.gong) + '</span></td>';
   }
 
   // 연도가 바뀌면 그 연도에 활성인 모든 과제의 planned + actual 문서를 한 번에 로드
@@ -1055,7 +1099,7 @@
       if (state.showUnassigned) {
         html += '<tr class="ps-row ps-row--unassigned" data-person-id="' + escapeHtml(p.id) + '">';
         html += '<td class="ps-cell-name">' + escapeHtml(p.name) + '</td>';
-        html += '<td class="ps-cell-3ch5g"><span class="ps-3ch5g-placeholder">—</span></td>';
+        html += build3ch5gCellHtml(p.id, 1);
         html += '<td class="ps-cell-type ps-cell-unassigned-tag">미배정</td>';
         for (var um = 1; um <= 12; um++) {
           html += '<td class="ps-cell-month ps-cell-month--empty">—</td>';
@@ -1084,7 +1128,7 @@
         // 이름/3책5공 셀은 첫 버킷 행에만, rowspan=버킷 개수
         if (bi === 0) {
           html += '<td class="ps-cell-name" rowspan="' + buckets.length + '">' + escapeHtml(p.name) + '</td>';
-          html += '<td class="ps-cell-3ch5g" rowspan="' + buckets.length + '"><span class="ps-3ch5g-placeholder">—</span></td>';
+          html += build3ch5gCellHtml(p.id, buckets.length);
         }
         html += '<td class="ps-cell-type ' + b.typeCls + '">' + b.label + '</td>';
         for (var m = 1; m <= 12; m++) {

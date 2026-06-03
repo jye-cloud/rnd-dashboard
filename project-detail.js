@@ -108,6 +108,7 @@
   var isNewMode = true;
   var loaded = false;
   var unsubscribe = null;
+  var personsUnsubscribe = null;   // C2: 인력 마스터 구독 해제
   var tbodyEl, totalEl, headerRowEl;
 
   // 현재 분류가 '용역'인지 — 예산 입력 모드 결정용
@@ -1173,6 +1174,160 @@
   }
 
   // ===== 데이터 로드 =====
+  // C4: 신규 판정 기준일이 '공고일'일 때만 공고일 입력 노출
+  function toggleAnnounceVisibility() {
+    var sel = document.getElementById('project-newBaseType');
+    var wrap = document.getElementById('project-announce-wrap');
+    if (!wrap) return;
+    wrap.style.display = (sel && sel.value === '공고일') ? 'inline-flex' : 'none';
+  }
+
+  // C2 §4.8: 3책5공 관리 — 체크 시 책임자 검색 드롭다운 노출
+  var _personsForManager = [];   // 인력 마스터(드롭다운 채움용)
+  var _managerFilter = 'all';    // 'all' | 'active' | 'exited'
+  var _managerSearch = '';
+  var _pendingManagerPersonId = '';
+  function toggle3ch5gVisibility() {
+    var chk = document.getElementById('project-is3ch5gManaged');
+    var wrap = document.getElementById('project-3ch5g-wrap');
+    if (!wrap) return;
+    wrap.style.display = (chk && chk.checked) ? 'block' : 'none';
+    if (chk && chk.checked) updateManagerWarn();
+  }
+  function isPersonExited(p) { return p && p.status === 'exited'; }
+  // 선택된 책임자 표시 텍스트 갱신
+  function updateManagerTrigger() {
+    var trg = document.getElementById('project-manager-trigger');
+    var hid = document.getElementById('project-managerPersonId');
+    if (!trg || !hid) return;
+    var id = hid.value || '';
+    if (!id) { trg.textContent = '— 선택하세요 —'; return; }
+    var p = (_personsForManager || []).find(function (x) { return (x.id || x.docId) === id; });
+    if (p) {
+      trg.textContent = (p.name || '(이름없음)')
+        + (p.company ? ' · ' + p.company : '')
+        + (isPersonExited(p) ? ' (퇴직)' : '');
+    } else {
+      trg.textContent = '(이전 책임자 · 목록에 없음)';
+    }
+  }
+  // 책임자 후보 리스트 렌더 (필터 + 검색)
+  function renderManagerList() {
+    var listEl = document.getElementById('project-manager-list');
+    if (!listEl) return;
+    var hid = document.getElementById('project-managerPersonId');
+    var curId = hid ? hid.value : '';
+    var q = _managerSearch.trim().toLowerCase();
+    var rows = (_personsForManager || []).filter(function (p) {
+      if (_managerFilter === 'active' && isPersonExited(p)) return false;
+      if (_managerFilter === 'exited' && !isPersonExited(p)) return false;
+      if (q && String(p.name || '').toLowerCase().indexOf(q) < 0) return false;
+      return true;
+    }).sort(function (a, b) {
+      return String(a.name || '').localeCompare(String(b.name || ''), 'ko');
+    });
+    if (rows.length === 0) {
+      listEl.innerHTML = '<div class="mgr-picker-empty">일치하는 인력이 없습니다.</div>';
+      return;
+    }
+    listEl.innerHTML = rows.map(function (p) {
+      var id = p.id || p.docId;
+      var exited = isPersonExited(p);
+      var tag = exited
+        ? '<span class="mgr-picker-item-tag mgr-picker-item-tag--exited">퇴직</span>'
+        : '<span class="mgr-picker-item-tag mgr-picker-item-tag--active">재직</span>';
+      var sel = (id === curId) ? ' is-selected' : '';
+      return '<div class="mgr-picker-item' + sel + '" data-person-id="' + escapeAttr(id) + '">'
+        + tag + '<span>' + escapeHtml(p.name || '(이름없음)')
+        + (p.company ? ' · ' + escapeHtml(p.company) : '') + '</span></div>';
+    }).join('');
+  }
+  // 책임자 선택 확정
+  function setManagerSelection(personId) {
+    var hid = document.getElementById('project-managerPersonId');
+    if (hid) hid.value = personId || '';
+    updateManagerTrigger();
+    renderManagerList();
+    updateManagerWarn();
+    closeManagerPanel();
+  }
+  function openManagerPanel() {
+    var panel = document.getElementById('project-manager-panel');
+    if (!panel) return;
+    panel.style.display = 'block';
+    renderManagerList();
+    var s = document.getElementById('project-manager-search');
+    if (s) { setTimeout(function () { try { s.focus(); } catch (e) {} }, 0); }
+  }
+  function closeManagerPanel() {
+    var panel = document.getElementById('project-manager-panel');
+    if (panel) panel.style.display = 'none';
+  }
+  // 2.2: 이미 책(責) 2건 이상인 사람을 책임자로 지정 시 안내(상태·참여형태 무관하게 노출)
+  function updateManagerWarn() {
+    var warn = document.getElementById('project-manager-warn');
+    var hid = document.getElementById('project-managerPersonId');
+    if (!warn || !hid) return;
+    var pid = hid.value || '';
+    warn.style.display = 'none';
+    warn.textContent = '';
+    if (!pid || !window.ThreeFiveRule) return;
+
+    // 다른 과제(현재 편집 중 과제 제외) 기준 그 사람의 현재 책/공 수 (수행+관리 과제만 카운트됨)
+    var svc = window.firestoreService;
+    var all = (svc && svc.getProjectsData) ? (svc.getProjectsData() || []) : [];
+    var others = all.filter(function (p) { return (p.id || p.docId) !== editingId; });
+    var c = window.ThreeFiveRule.countForPerson(pid, others, function (p) {
+      return Array.isArray(p.personIds) ? p.personIds : [];
+    });
+    // 책 2건 미만이면 한도 위험 없음 → 안내 불필요
+    if (c.chaek < 2) return;
+
+    // 현재 폼의 참여형태/역할 → 이 과제가 '책'이 될지(단독/컨소-주관) 판정
+    var pTypeEl = document.querySelector('input[name="participation-type"]:checked');
+    var pType = pTypeEl ? pTypeEl.value : '단독';
+    var cRoleEl = document.querySelector('input[name="consortium-role"]:checked');
+    var cRole = cRoleEl ? cRoleEl.value : '';
+    var wouldBeChaek = (pType === '단독') || (pType === '컨소' && cRole === '주관');
+    // 현재 진행 상태 (참고용 문구)
+    var statusEl = document.getElementById('project-status');
+    var status = statusEl ? String(statusEl.value || '') : '';
+    var isOngoing = status.indexOf('수행') >= 0 || status.indexOf('진행') >= 0;
+
+    var msg;
+    if (wouldBeChaek) {
+      var after = c.chaek + 1;
+      msg = '⚠️ 이 인력은 이미 수행 과제 ' + c.chaek + '건의 책임자(책)입니다. 이 과제'
+          + (isOngoing ? '도 책으로 계상되어 ' : '를 수행으로 올리면 책으로 계상되어 ')
+          + '책 ' + after + '건' + (after > 3 ? ' — 3책 한도(3) 초과' : ' (한도 3)') + '.';
+    } else {
+      // 컨소-참여 → 이 과제는 공으로 계상(책 수 불변)이지만, 이미 책이 많아 참고 안내
+      msg = 'ℹ️ 이 인력은 이미 수행 과제 ' + c.chaek + '건의 책임자(책)입니다. '
+          + '(이 과제는 컨소-참여라 공으로 계상되어 책 수는 그대로)';
+    }
+    warn.textContent = msg;
+    warn.style.display = 'inline-block';
+  }
+  // 인력 마스터 주입 → 트리거/리스트 갱신 (현재 선택값 보존)
+  function populateManagerPersonDropdown(persons) {
+    if (Array.isArray(persons)) _personsForManager = persons;
+    // 로드 시 대기 중이던 선택값 반영
+    if (_pendingManagerPersonId) {
+      var hid = document.getElementById('project-managerPersonId');
+      if (hid && !hid.value) hid.value = _pendingManagerPersonId;
+      _pendingManagerPersonId = '';
+    }
+    updateManagerTrigger();
+    renderManagerList();
+    updateManagerWarn();
+  }
+  // 속성값 안전 이스케이프 (기존 escapeHtml은 따옴표 미이스케이프)
+  function escapeAttr(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
   function updateStatusConditionalInputs() {
     var statusEl = document.getElementById('project-status');
     var unsubWrap = document.getElementById('project-unsubmitted-wrap');
@@ -1306,6 +1461,37 @@
     var modeRadio = document.querySelector('input[name="project-laborMode"][value="' + modeVal + '"]');
     if (modeRadio) modeRadio.checked = true;
 
+    // v8 §3.5(c): 채용 의무 필드 복원
+    var reqNewEl   = document.getElementById('project-requiredNew');
+    var reqYouthEl = document.getElementById('project-requiredYouth');
+    var reqRetEl   = document.getElementById('project-requiredRetentionMonths');
+    if (reqNewEl)   reqNewEl.value   = (item.requiredNew   != null ? item.requiredNew   : '');
+    if (reqYouthEl) reqYouthEl.value = (item.requiredYouth != null ? item.requiredYouth : '');
+    if (reqRetEl) {
+      var months = (item.requiredRetention && item.requiredRetention.months != null)
+        ? item.requiredRetention.months : 12;
+      reqRetEl.value = months;
+    }
+
+    // C4: 신규 인력 자동 판정 규칙 복원
+    var newBaseEl   = document.getElementById('project-newBaseType');
+    var announceEl  = document.getElementById('project-announceDate');
+    var newMonthsEl = document.getElementById('project-newMonths');
+    var rule = item.newJudgeRule || {};
+    if (newBaseEl)   newBaseEl.value = (rule.baseDateType === '공고일') ? '공고일' : '과제시작일';
+    if (announceEl)  announceEl.value = item.announceDate || '';
+    if (newMonthsEl) newMonthsEl.value = (rule.months != null ? rule.months : '');
+    toggleAnnounceVisibility();
+
+    // C2 §4.8: 3책5공 관리 복원
+    var ch5gEl = document.getElementById('project-is3ch5gManaged');
+    if (ch5gEl) ch5gEl.checked = !!item.is3ch5gManaged;
+    var mgrHid = document.getElementById('project-managerPersonId');
+    if (mgrHid) mgrHid.value = item.managerPersonId || '';
+    _pendingManagerPersonId = item.managerPersonId || '';
+    populateManagerPersonDropdown();   // 트리거/리스트/경고 갱신(저장값 반영)
+    toggle3ch5gVisibility();
+
     setRadio('project-division1', item.division1 || item['구분1']);
     setRadio('project-company',   item.company);
     // 분류가 결정된 후 헤더 갱신 (모드별)
@@ -1432,6 +1618,29 @@
     var laborMode  = laborModeEl ? laborModeEl.value : 'refund_participation';
     // 하위 호환: laborRefund 필드도 같이 저장 (환급 O 모드이면 true)
     var laborRefund = laborMode !== 'participation_only';
+    // v8 §3.5(c): 채용 의무(신규 인력 유지)
+    function readIntField(id) {
+      var el = document.getElementById(id);
+      if (!el) return null;
+      var v = (el.value || '').trim();
+      if (v === '') return null;
+      var n = parseInt(v, 10);
+      return isNaN(n) || n < 0 ? null : n;
+    }
+    var requiredNew   = readIntField('project-requiredNew');
+    var requiredYouth = readIntField('project-requiredYouth');
+    var retentionMonths = readIntField('project-requiredRetentionMonths');
+    if (retentionMonths == null) retentionMonths = 12;
+    // C4: 신규 인력 자동 판정 규칙
+    var newBaseTypeEl = document.getElementById('project-newBaseType');
+    var newBaseType = (newBaseTypeEl && newBaseTypeEl.value === '공고일') ? '공고일' : '과제시작일';
+    var announceDate = formatDateInput((document.getElementById('project-announceDate') || {}).value || '');
+    var newMonths = readIntField('project-newMonths');   // null = 자동판정 안 함
+    // C2 §4.8: 3책5공 관리
+    var is3ch5gManaged = (document.getElementById('project-is3ch5gManaged') || {}).checked || false;
+    var managerPersonId = is3ch5gManaged
+      ? ((document.getElementById('project-managerPersonId') || {}).value || '')
+      : '';
     var submitDate  = (document.getElementById('project-submit-date') || {}).value || '';
     var unsubReason = (document.getElementById('project-unsubmitted-reason') || {}).value || '';
     var charge      = (document.getElementById('project-charge')      || {}).value || '';
@@ -1505,6 +1714,13 @@
       laborManaged: laborManaged,
       laborMode: laborMode,
       laborRefund: laborRefund,
+      requiredNew: requiredNew,
+      requiredYouth: requiredYouth,
+      requiredRetention: { months: retentionMonths },
+      announceDate: announceDate,
+      newJudgeRule: { baseDateType: newBaseType, months: (newMonths == null ? null : newMonths) },
+      is3ch5gManaged: is3ch5gManaged,
+      managerPersonId: managerPersonId,
       division1: division1,
       company: company,
       status: status,
@@ -2142,9 +2358,69 @@
     if (statusSelectEl) statusSelectEl.addEventListener('change', updateStatusConditionalInputs);
     updateStatusConditionalInputs();
 
+    // C4: 신규 판정 기준일 = 공고일일 때만 공고일 입력 노출
+    var newBaseEl = document.getElementById('project-newBaseType');
+    if (newBaseEl) newBaseEl.addEventListener('change', toggleAnnounceVisibility);
+    toggleAnnounceVisibility();
+
+    // C2 §4.8: 3책5공 관리 대상 체크 → 책임자 드롭다운 노출 토글
+    var ch5gChk = document.getElementById('project-is3ch5gManaged');
+    if (ch5gChk) ch5gChk.addEventListener('change', toggle3ch5gVisibility);
+    toggle3ch5gVisibility();
+
+    // C2 §4.8: 책임자 검색 드롭다운 이벤트
+    var mgrTrigger = document.getElementById('project-manager-trigger');
+    if (mgrTrigger) mgrTrigger.addEventListener('click', function (e) {
+      e.stopPropagation();
+      var panel = document.getElementById('project-manager-panel');
+      if (panel && panel.style.display === 'block') closeManagerPanel();
+      else openManagerPanel();
+    });
+    var mgrSearch = document.getElementById('project-manager-search');
+    if (mgrSearch) {
+      mgrSearch.addEventListener('input', function () { _managerSearch = mgrSearch.value || ''; renderManagerList(); });
+      mgrSearch.addEventListener('click', function (e) { e.stopPropagation(); });
+    }
+    document.querySelectorAll('[data-mgr-filter]').forEach(function (btn) {
+      btn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        _managerFilter = btn.getAttribute('data-mgr-filter') || 'all';
+        document.querySelectorAll('[data-mgr-filter]').forEach(function (b) {
+          b.classList.toggle('is-active', b === btn);
+        });
+        renderManagerList();
+      });
+    });
+    var mgrList = document.getElementById('project-manager-list');
+    if (mgrList) mgrList.addEventListener('click', function (e) {
+      var item = e.target.closest ? e.target.closest('.mgr-picker-item') : null;
+      if (!item) return;
+      e.stopPropagation();
+      setManagerSelection(item.getAttribute('data-person-id') || '');
+    });
+    // 패널 바깥 클릭 시 닫기
+    document.addEventListener('click', function (e) {
+      var picker = e.target.closest ? e.target.closest('.mgr-picker') : null;
+      if (!picker) closeManagerPanel();
+    });
+    // 진행 상태/참여형태/컨소역할 바뀌면 책임자 경고 재계산
+    var statusForWarn = document.getElementById('project-status');
+    if (statusForWarn) statusForWarn.addEventListener('change', updateManagerWarn);
+    document.querySelectorAll('input[name="participation-type"]').forEach(function (r) {
+      r.addEventListener('change', updateManagerWarn);
+    });
+    document.querySelectorAll('input[name="consortium-role"]').forEach(function (r) {
+      r.addEventListener('change', updateManagerWarn);
+    });
+
     var submitDateEl = document.getElementById('project-submit-date');
     if (submitDateEl) {
       submitDateEl.addEventListener('blur', function () { submitDateEl.value = formatDateInput(submitDateEl.value); });
+    }
+    // C4/1.1: 공고일도 8자리 숫자 입력 시 자동으로 YYYY-MM-DD 변환
+    var announceEl2 = document.getElementById('project-announceDate');
+    if (announceEl2) {
+      announceEl2.addEventListener('blur', function () { announceEl2.value = formatDateInput(announceEl2.value); });
     }
 
     readURL();
@@ -2258,6 +2534,15 @@
       });
     } else {
       loadProject([]);
+    }
+
+    // C2 §4.8: 인력 마스터 구독 → 3책5공 책임자 드롭다운 채움
+    if (svc && typeof svc.subscribePersons === 'function') {
+      personsUnsubscribe = svc.subscribePersons(function (persons) {
+        populateManagerPersonDropdown(Array.isArray(persons) ? persons : []);
+      });
+    } else if (svc && typeof svc.getPersonsData === 'function') {
+      populateManagerPersonDropdown(svc.getPersonsData() || []);
     }
 
     // 캘린더 이벤트 구독 — 첫 도착 시 편집 모드면 마일스톤 다시 렌더

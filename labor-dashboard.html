@@ -90,12 +90,31 @@
       font-weight: 500;
     }
 
-    /* ===== 1) Top summary cards (4) ===== */
+    /* ===== 1) Top summary cards (5) ===== */
     .ld-stat-grid {
       display: grid;
-      grid-template-columns: repeat(4, 1fr);
+      grid-template-columns: repeat(5, 1fr);
       gap: 0.85rem;
       margin-bottom: 1.25rem;
+    }
+    /* 카드 3: 미참여 / 여유 두 수치 한 칸 */
+    .ld-stat-dual {
+      display: flex;
+      align-items: baseline;
+      gap: 0.85rem;
+    }
+    .ld-stat-dual > div { display: flex; flex-direction: column; }
+    .ld-stat-dual .ld-stat-mini-label {
+      font-size: 0.68rem;
+      color: var(--text-secondary);
+      font-weight: 600;
+      letter-spacing: 0.01em;
+    }
+    .ld-stat-dual .ld-stat-mini-num {
+      font-size: 1.4rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      line-height: 1.1;
     }
     .ld-stat-card {
       background: var(--card-bg);
@@ -133,6 +152,16 @@
     .ld-stat-card--accent-green  { background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%); border-color: #bbf7d0; }
     .ld-stat-card--accent-amber  { background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%); border-color: #fde68a; }
     .ld-stat-card--accent-rose   { background: linear-gradient(135deg, #fff1f2 0%, #ffe4e6 100%); border-color: #fecdd3; }
+    .ld-stat-card--accent-violet { background: linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%); border-color: #ddd6fe; }
+    .ld-stat-value--violet { color: #6d28d9; }
+    /* 환급 현황 → 자금 관리 링크 (돈 영역은 funding) */
+    .ld-money-link {
+      font-size: 0.78rem;
+      color: var(--primary-color, #2563eb);
+      text-decoration: none;
+      white-space: nowrap;
+    }
+    .ld-money-link:hover { text-decoration: underline; }
 
     /* ===== 2) Monthly refund trend chart ===== */
     .ld-chart-wrap {
@@ -351,6 +380,12 @@
       font-size: 0.875rem;
       color: var(--text-primary);
     }
+    .ld-action-cat {
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: var(--text-secondary);
+      margin-right: 0.2rem;
+    }
     .ld-action-btn {
       font-size: 0.78rem;
       padding: 0.35rem 0.7rem;
@@ -451,13 +486,16 @@
         </div>
 
         <!-- ============================================================
-             1) 상단 요약 카드 (4개)
+             1) 상단 요약 카드 (5개) — 전부 사람·규정 (돈 카드 없음)
              ============================================================ -->
+        <div style="display:flex; align-items:baseline; justify-content:flex-end; margin-bottom:0.5rem;">
+          <a class="ld-money-link" href="funding.html">💵 환급 현황 → 자금 관리</a>
+        </div>
         <section class="ld-stat-grid" aria-label="핵심 지표 요약">
           <div class="ld-stat-card ld-stat-card--accent-blue">
-            <div class="ld-stat-label">🏢 회사 전체 인력</div>
-            <div class="ld-stat-value ld-stat-value--primary" id="ld-stat-total">-</div>
-            <div class="ld-stat-sub" id="ld-stat-total-sub">재직 - · 퇴직 -</div>
+            <div class="ld-stat-label">🏢 재직 인력</div>
+            <div class="ld-stat-value ld-stat-value--primary" id="ld-stat-active">-</div>
+            <div class="ld-stat-sub">현재 재직 중</div>
           </div>
           <div class="ld-stat-card ld-stat-card--accent-green">
             <div class="ld-stat-label">📋 과제 등록 인원</div>
@@ -465,71 +503,46 @@
             <div class="ld-stat-sub" id="ld-stat-assigned-sub">전체 재직 인력 중 -%</div>
           </div>
           <div class="ld-stat-card ld-stat-card--accent-amber">
-            <div class="ld-stat-label">⚡ 여유 가용 참여율</div>
-            <div class="ld-stat-value ld-stat-value--warning" id="ld-stat-capacity">-</div>
-            <div class="ld-stat-sub">합산 참여율 100% 기준 잔여</div>
+            <div class="ld-stat-label">⚡ 가용 인력</div>
+            <div class="ld-stat-dual">
+              <div>
+                <span class="ld-stat-mini-label">미참여</span>
+                <span class="ld-stat-mini-num ld-stat-value--warning" id="ld-stat-idle">-</span>
+              </div>
+              <div>
+                <span class="ld-stat-mini-label">여유</span>
+                <span class="ld-stat-mini-num ld-stat-value--success" id="ld-stat-spare">-</span>
+              </div>
+            </div>
+            <div class="ld-stat-sub">기준 월 합산 참여율 기준</div>
           </div>
           <div class="ld-stat-card ld-stat-card--accent-rose">
-            <div class="ld-stat-label">🚨 100% 참여 인원</div>
+            <div class="ld-stat-label">🚨 100% 도달</div>
             <div class="ld-stat-value ld-stat-value--danger" id="ld-stat-full">-</div>
             <div class="ld-stat-sub" id="ld-stat-full-sub">추가 참여 불가</div>
           </div>
-        </section>
-
-        <!-- ============================================================
-             2) 월별 환급 추이 그래프
-             ============================================================ -->
-        <section class="ld-section" aria-label="월별 환급 추이">
-          <div class="ld-section-header">
-            <h2 class="ld-section-title">📊 월별 환급 추이</h2>
-            <span class="ld-section-sub" id="ld-trend-sub">연한 파랑 = 예상 · 진한 파랑 = 실제(시스템 등록 완료분)</span>
-          </div>
-          <div class="ld-chart-wrap">
-            <canvas id="ld-trend-chart" aria-label="월별 환급 추이 그래프"></canvas>
+          <div class="ld-stat-card ld-stat-card--accent-violet">
+            <div class="ld-stat-label">🆕 채용 의무</div>
+            <div class="ld-stat-value ld-stat-value--violet" id="ld-stat-hire">-</div>
+            <div class="ld-stat-sub" id="ld-stat-hire-sub">올해 채용 / 필수</div>
           </div>
         </section>
 
         <!-- ============================================================
-             3) 프로젝트별 환급 진척
+             채용 의무 표 (과제별 + 연간 합계줄)
              ============================================================ -->
-        <section class="ld-section" aria-label="프로젝트별 환급 진척">
+        <section class="ld-section" aria-label="채용 의무">
           <div class="ld-section-header">
-            <h2 class="ld-section-title">💰 프로젝트별 환급 진척</h2>
-            <span class="ld-section-sub">실제 환급액 / 연차 예산 기준</span>
-          </div>
-          <div id="ld-project-list" class="ld-bar-list">
-            <div class="ld-loading">불러오는 중...</div>
-          </div>
-        </section>
-
-        <!-- ============================================================
-             4) 인력 참여율 현황 (기준 월)
-             ============================================================ -->
-        <section class="ld-section" aria-label="인력 참여율 현황">
-          <div class="ld-section-header">
-            <h2 class="ld-section-title">👥 인력 참여율 현황</h2>
-            <span class="ld-section-sub" id="ld-person-sub">기준 월 · 합산 참여율 높은 순</span>
-          </div>
-          <div id="ld-person-list" class="ld-person-list">
-            <div class="ld-loading">불러오는 중...</div>
-          </div>
-        </section>
-
-        <!-- ============================================================
-             5) 신규 채용 필수 인력 진척
-             ============================================================ -->
-        <section class="ld-section" aria-label="신규 채용 필수 인력 진척">
-          <div class="ld-section-header">
-            <h2 class="ld-section-title">🆕 신규 채용 필수 인력 진척</h2>
-            <span class="ld-section-sub">과제 등록 시 설정한 신규/청년 필수 인원 기준</span>
+            <h2 class="ld-section-title">🆕 채용 의무 (신규 인력 유지)</h2>
+            <span class="ld-section-sub">등록 시작월 + 유지 기간 · 머릿수 기준(교체 허용) · 기한 충족 시 해제</span>
           </div>
           <table class="ld-hire-table" id="ld-hire-table">
             <thead>
               <tr>
-                <th>프로젝트</th>
+                <th>과제</th>
                 <th class="ld-hire-num">필수</th>
-                <th class="ld-hire-num">청년 필수</th>
-                <th class="ld-hire-num">진척</th>
+                <th class="ld-hire-num">채용</th>
+                <th class="ld-hire-num">유지 기한</th>
                 <th>상태</th>
               </tr>
             </thead>
@@ -537,55 +550,31 @@
               <tr><td colspan="5" class="ld-loading">불러오는 중...</td></tr>
             </tbody>
           </table>
-          <div class="ld-hire-summary" id="ld-hire-summary">합계 - 명 채용 필요 · 현재 - 명 완료</div>
+          <div class="ld-hire-summary" id="ld-hire-summary">올해 필수 - · 채용 - · 남음 -</div>
         </section>
 
         <!-- ============================================================
-             6) 회사 인력 활용도
+             할 일 / 점검 (구 액션 아이템)
              ============================================================ -->
-        <section class="ld-section" aria-label="회사 인력 활용도">
+        <section class="ld-section" aria-label="할 일 / 점검">
           <div class="ld-section-header">
-            <h2 class="ld-section-title">🏢 회사 인력 활용도</h2>
-            <span class="ld-section-sub">월별 과제 참여 인원 추이</span>
-          </div>
-          <div class="ld-util-grid">
-            <div class="ld-util-stats" id="ld-util-stats">
-              <div class="ld-util-stat-row">
-                <span class="ld-util-stat-label">재직 인력</span>
-                <span class="ld-util-stat-value" id="ld-util-active">-</span>
-              </div>
-              <div class="ld-util-stat-row">
-                <span class="ld-util-stat-label">과제 참여</span>
-                <span class="ld-util-stat-value" id="ld-util-participating">-</span>
-              </div>
-              <div class="ld-util-stat-row">
-                <span class="ld-util-stat-label">미참여</span>
-                <span class="ld-util-stat-value" id="ld-util-idle">-</span>
-              </div>
-              <div class="ld-util-stat-row">
-                <span class="ld-util-stat-label">청년 인력</span>
-                <span class="ld-util-stat-value" id="ld-util-youth">-</span>
-              </div>
-              <div class="ld-util-stat-row">
-                <span class="ld-util-stat-label">신규 인력</span>
-                <span class="ld-util-stat-value" id="ld-util-new">-</span>
-              </div>
-            </div>
-            <div class="ld-util-chart-wrap">
-              <canvas id="ld-util-chart" aria-label="월별 참여 인원 추이 그래프"></canvas>
-            </div>
-          </div>
-        </section>
-
-        <!-- ============================================================
-             7) 액션 아이템 (주의 필요)
-             ============================================================ -->
-        <section class="ld-section" aria-label="액션 아이템">
-          <div class="ld-section-header">
-            <h2 class="ld-section-title">🔔 액션 아이템</h2>
-            <span class="ld-section-sub">주의가 필요한 항목 모음</span>
+            <h2 class="ld-section-title">🔔 할 일 / 점검</h2>
+            <span class="ld-section-sub">고칠 항목 + 바로가기 (채용의무 · 확정 · 입력)</span>
           </div>
           <div id="ld-action-list" class="ld-action-list">
+            <div class="ld-loading">분석 중...</div>
+          </div>
+        </section>
+
+        <!-- ============================================================
+             3책5공 점검 (C2 §4.8) — 한도 임박/초과 인력 안내
+             ============================================================ -->
+        <section class="ld-section" aria-label="3책5공 점검">
+          <div class="ld-section-header">
+            <h2 class="ld-section-title">📚 3책5공 점검</h2>
+            <span class="ld-section-sub">수행 과제 기준 · 책 ≤ 3, 책+공 ≤ 5 · 임박/초과 인력</span>
+          </div>
+          <div id="ld-ch5g-list" class="ld-action-list">
             <div class="ld-loading">분석 중...</div>
           </div>
         </section>
@@ -593,9 +582,6 @@
       </div>
     </main>
   </div>
-
-  <!-- Chart.js (projects.html 과 동일 버전) -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 
   <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-firestore-compat.js"></script>
@@ -606,6 +592,8 @@
   <script src="auth-guard.js"></script>
   <script src="firestore-service.js"></script>
   <script src="sidebar.js"></script>
+  <script src="persons-summary.js"></script>
+  <script src="three-five-rule.js"></script>
   <script src="labor-dashboard.js"></script>
   <script src="floating-buttons.js"></script>
 </body>

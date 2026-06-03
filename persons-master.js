@@ -184,23 +184,18 @@
   }
 
   /**
-   * 청년 여부를 종합 판정 (자동 + 수동 OR 조합)
-   *  - 자동: 만 34세 이하 (정부 R&D 청년 기준)
-   *  - 수동: person.isYouth === true (특수 케이스)
-   * 둘 중 하나라도 해당하면 청년으로 간주.
+   * 청년 여부 판정 (v8 일원화: 만 34세 이하 자동 판정만).
+   *  - 자동: 만 34세 이하 (정부 R&D 청년 기준), 기준일 = 오늘
+   *  - 수동 person.isYouth 플래그는 더 이상 판정에 반영하지 않음 (persons-summary.js 와 통일)
+   *    · 군대 등 예외 보정이 필요하면 추후 재추가.
    *
-   * @returns {{ youth: boolean, reason: 'auto' | 'manual' | 'both' | null }}
+   * @returns {{ youth: boolean, reason: 'auto' | null }}
    */
   function getYouthInfo(person) {
     if (!person) return { youth: false, reason: null };
-    var manual = !!person.isYouth;
     var age = computeAge(person.birthDate);
     var auto = (age != null && age <= 34);
-
-    if (auto && manual) return { youth: true, reason: 'both' };
-    if (auto)           return { youth: true, reason: 'auto' };
-    if (manual)         return { youth: true, reason: 'manual' };
-    return { youth: false, reason: null };
+    return auto ? { youth: true, reason: 'auto' } : { youth: false, reason: null };
   }
 
   // ====================================================================

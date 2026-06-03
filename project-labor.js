@@ -1570,6 +1570,67 @@
     }
     return null;
   }
+
+  // ====================================================================
+  // C4: 신규 인력 자동 판정 (신규 = 입사일 > 기준일 − N개월)
+  // ====================================================================
+  function _ymdFromAnything(d) {
+    if (!d) return null;
+    if (typeof d.toDate === 'function') { try { d = d.toDate(); } catch (e) {} }
+    if (d instanceof Date && !isNaN(d.getTime())) {
+      return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+    }
+    if (typeof d === 'string') {
+      var m = d.match(/^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})/);
+      if (m) return m[1] + '-' + pad2(+m[2]) + '-' + pad2(+m[3]);
+      var m2 = d.match(/^(\d{4})[-\/.](\d{1,2})/);  // 일 없으면 1일
+      if (m2) return m2[1] + '-' + pad2(+m2[2]) + '-01';
+    }
+    if (typeof d === 'number' && isFinite(d)) {
+      var dt = new Date(d);
+      if (!isNaN(dt.getTime())) return dt.getFullYear() + '-' + pad2(dt.getMonth() + 1) + '-' + pad2(dt.getDate());
+    }
+    return null;
+  }
+
+  function _hireYmd(person) {
+    return _ymdFromAnything(person && (person.hireDate || person.hiredAt || person.joinDate || person.startDate));
+  }
+
+  // 'YYYY-MM-DD' − N개월 → 'YYYY-MM-DD'
+  function monthsBeforeYmd(ymd, n) {
+    var y = +ymd.slice(0, 4), m = +ymd.slice(5, 7), d = +ymd.slice(8, 10);
+    var dt = new Date(y, (m - 1) - (n || 0), d);
+    return dt.getFullYear() + '-' + pad2(dt.getMonth() + 1) + '-' + pad2(dt.getDate());
+  }
+
+  // 과제 기준일 ('YYYY-MM-DD') — 규칙의 baseDateType 에 따라 공고일 / 과제 시작일
+  function getNewJudgeBaseDate(proj) {
+    if (!proj) return null;
+    var rule = proj.newJudgeRule || {};
+    if (rule.baseDateType === '공고일') return _ymdFromAnything(proj.announceDate);
+    var s = proj.startDate;
+    if (!s && Array.isArray(proj.yearBudgets) && proj.yearBudgets[0]) {
+      s = proj.yearBudgets[0].startDate || proj.yearBudgets[0].start;
+    }
+    return _ymdFromAnything(s);
+  }
+
+  // 그 과제에 신규 판정 규칙이 설정돼 있나
+  function hasNewJudgeRule(proj) {
+    var r = proj && proj.newJudgeRule;
+    return !!(r && r.months != null && getNewJudgeBaseDate(proj));
+  }
+
+  // 사람별 판정: '신규' | '기존' | '미상' | null(규칙 없음)
+  function judgeNewExisting(person, proj) {
+    proj = proj || getProject();
+    if (!hasNewJudgeRule(proj)) return null;
+    var hire = _hireYmd(person);
+    if (!hire) return '미상';
+    var cut = monthsBeforeYmd(getNewJudgeBaseDate(proj), proj.newJudgeRule.months);
+    return hire > cut ? '신규' : '기존';
+  }
   // v5.3: 사용자 직접 셀 잠금 (월 단위)
   //   - personRoles[pid].lockedYms = ['2026-03', '2026-05']
   //   - 이 헬퍼들로만 접근 (직접 인덱싱 X)
@@ -1618,7 +1679,12 @@
     var exitYm = isExited ? getExitYm(person) : null;
     var hireYm = getHireYm(person);
     var tr = document.createElement('tr');
-    if (isExited) tr.className = 'pl-row--exited';
+    var rowCls = isExited ? 'pl-row--exited' : '';
+    // C2 §4.8: 3책5공 관리 과제의 책임자 행 강조 (배경+이름 볼드, 뱃지 X)
+    if (project && project.is3ch5gManaged && project.managerPersonId === person.id) {
+      rowCls += (rowCls ? ' ' : '') + 'pl-row--manager';
+    }
+    if (rowCls) tr.className = rowCls;
     tr.dataset.personId = person.id;
     // v5.3 Step 4.8: 행 자체를 draggable로. 핸들에서만 드래그 시작하도록 dragstart에서 검사.
     tr.draggable = true;
@@ -1875,6 +1941,10 @@
 
       var tr = document.createElement('tr');
       if (isExited) tr.className = 'pl-row--exited';
+      // C2: 3책5공 관리 과제 책임자 행 강조 (나눔 행에도 동일 적용)
+      if (project && project.is3ch5gManaged && project.managerPersonId === person.id) {
+        tr.classList.add('pl-row--manager');
+      }
       tr.classList.add('pl-split-row');
       if (isFirst) tr.classList.add('pl-split-row-first');
       if (ri === nRows - 1) tr.classList.add('pl-split-row-last');
@@ -5050,6 +5120,12 @@
     var modal = document.getElementById('pl-add-modal');
     if (!modal) return;
     modal.hidden = false;
+    // C2 §4.8: 현 과제가 3책5공 관리 대상이면 헤더 칩 표시
+    var ch5gChip = document.getElementById('pl-modal-ch5g-chip');
+    if (ch5gChip) {
+      var cp = getProject();
+      ch5gChip.style.display = (cp && cp.is3ch5gManaged) ? 'inline-flex' : 'none';
+    }
     // v5.2: 모달 열 때마다 퇴사자 토글 초기화 (재직자만이 기본값)
     var includeExitedEl = document.getElementById('pl-modal-include-exited');
     if (includeExitedEl) includeExitedEl.checked = false;
@@ -5082,6 +5158,55 @@
     if (searchInput) { searchInput.value = ''; searchInput.focus(); }
     var clearBtn = document.getElementById('pl-modal-search-clear');
     if (clearBtn) clearBtn.style.display = 'none';
+
+    // C4: 신규/기존 필터 + 일괄 재판정 (모달 열 때마다 초기화·바인딩)
+    _modalNeFilter = '';
+    var neBar = document.getElementById('pl-modal-ne-filter');
+    if (neBar && !neBar._c4bound) {
+      neBar._c4bound = true;
+      neBar.addEventListener('click', function (e) {
+        var fb = e.target.closest('.pl-ne-filter-btn');
+        if (fb) {
+          _modalNeFilter = fb.dataset.ne || '';
+          neBar.querySelectorAll('.pl-ne-filter-btn').forEach(function (b) {
+            b.classList.toggle('is-active', (b.dataset.ne || '') === _modalNeFilter);
+          });
+          renderModalList(document.getElementById('pl-modal-search').value);
+          return;
+        }
+        if (e.target.closest('#pl-modal-rejudge-btn')) {
+          rejudgeAllNewExisting();
+        }
+      });
+    }
+    if (neBar) {
+      neBar.querySelectorAll('.pl-ne-filter-btn').forEach(function (b) {
+        b.classList.toggle('is-active', (b.dataset.ne || '') === '');
+      });
+    }
+  }
+
+  // C4: 현재 규칙으로 추가된 인력 전체 newOrExisting 재판정
+  function rejudgeAllNewExisting() {
+    var proj = getProject();
+    if (!hasNewJudgeRule(proj)) { showToast('이 과제엔 신규 판정 규칙이 없습니다', 'info'); return; }
+    var changed = 0, unknown = 0;
+    state.personIds.forEach(function (pid) {
+      var person = _allPersons.find(function (p) { return p.id === pid; });
+      var judged = judgeNewExisting(person, proj);
+      if (judged === '미상' || judged == null) { unknown++; return; }
+      if (!state.personRoles[pid]) {
+        state.personRoles[pid] = { newOrExisting: judged, cashOrInkind: '현금', subRole: '', monthlySalaryOverride: null };
+        changed++;
+      } else if (state.personRoles[pid].newOrExisting !== judged) {
+        state.personRoles[pid].newOrExisting = judged;
+        changed++;
+      }
+    });
+    renderAll();
+    scheduleSave();
+    var msg = changed + '명 재판정' + (unknown ? ' (미상 ' + unknown + '명 제외)' : '');
+    showToast(msg, 'success');
   }
 
   function closeAddModal() {
@@ -5169,10 +5294,18 @@
       }
       // 회사 제한: 프로젝트에 회사가 지정되어 있으면 같은 회사만
       if (projCompany && p.company !== projCompany) return false;
-      // v5.3: 이미 추가된 인력은 하단 리스트에서 제외 (상단 접힌 섹션에 카운트로 표시됨)
+      // 이미 추가된 인력은 하단 리스트에서 제외
       if (state.personIds.indexOf(p.id) >= 0) return false;
+      // C4: 신규/기존 필터
+      if (_modalNeFilter) {
+        if (judgeNewExisting(p, currentProject) !== _modalNeFilter) return false;
+      }
       return true;
     });
+
+    // C4: 규칙이 있는 과제에서만 신규/기존 필터 바 노출
+    var neFilterBar = document.getElementById('pl-modal-ne-filter');
+    if (neFilterBar) neFilterBar.style.display = hasNewJudgeRule(currentProject) ? 'inline-flex' : 'none';
 
     resultList.innerHTML = '';
     if (filtered.length === 0) {
@@ -5188,6 +5321,8 @@
 
   // v5.2: 모달에서 현재 체크된 인력 ID 집합 (filter 변경에도 유지)
   var _modalSelectedIds = Object.create(null);
+  // C4: 모달 신규/기존 필터 ('' | '신규' | '기존')
+  var _modalNeFilter = '';
 
   // ====================================================================
   // v6.3: 모달 인력 통계 — 현재 진행 중 과제 수 + 현재 월 참여율
@@ -5343,7 +5478,18 @@
       breakdown.push({ projectId: pj.id, name: pj.name || pj.projectName || pj.id, rate: rate, cashOrInkind: ci });
     });
 
-    return { projectCount: projectCount, totalRate: totalRate, ym: ym, mode: mode, breakdown: breakdown };
+    // C2 §4.8: 3책5공 — 그 사람의 책/공 (관리 대상·수행 과제 전체, 명단은 모달 캐시 personRoles)
+    var ch5g = null;
+    if (window.ThreeFiveRule) {
+      ch5g = window.ThreeFiveRule.countForPerson(personId, _allProjects, function (p) {
+        var b = _modalLaborCache[p.id];
+        if (b && b.personRoles) return Object.keys(b.personRoles);
+        if (Array.isArray(p.personIds)) return p.personIds;
+        return [];
+      });
+    }
+
+    return { projectCount: projectCount, totalRate: totalRate, ym: ym, mode: mode, breakdown: breakdown, ch5g: ch5g };
   }
 
   function modalStatsClass(totalRate) {
@@ -5395,8 +5541,13 @@
     // 2. 가운데 — 이름 + 메타
     var badgesHtml = '';
     if (person.isYouth) badgesHtml += '<span class="pl-badge pl-badge--youth">청년</span>';
-    if (person.isNew)   badgesHtml += '<span class="pl-badge pl-badge--new">신규</span>';
     if (isExited)       badgesHtml += '<span class="pl-badge pl-badge--exit">퇴사</span>';
+    // C4: 과제 규칙 기반 신규/기존/미상 자동 판정 라벨
+    var judged = judgeNewExisting(person, getProject());
+    var neBadge = '';
+    if (judged === '신규')      neBadge = '<span class="pl-modal-ne-badge pl-modal-ne-badge--new">신규</span>';
+    else if (judged === '기존') neBadge = '<span class="pl-modal-ne-badge pl-modal-ne-badge--exist">기존</span>';
+    else if (judged === '미상') neBadge = '<span class="pl-modal-ne-badge pl-modal-ne-badge--unknown">미상</span>';
 
     // v6.3: 현재 월 참여율·과제 수 배지 (이름 옆 인라인)
     //   - 캐시가 아직 로딩 중이면 비워둔다(나중에 재렌더되면서 채워짐).
@@ -5411,9 +5562,23 @@
           return b.name + ' ' + b.rate + '% (' + b.cashOrInkind + ')';
         }).join(' · ');
         var tip = stats.ym + ' · ' + tipTab + ' 탭 기준\n' + tipBreakdown;
+        // C2: 현 과제가 3책5공 관리 대상이면 "N개 과제" 대신 "책/공" 표시
+        var curProj = getProject();
+        var showCh5g = curProj && curProj.is3ch5gManaged && stats.ch5g && window.ThreeFiveRule;
+        var countHtml;
+        if (showCh5g) {
+          var over = window.ThreeFiveRule.isOverLimit(stats.ch5g.chaek, stats.ch5g.gong);
+          var ch5gTip = '3책5공 · 책 ' + stats.ch5g.chaek + ' / 공 ' + stats.ch5g.gong
+            + ' (책≤3, 책+공≤5)' + (over ? ' · 한도 초과' : '');
+          countHtml = '<span class="pl-modal-person-stats-count' + (over ? ' pl-ch5g-over' : '')
+            + '" title="' + ch5gTip.replace(/"/g, '&quot;') + '">'
+            + window.ThreeFiveRule.format(stats.ch5g.chaek, stats.ch5g.gong) + '</span>';
+        } else {
+          countHtml = '<span class="pl-modal-person-stats-count">' + stats.projectCount + '개 과제</span>';
+        }
         statsHtml =
           ' <span class="pl-modal-person-stats ' + cls + '" title="' + tip.replace(/"/g, '&quot;') + '">' +
-            '<span class="pl-modal-person-stats-count">' + stats.projectCount + '개 과제</span>' +
+            countHtml +
             '<span class="pl-modal-person-stats-sep">·</span>' +
             '<span class="pl-modal-person-stats-rate">' + stats.totalRate + '%</span>' +
           '</span>';
@@ -5424,7 +5589,7 @@
     nameDiv.style.flex = '1';
     nameDiv.innerHTML =
       '<div class="pl-modal-person-name">' + person.name +
-        (badgesHtml ? ' ' + badgesHtml : '') +
+        (badgesHtml ? ' ' + badgesHtml : '') + neBadge +
         statsHtml +
       '</div>' +
       '<div class="pl-modal-person-meta">' +
@@ -5526,7 +5691,11 @@
     // v5 신규: 새로 추가된 인력에게 personRoles 기본값 부여
     // (이미 있으면 보존 — 과거에 제거됐다가 다시 추가되는 케이스에서 분류 유지)
     if (!state.personRoles[personId]) {
-      state.personRoles[personId] = { newOrExisting: '기존', cashOrInkind: '현금', subRole: '', monthlySalaryOverride: null };
+      // C4: 규칙이 있으면 신규/기존 자동 판정값을 기본으로 (미상/규칙없음 → 기존)
+      var person0 = _allPersons.find(function (p) { return p.id === personId; });
+      var judged0 = judgeNewExisting(person0, getProject());
+      var ne0 = (judged0 === '신규' || judged0 === '기존') ? judged0 : '기존';
+      state.personRoles[personId] = { newOrExisting: ne0, cashOrInkind: '현금', subRole: '', monthlySalaryOverride: null };
     }
     renderAll();
     scheduleSave();
