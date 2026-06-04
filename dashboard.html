@@ -300,6 +300,18 @@
       margin-bottom: 0.5rem;
     }
     .big-stats--single { grid-template-columns: 1fr; }
+    /* 2칸(전체 + 유형) — 입금 완료율을 아래 입금 진행 섹션으로 이동, 윗 행 여유 확보 */
+    .big-stats--duo {
+      grid-template-columns: 1fr 1fr;
+      gap: 0.9rem;
+    }
+    .big-stats--duo > div {
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+    }
+    .big-stats--duo .big-stat-num,
+    .big-stats--duo .big-stat-label { text-align: center; }
     .big-stats--triple {
       grid-template-columns: 1fr 1fr auto 1fr;
       gap: 0.5rem;  /* 3칸은 더 좁아서 gap 줄임 */
@@ -347,6 +359,7 @@
       font-size: 0.78rem;
       color: #94a3b8;
       font-weight: 500;
+      white-space: nowrap;  /* "지원사업" 등 라벨 줄바꿈 방지 (노트북 폭) */
     }
     .type-mini-value {
       color: #475569;
@@ -492,6 +505,27 @@
     .stacked-bar-segment--personnel { background: #14b8a6; }
     .stacked-bar-segment--service   { background: #f97316; }
     .stacked-bar-segment--etc       { background: #94a3b8; }
+    /* 입금 진행 — 완료(초록)/남은 예정(연회색) */
+    .stacked-bar-segment--paid   { background: #34d399; }
+    .stacked-bar-segment--remain { background: #cbd5e1; }
+    /* 입금 완료율 배지 (입금 진행 헤더 우측) */
+    .payment-rate-badge {
+      display: flex;
+      align-items: baseline;
+      gap: 0.35rem;
+    }
+    .payment-rate-badge-label {
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+    }
+    .payment-rate-badge-value {
+      font-size: 1.05rem;
+      font-weight: 800;
+      color: #94a3b8;
+      letter-spacing: -0.02em;
+    }
+    .payment-rate-badge-value.payment-rate--mid  { color: #fca5a5; }  /* ≥50% */
+    .payment-rate-badge-value.payment-rate--full { color: #f87171; }  /* ≥100% */
     .stacked-legend {
       display: flex;
       flex-direction: column;
@@ -1064,12 +1098,6 @@
           <h1 class="header-title">🏠 대시보드</h1>
         </header>
 
-        <!-- 회사 필터 -->
-        <div style="display:flex; align-items:center; gap:0.6rem; margin-bottom:0.75rem;">
-          <span style="font-size:0.85rem; color:var(--text-secondary); font-weight:500;">회사</span>
-          <div id="dash-company-chips"></div>
-        </div>
-
         <div class="dash-toolbar">
           <span class="toolbar-label">기준 연도</span>
           <select id="dash-year" class="ui-select">
@@ -1080,6 +1108,8 @@
             <option value="2022">2022년</option>
             <option value="2021">2021년</option>
           </select>
+          <span class="toolbar-label">회사</span>
+          <div id="dash-company-chips"></div>
           <button type="button" class="ui-btn ui-btn--ghost" id="dash-pdf-btn" style="margin-left:auto;">📥 PDF 저장</button>
         </div>
 
@@ -1135,7 +1165,7 @@
             <div class="hero-panel hero-panel--green">
               <h2 class="hero-panel-title">지원금 현황 <span aria-hidden="true">💰</span></h2>
               <p class="hero-panel-subtitle" id="funding-subtitle">2026년 입금 예정</p>
-              <div class="big-stats big-stats--triple">
+              <div class="big-stats big-stats--duo">
                 <div>
                   <div class="big-stat-num"><span id="hero-total-sum">0</span><small>억</small></div>
                   <div class="big-stat-label">전체</div>
@@ -1157,12 +1187,34 @@
                   </div>
                   <div class="big-stat-label">과제 / 지원사업 / 기타</div>
                 </div>
-                <div class="big-stats-divider" aria-hidden="true"></div>
-                <div>
-                  <div class="big-stat-num big-stat-num--soft"><span id="hero-payment-rate">0</span><small> %</small></div>
-                  <div class="big-stat-label">입금 완료율</div>
+              </div>
+              <div class="panel-divider"></div>
+              <div class="stacked-section-header">
+                <h3 class="panel-section-title">입금 진행 (당해)</h3>
+                <div class="payment-rate-badge">
+                  <span class="payment-rate-badge-label">입금 완료율</span>
+                  <span class="payment-rate-badge-value"><span id="hero-payment-rate">0</span>%</span>
                 </div>
               </div>
+              <div class="stacked-bar-track">
+                <div class="stacked-bar-segment stacked-bar-segment--paid"   id="seg-paid"   style="width:0%"></div>
+                <div class="stacked-bar-segment stacked-bar-segment--remain" id="seg-remain" style="width:0%"></div>
+              </div>
+              <div class="stacked-legend stacked-legend--inline">
+                <span class="stacked-legend-item">
+                  <span class="stacked-legend-dot stacked-bar-segment--paid"></span>
+                  <span class="stacked-legend-label">입금 완료</span>
+                  <span class="stacked-legend-value" id="legend-val-paid">0</span>
+                  <span class="stacked-legend-pct"   id="legend-pct-paid">0%</span>
+                </span>
+                <span class="stacked-legend-item">
+                  <span class="stacked-legend-dot stacked-bar-segment--remain"></span>
+                  <span class="stacked-legend-label">남은 예정</span>
+                  <span class="stacked-legend-value" id="legend-val-remain">0</span>
+                  <span class="stacked-legend-pct"   id="legend-pct-remain">0%</span>
+                </span>
+              </div>
+
               <div class="panel-divider"></div>
               <div class="stacked-section-header">
                 <h3 class="panel-section-title">자금 구성 (당해)</h3>
@@ -1194,40 +1246,6 @@
                   <span class="stacked-legend-label">현물</span>
                   <span class="stacked-legend-value" id="legend-val-inkind">0</span>
                   <span class="stacked-legend-pct"   id="legend-pct-inkind">0%</span>
-                </span>
-              </div>
-
-              <div class="panel-divider"></div>
-              <div class="stacked-section-header">
-                <h3 class="panel-section-title">지원금 구성 (당해)</h3>
-                <div class="stacked-total">
-                  <span class="stacked-total-label">합계</span>
-                  <span class="stacked-total-value" id="stacked2-total">0</span>
-                </div>
-              </div>
-              <div class="stacked-bar-track">
-                <div class="stacked-bar-segment stacked-bar-segment--personnel" id="seg2-personnel" style="width:0%"></div>
-                <div class="stacked-bar-segment stacked-bar-segment--service"   id="seg2-service"   style="width:0%"></div>
-                <div class="stacked-bar-segment stacked-bar-segment--etc"       id="seg2-etc"       style="width:0%"></div>
-              </div>
-              <div class="stacked-legend stacked-legend--inline">
-                <span class="stacked-legend-item">
-                  <span class="stacked-legend-dot stacked-bar-segment--personnel"></span>
-                  <span class="stacked-legend-label">인건비</span>
-                  <span class="stacked-legend-value" id="legend2-val-personnel">0</span>
-                  <span class="stacked-legend-pct"   id="legend2-pct-personnel">0%</span>
-                </span>
-                <span class="stacked-legend-item">
-                  <span class="stacked-legend-dot stacked-bar-segment--service"></span>
-                  <span class="stacked-legend-label">용역비</span>
-                  <span class="stacked-legend-value" id="legend2-val-service">0</span>
-                  <span class="stacked-legend-pct"   id="legend2-pct-service">0%</span>
-                </span>
-                <span class="stacked-legend-item">
-                  <span class="stacked-legend-dot stacked-bar-segment--etc"></span>
-                  <span class="stacked-legend-label">기타</span>
-                  <span class="stacked-legend-value" id="legend2-val-etc">0</span>
-                  <span class="stacked-legend-pct"   id="legend2-pct-etc">0%</span>
                 </span>
               </div>
               <p class="hero-panel-footnote">* yearBudgets 기준 합산</p>

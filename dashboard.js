@@ -434,6 +434,20 @@
     setText('legend-pct-support', pSupport.toFixed(0) + '%');
     setText('legend-pct-cash',    pCash.toFixed(0) + '%');
     setText('legend-pct-inkind',  pInkind.toFixed(0) + '%');
+
+    // 입금 진행 (당해) — 입금 완료 vs 남은 예정 (기준 = 입금 예정 지원금)
+    var paid = actual;                                  // 입금 완료(actualPayments 합)
+    var remaining = Math.max(0, planned - paid);        // 남은 예정
+    var paidW   = planned > 0 ? Math.min(100, paid / planned * 100) : 0;
+    var remainW = Math.max(0, 100 - paidW);
+    var segPaid = document.getElementById('seg-paid');
+    var segRemain = document.getElementById('seg-remain');
+    if (segPaid)   segPaid.style.width   = paidW.toFixed(1) + '%';
+    if (segRemain) segRemain.style.width = remainW.toFixed(1) + '%';
+    setText('legend-val-paid',   eokFloor(paid)      + '억');
+    setText('legend-val-remain', eokFloor(remaining) + '억');
+    setText('legend-pct-paid',   (planned > 0 ? Math.round(paid / planned * 100)      : 0) + '%');
+    setText('legend-pct-remain', (planned > 0 ? Math.round(remaining / planned * 100) : 0) + '%');
   }
 
   // Panel 3: 임박 알림 — D-7/D-3/D-day (제출 임박 + 마일스톤) + 종료 예정

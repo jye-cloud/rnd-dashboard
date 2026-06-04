@@ -12,7 +12,8 @@
  *        rows: [
  *          { id, type, newOrExisting, cashOrInkind, personId, personName,
  *            role, threeOrFiveGong, position,
- *            monthlySalary, actualPay, rate, participMonths }
+ *            monthlySalary, actualPay, rate, participMonths,
+ *            salarySlot }   // C6 2단계: 불러온 연봉 항목 기억(숫자만 분배에 쓰여 무영향)
  *        ],
  *        budgetCash, budgetInkind, updatedAt
  *      }
@@ -54,6 +55,77 @@
     // 인력 검색 모달 컨텍스트
     modalRowId: null,       // 어느 행의 인력을 채울지
   };
+
+  // ====================================================================
+  // C6 2단계 — 연봉 프로파일(공유 슬롯) 예산 불러오기
+  //   · persons.salarySlots = { 슬롯명: 연봉(원) }, 월급 = ceil(연봉/12)
+  //   · '실제' = annualSalary(없으면 monthlySalary 폴백) → 항상 존재
+  //   · 빈 슬롯 = 실제 폴백. 폴백 정책 = 하이브리드(차단+경고+실제로 채우기)
+  //   · 행에 row.salarySlot(문자열) 기억 — 숫자만 분배/C1/내보내기에 쓰여 무영향
+  // ====================================================================
+  var DEFAULT_SALARY_SLOTS = ['제안서용(공개 가능)'];
+  var SLOT_ACTUAL = '__actual__';   // 셀렉트 값: 실제 연봉(예약, 슬롯명과 충돌 없음)
+
+  // 가용 슬롯 = 기본 ∪ 전 인력 salarySlots 키 (정렬: 기본 먼저, 그 외 가나다)
+  // persons-master.getAvailableSlotNames 와 동일 로직
+  function getAvailableSlotNames() {
+    var seen = {};
+    var defaults = [];
+    DEFAULT_SALARY_SLOTS.forEach(function (n) { if (!seen[n]) { seen[n] = 1; defaults.push(n); } });
+    var others = [];
+    (_allPersons || []).forEach(function (p) {
+      var slots = p && p.salarySlots;
+      if (slots && typeof slots === 'object') {
+        Object.keys(slots).forEach(function (k) {
+          if (k && k !== '실제' && !seen[k]) { seen[k] = 1; others.push(k); }
+        });
+      }
+    });
+    others.sort(function (a, b) { return a.localeCompare(b, 'ko'); });
+    return defaults.concat(others);
+  }
+
+  function findPerson(personId) {
+    if (!personId) return null;
+    return _allPersons.find(function (p) { return p && p.id === personId; }) || null;
+  }
+
+  // 실제 연봉의 월급 = monthlySalary 우선, 없으면 ceil(annualSalary/12)
+  function getPersonActualMonthly(p) {
+    if (!p) return 0;
+    if (p.monthlySalary != null && !isNaN(p.monthlySalary)) return Math.ceil(p.monthlySalary);
+    if (p.annualSalary != null && !isNaN(p.annualSalary)) return Math.ceil(p.annualSalary / 12);
+    return 0;
+  }
+
+  // 슬롯 월급. slotName === SLOT_ACTUAL → 실제. 그 외 → salarySlots[slotName] 의 ceil/12.
+  // 반환값:
+  //   { monthly: 숫자 }        — 불러올 값 있음
+  //   { monthly: null, fallback: true } — 슬롯 비어 실제로 폴백해야 함(하이브리드 차단 대상)
+  function getSlotMonthly(p, slotName) {
+    if (!p) return { monthly: null, fallback: false };
+    if (!slotName || slotName === SLOT_ACTUAL) {
+      return { monthly: getPersonActualMonthly(p), fallback: false };
+    }
+    var slots = (p.salarySlots && typeof p.salarySlots === 'object') ? p.salarySlots : {};
+    var v = slots[slotName];
+    if (v != null && !isNaN(v) && Number(v) > 0) {
+      return { monthly: Math.ceil(Number(v) / 12), fallback: false };
+    }
+    // 슬롯 비어 있음 → 실제로 폴백해야 하는 상태(차단)
+    return { monthly: null, fallback: true };
+  }
+
+  // 슬롯이 지정된 인력 행인데 슬롯 값이 비어(실제 폴백) 아직 급여가 0인 상태 = 경고 대상
+  function isRowSalaryFallbackPending(r) {
+    if (!r || !r.personId) return false;
+    if (!r.salarySlot || r.salarySlot === SLOT_ACTUAL) return false;
+    var p = findPerson(r.personId);
+    if (!p) return false;
+    var res = getSlotMonthly(p, r.salarySlot);
+    if (!res.fallback) return false;       // 슬롯 값이 있으면 폴백 아님
+    return !parseNum(r.monthlySalary);     // 이미 채워졌으면(수동/실제로 채우기) 경고 해제
+  }
 
   // ====================================================================
   // Firestore 컬렉션 참조
@@ -410,6 +482,7 @@
     var titleText = document.getElementById('pb-title-text');
     var optionsEl = document.getElementById('pb-project-options');
     var selfCashCb = document.getElementById('pb-has-self-cash');
+    var salaryBar = document.getElementById('pb-salary-load-bar');
 
     var project = getProject();
     if (!project) {
@@ -418,6 +491,7 @@
       if (wrapEl) wrapEl.style.display = 'none';
       if (summaryEl) summaryEl.style.display = 'none';
       if (optionsEl) optionsEl.style.display = 'none';
+      if (salaryBar) salaryBar.style.display = 'none';
       return;
     }
 
@@ -434,6 +508,7 @@
       if (titleEl) titleEl.style.display = 'none';
       if (wrapEl) wrapEl.style.display = 'none';
       if (summaryEl) summaryEl.style.display = 'none';
+      if (salaryBar) salaryBar.style.display = 'none';
       return;
     }
 
@@ -441,6 +516,7 @@
     if (titleEl) titleEl.style.display = 'flex';
     if (wrapEl) wrapEl.style.display = 'block';
     if (summaryEl) summaryEl.style.display = 'flex';
+    if (salaryBar) salaryBar.style.display = 'flex';
 
     var yd = getCurrentYearData();
     var period = yd.period || { startDate: '', endDate: '', months: 0 };
@@ -579,6 +655,10 @@
 
     // 예산 요약 렌더링
     renderBudgetSummary();
+
+    // C6 2단계 — 슬롯 셀렉트 채우기 + 폴백 경고 상태 갱신
+    populateSlotSelect();
+    updateSalaryBarState();
   }
 
   function renderRow(r, labelPrefix) {
@@ -590,6 +670,10 @@
     var _projForMgr = getProject();
     if (_projForMgr && _projForMgr.is3ch5gManaged && r.personId && r.personId === _projForMgr.managerPersonId) {
       clsRow += ' pb-row-manager';
+    }
+    // C6 2단계: 슬롯 비어 실제 폴백 대기 중인 행 경고색
+    if (isRowSalaryFallbackPending(r)) {
+      clsRow += ' pb-row-salary-fallback';
     }
     var nameDisplay = r.personName || '';
     var rowTotal = calcRowTotal(r);
@@ -642,8 +726,13 @@
       '<td><input type="text" class="pb-cell-text" data-row="' + r.id + '" data-field="threeOrFiveGong" value="' + escapeHtml(r.threeOrFiveGong || '') + '" placeholder=""></td>' +
       // 직위
       '<td><input type="text" class="pb-cell-text" data-row="' + r.id + '" data-field="position" value="' + escapeHtml(r.position || '') + '" placeholder="직위"></td>' +
-      // 급여총액 (수정 가능, 강조)
-      '<td class="td-input"><input type="text" class="pb-cell-number" data-row="' + r.id + '" data-field="monthlySalary" value="' + (r.monthlySalary ? fmtMoneyFull(r.monthlySalary) : '') + '" placeholder="0" inputmode="numeric"></td>' +
+      // 급여총액 (수정 가능, 강조) — 인력 지정 행은 위에 연봉 항목 드롭다운(C6 2단계)
+      '<td class="td-input">' +
+        (r.personId
+          ? '<select class="pb-row-slot-select" data-row="' + r.id + '" title="이 인력의 연봉 항목 선택">' + buildRowSlotOptions(r.salarySlot) + '</select>'
+          : '') +
+        '<input type="text" class="pb-cell-number" data-row="' + r.id + '" data-field="monthlySalary" value="' + (r.monthlySalary ? fmtMoneyFull(r.monthlySalary) : '') + '" placeholder="0" inputmode="numeric">' +
+      '</td>' +
       // 실지급액 (수정 가능, 노랑)
       '<td class="td-input-yellow"><input type="text" class="pb-cell-number" data-row="' + r.id + '" data-field="actualPay" value="' + (r.actualPay ? fmtMoneyFull(r.actualPay) : '') + '" placeholder="0" inputmode="numeric"></td>' +
       // 참여율
@@ -672,6 +761,13 @@
         var rowId = sel.dataset.row;
         var field = sel.dataset.field;
         updateRowField(rowId, field, sel.value);
+      });
+    });
+
+    // C6 2단계 — 행별 연봉 항목 셀렉트
+    table.querySelectorAll('.pb-row-slot-select').forEach(function (sel) {
+      sel.addEventListener('change', function () {
+        applySlotToRow(sel.dataset.row, sel.value);
       });
     });
 
@@ -1000,6 +1096,7 @@
         monthlySalary: r.monthlySalary || 0,
         actualPay: r.actualPay || 0,
         rate: r.rate || 0,
+        salarySlot: r.salarySlot || '',
         // 참여개월은 새 연차의 기간으로 갱신
         participMonths: yd.period.months || r.participMonths || 0,
       };
@@ -1010,6 +1107,144 @@
     renderTable();
     scheduleSave();
     toast(prevYi + '차년도에서 ' + yd.rows.length + '행 복사됨');
+  }
+
+  // ====================================================================
+  // C6 2단계 — 슬롯 불러오기 UI 동작
+  // ====================================================================
+
+  // 툴바 슬롯 셀렉트 채우기 (실제 연봉 + 가용 슬롯). 현재 선택 보존.
+  function populateSlotSelect() {
+    var sel = document.getElementById('pb-salary-slot-select');
+    if (!sel) return;
+    var prev = sel.value || SLOT_ACTUAL;
+    var names = getAvailableSlotNames();
+    var html = '<option value="' + SLOT_ACTUAL + '">실제 연봉</option>';
+    names.forEach(function (n) {
+      html += '<option value="' + escapeHtml(n) + '">' + escapeHtml(n) + '</option>';
+    });
+    sel.innerHTML = html;
+    // 이전 선택이 여전히 유효하면 유지
+    var hasPrev = prev === SLOT_ACTUAL || names.indexOf(prev) !== -1;
+    sel.value = hasPrev ? prev : SLOT_ACTUAL;
+  }
+
+  // 행별 슬롯 셀렉트 옵션 HTML (현재 행 선택 표시)
+  function buildRowSlotOptions(selected) {
+    var names = getAvailableSlotNames();
+    var cur = selected || SLOT_ACTUAL;
+    var html = '<option value="' + SLOT_ACTUAL + '"' + (cur === SLOT_ACTUAL ? ' selected' : '') + '>실제</option>';
+    names.forEach(function (n) {
+      html += '<option value="' + escapeHtml(n) + '"' + (cur === n ? ' selected' : '') + '>' + escapeHtml(n) + '</option>';
+    });
+    return html;
+  }
+
+  // 폴백(빈 슬롯) 경고 행 수 세기 + 바 상태 갱신
+  function updateSalaryBarState() {
+    var bar = document.getElementById('pb-salary-load-bar');
+    if (!bar) return;
+    var yd = getCurrentYearData();
+    var rows = (yd && yd.rows) || [];
+    var pending = rows.filter(isRowSalaryFallbackPending).length;
+
+    var fillBtn = document.getElementById('pb-salary-fill-actual-btn');
+    var hint = document.getElementById('pb-salary-hint');
+    if (fillBtn) {
+      if (pending > 0) {
+        fillBtn.style.display = '';
+        fillBtn.textContent = '빈 항목 실제로 채우기 (' + pending + ')';
+      } else {
+        fillBtn.style.display = 'none';
+      }
+    }
+    if (hint) {
+      hint.textContent = pending > 0
+        ? '⚠️ ' + pending + '명은 선택한 항목에 연봉이 없어 비워뒀습니다(실제 연봉 유출 방지).'
+        : '';
+    }
+  }
+
+  // 슬롯 하나를 한 행에 적용 (행별 드롭다운 / 전체 적용 공용)
+  //   반환: 'filled' | 'fallback' | 'skip'(인력 없음)
+  function applySlotToRowData(row, slotName) {
+    if (!row || !row.personId) return 'skip';
+    var p = findPerson(row.personId);
+    if (!p) return 'skip';
+    row.salarySlot = slotName;
+    var res = getSlotMonthly(p, slotName);
+    if (res.fallback) {
+      // 하이브리드 차단: 실제값 유입 막기 위해 0으로 비움
+      row.monthlySalary = 0;
+      row.actualPay = 0;
+      return 'fallback';
+    }
+    var m = res.monthly || 0;
+    row.monthlySalary = m;
+    row.actualPay = m;
+    return 'filled';
+  }
+
+  // 행별 드롭다운 변경 → 그 행만 즉시 적용
+  function applySlotToRow(rowId, slotName) {
+    var yd = getCurrentYearData();
+    var row = yd.rows.find(function (r) { return r.id === rowId; });
+    if (!row) return;
+    var result = applySlotToRowData(row, slotName);
+    renderTable();
+    scheduleSave();
+    if (result === 'fallback') {
+      toast('「' + (slotName === SLOT_ACTUAL ? '실제 연봉' : slotName) + '」 항목이 비어 있어 급여를 비웠습니다. 필요 시 실제로 채우세요.', true);
+    }
+  }
+
+  // 전체 적용 — 인력이 지정된 모든 행에 선택 슬롯 적용
+  function applySlotToAllRows() {
+    var sel = document.getElementById('pb-salary-slot-select');
+    if (!sel) return;
+    var slotName = sel.value || SLOT_ACTUAL;
+    var label = slotName === SLOT_ACTUAL ? '실제 연봉' : slotName;
+    var yd = getCurrentYearData();
+    var rows = (yd && yd.rows) || [];
+    var targets = rows.filter(function (r) { return r.personId; });
+    if (targets.length === 0) {
+      toast('인력이 지정된 행이 없습니다. 🔍로 인력을 먼저 선택해주세요.', true);
+      return;
+    }
+    if (!confirm('인력이 지정된 ' + targets.length + '개 행의 급여총액·실지급액을 「' + label + '」 기준으로 불러옵니다.\n기존 급여 값은 덮어쓰며, 항목이 빈 인력은 비워둡니다(나중에 "실제로 채우기" 가능). 계속할까요?')) return;
+
+    var filled = 0, fallback = 0;
+    targets.forEach(function (r) {
+      var res = applySlotToRowData(r, slotName);
+      if (res === 'filled') filled++;
+      else if (res === 'fallback') fallback++;
+    });
+    renderTable();
+    scheduleSave();
+    var msg = '「' + label + '」 불러오기: ' + filled + '명 적용';
+    if (fallback > 0) msg += ' · ' + fallback + '명 비움(항목 없음)';
+    toast(msg, fallback > 0);
+  }
+
+  // 빈 항목(폴백 대기) 행을 실제 연봉으로 채우기
+  function fillFallbackRowsWithActual() {
+    var yd = getCurrentYearData();
+    var rows = (yd && yd.rows) || [];
+    var pending = rows.filter(isRowSalaryFallbackPending);
+    if (pending.length === 0) return;
+    if (!confirm(pending.length + '명의 빈 항목을 실제 연봉으로 채웁니다. 제안서에 실제 연봉이 노출될 수 있어요. 계속할까요?')) return;
+    var n = 0;
+    pending.forEach(function (r) {
+      var p = findPerson(r.personId);
+      if (!p) return;
+      var m = getPersonActualMonthly(p);
+      r.monthlySalary = m;
+      r.actualPay = m;
+      n++;
+    });
+    renderTable();
+    scheduleSave();
+    toast(n + '명을 실제 연봉으로 채웠습니다.');
   }
 
   // ====================================================================
@@ -1119,6 +1354,223 @@
       console.error('분배 실패:', e);
       toast('분배 실패: ' + e.message, true);
     });
+  }
+
+  // ====================================================================
+  // C1-b: 선택 전송 (budget → project-labor) — 모달
+  //   ① 인력 선택 ② 필드(이름만/+참여율/+금액) ③ 금액 출처(예산 vs 인건비 급여)
+  //   ④ 월 범위 ⑤ 쓰기 방식(빈 셀만/덮어쓰기)
+  //   - 명단(personIds)은 항상 merge. cells 는 필드가 'name'이면 손대지 않음(비파괴).
+  //   - C1-a(이름만)는 이 모달의 '이름만' 필드 옵션으로 흡수됨.
+  // ====================================================================
+  function getSendPersonRows() {
+    var yd = getCurrentYearData();
+    if (!yd || !yd.rows) return [];
+    var seen = {};
+    return yd.rows.filter(function (r) {
+      if (!r.personId || seen[r.personId]) return false;
+      seen[r.personId] = true;
+      return true;
+    });
+  }
+
+  function openSendModal() {
+    if (!state.projectId || !isFirestoreReady()) {
+      toast('과제를 먼저 선택해주세요.', true);
+      return;
+    }
+    var yd = getCurrentYearData();
+    if (!yd || !yd.rows || yd.rows.length === 0) {
+      toast('보낼 행이 없습니다.', true);
+      return;
+    }
+    var rows = getSendPersonRows();
+    if (rows.length === 0) {
+      toast('인력 매핑된 행이 없습니다. (성명 옆 🔍로 인력 선택)', true);
+      return;
+    }
+    var overlay = document.getElementById('pb-send-modal');
+    if (!overlay) return;
+
+    // ① 인력 목록(기본 전체 체크)
+    var listEl = document.getElementById('pb-send-people');
+    if (listEl) {
+      listEl.innerHTML = rows.map(function (r) {
+        var nm = r.personName || '(이름 없음)';
+        var meta = (r.rate ? r.rate + '%' : '0%') + ' · ' + fundTypeLabel(r.cashOrInkind || '현금') +
+          (r.actualPay ? ' · ' + fmtMoneyFull(r.actualPay) + '원' : '');
+        return '<label class="pb-send-person">' +
+          '<input type="checkbox" class="pb-send-person-cb" value="' + r.personId + '" checked>' +
+          '<span class="pb-send-person-name">' + nm + '</span>' +
+          '<span class="pb-send-person-meta">' + meta + '</span>' +
+        '</label>';
+      }).join('');
+    }
+
+    // ④ 월 범위 셀렉트 채우기
+    var period = yd.period || {};
+    var ymList = (period.startDate && period.endDate) ? getYmListInRange(period.startDate, period.endDate) : [];
+    var startSel = document.getElementById('pb-send-start');
+    var endSel = document.getElementById('pb-send-end');
+    if (startSel && endSel) {
+      var opts = ymList.map(function (ym) { return '<option value="' + ym + '">' + ym + '</option>'; }).join('');
+      startSel.innerHTML = opts;
+      endSel.innerHTML = opts;
+      if (ymList.length) {
+        startSel.value = ymList[0];
+        endSel.value = ymList[ymList.length - 1];
+      }
+    }
+
+    // 기본 옵션값 복원
+    var fAmount = overlay.querySelector('input[name="pb-send-field"][value="amount"]');
+    if (fAmount) fAmount.checked = true;
+    var sBudget = overlay.querySelector('input[name="pb-send-source"][value="budget"]');
+    if (sBudget) sBudget.checked = true;
+    var mEmpty = overlay.querySelector('input[name="pb-send-mode"][value="empty"]');
+    if (mEmpty) mEmpty.checked = true;
+
+    overlay.hidden = false;
+    updateSendModalUI();
+  }
+
+  function closeSendModal() {
+    var overlay = document.getElementById('pb-send-modal');
+    if (overlay) overlay.hidden = true;
+  }
+
+  function getSendField() {
+    var el = document.querySelector('input[name="pb-send-field"]:checked');
+    return el ? el.value : 'amount';
+  }
+
+  // 필드에 따라 금액 출처/월 범위 섹션 노출 + 안내문 갱신
+  function updateSendModalUI() {
+    var field = getSendField();
+    var srcSec = document.getElementById('pb-send-source-section');
+    var rngSec = document.getElementById('pb-send-range-section');
+    var hint = document.getElementById('pb-send-hint');
+    if (srcSec) srcSec.hidden = (field !== 'amount');     // 금액 출처는 +금액일 때만
+    if (rngSec) rngSec.hidden = (field === 'name');        // 월 범위는 셀 쓸 때만
+    if (hint) {
+      if (field === 'name') hint.textContent = '명단만 추가합니다. 참여율·금액·기존 셀은 건드리지 않습니다.';
+      else if (field === 'rate') hint.textContent = '참여율만 보냅니다(금액 0). 구분은 예산 행의 분류를 따릅니다.';
+      else hint.textContent = '참여율 + 금액을 보냅니다. 구분은 예산 행의 분류를 따릅니다.';
+    }
+  }
+
+  function doSendToLabor() {
+    if (!state.projectId || !isFirestoreReady()) { toast('과제를 먼저 선택해주세요.', true); return; }
+    var yd = getCurrentYearData();
+    if (!yd) { toast('연차 데이터가 없습니다.', true); return; }
+
+    var rowsByPid = {};
+    getSendPersonRows().forEach(function (r) { rowsByPid[r.personId] = r; });
+
+    var checked = Array.prototype.slice.call(document.querySelectorAll('.pb-send-person-cb:checked'));
+    var selPids = checked.map(function (c) { return c.value; }).filter(function (pid) { return rowsByPid[pid]; });
+    if (selPids.length === 0) { toast('선택된 인력이 없습니다.', true); return; }
+
+    var field = getSendField();   // 'name' | 'rate' | 'amount'
+    var sourceEl = document.querySelector('input[name="pb-send-source"]:checked');
+    var amountSource = sourceEl ? sourceEl.value : 'budget';   // 'budget' | 'labor'
+    var modeEl = document.querySelector('input[name="pb-send-mode"]:checked');
+    var writeMode = modeEl ? modeEl.value : 'empty';            // 'empty' | 'overwrite'
+
+    // 월 범위(셀 쓸 때만)
+    var ymList = [];
+    if (field !== 'name') {
+      var period = yd.period || {};
+      var fullYm = (period.startDate && period.endDate) ? getYmListInRange(period.startDate, period.endDate) : [];
+      var startSel = document.getElementById('pb-send-start');
+      var endSel = document.getElementById('pb-send-end');
+      var s = startSel ? startSel.value : (fullYm[0] || '');
+      var e = endSel ? endSel.value : (fullYm[fullYm.length - 1] || '');
+      var si = fullYm.indexOf(s), ei = fullYm.indexOf(e);
+      if (si === -1 || ei === -1) { ymList = fullYm.slice(); }
+      else { if (si > ei) { var t = si; si = ei; ei = t; } ymList = fullYm.slice(si, ei + 1); }
+      if (ymList.length === 0) { toast('월 범위를 확인해주세요.', true); return; }
+    }
+
+    setLoading(true);
+    var plannedRef = db().collection(LABOR_COLL).doc(state.projectId + '_planned');
+    var metaRef = db().collection(LABOR_COLL).doc(state.projectId + '_meta');
+
+    Promise.all([plannedRef.get(), metaRef.get()]).then(function (snaps) {
+      var plannedData = snaps[0].exists ? (snaps[0].data() || {}) : {};
+      var metaData = snaps[1].exists ? (snaps[1].data() || {}) : {};
+      var cells = plannedData.cells || {};
+      var personRoles = metaData.personRoles || {};
+      var personIds = Array.isArray(metaData.personIds) ? metaData.personIds.slice() : [];
+
+      var cellsWritten = 0;
+
+      selPids.forEach(function (pid) {
+        var r = rowsByPid[pid];
+        if (personIds.indexOf(pid) === -1) personIds.push(pid);
+        if (field === 'name') return;
+
+        var rate = parseNum(r.rate);
+
+        // 금액(원/월) 계산
+        var monthlyAmount = 0;
+        if (field === 'amount') {
+          if (amountSource === 'labor') {
+            var roles = personRoles[pid] || {};
+            var eff = (typeof roles.monthlySalaryOverride === 'number' && roles.monthlySalaryOverride > 0)
+              ? roles.monthlySalaryOverride
+              : (laborMasterSalary(pid) || 0);
+            monthlyAmount = Math.round(eff * (rate / 100));
+          } else {
+            monthlyAmount = Math.round(parseNum(r.actualPay) * (rate / 100));
+          }
+        }
+
+        // 구분 버킷 = 예산 행 분류
+        var cash = 0, selfCash = 0, inkind = 0;
+        if (r.cashOrInkind === '현금') cash = monthlyAmount;
+        else if (r.cashOrInkind === '자부담현금') selfCash = monthlyAmount;
+        else inkind = monthlyAmount;
+
+        ymList.forEach(function (ym) {
+          var key = state.projectId + '_' + ym + '_' + pid;
+          var ex = cells[key];
+          var exHasData = ex && ((ex.rate || 0) > 0 || (ex.cash || 0) > 0 || (ex.selfCash || 0) > 0 || (ex.inkind || 0) > 0);
+          if (writeMode === 'empty' && exHasData) return;   // 비파괴: 값 있는 셀은 건너뜀
+          cells[key] = {
+            rate: rate,
+            cash: cash,
+            selfCash: selfCash,
+            inkind: inkind,
+            memo: (ex && ex.memo) ? ex.memo : '',   // 메모 보존
+          };
+          cellsWritten++;
+        });
+      });
+
+      var batch = db().batch();
+      batch.set(plannedRef, { cells: cells, updatedAt: new Date().toISOString() }, { merge: true });
+      batch.set(metaRef, { personIds: personIds, updatedAt: new Date().toISOString() }, { merge: true });
+      return batch.commit().then(function () { return cellsWritten; });
+    }).then(function (cellsWritten) {
+      setLoading(false);
+      closeSendModal();
+      if (field === 'name') {
+        toast('✓ ' + selPids.length + '명 명단 전송 (셀 무변경)');
+      } else {
+        toast('✓ ' + selPids.length + '명 전송 · 셀 ' + cellsWritten + '개 기록');
+      }
+    }).catch(function (e) {
+      setLoading(false);
+      console.error('선택 전송 실패:', e);
+      toast('전송 실패: ' + e.message, true);
+    });
+  }
+
+  // 인건비 탭 급여 재계산(ⓑ)용 — 인력 마스터 월급(오버라이드는 doSendToLabor에서 _meta로 적용)
+  function laborMasterSalary(personId) {
+    var p = (_allPersons || []).find(function (x) { return x.id === personId; });
+    return p ? (p.monthlySalary || 0) : 0;
   }
 
   // ====================================================================
@@ -1265,6 +1717,8 @@
     if (window.firestoreService && typeof window.firestoreService.subscribePersons === 'function') {
       window.firestoreService.subscribePersons(function (persons) {
         _allPersons = Array.isArray(persons) ? persons : [];
+        // C6 2단계: 인력(슬롯) 로드 후 툴바 셀렉트 갱신
+        populateSlotSelect();
       });
     }
   }
@@ -1318,6 +1772,36 @@
 
     var distBtn = document.getElementById('pb-distribute-btn');
     if (distBtn) distBtn.addEventListener('click', distributeToLabor);
+
+    // C6 2단계 — 연봉 불러오기 바
+    var salaryApplyBtn = document.getElementById('pb-salary-apply-btn');
+    if (salaryApplyBtn) salaryApplyBtn.addEventListener('click', applySlotToAllRows);
+    var salaryFillBtn = document.getElementById('pb-salary-fill-actual-btn');
+    if (salaryFillBtn) salaryFillBtn.addEventListener('click', fillFallbackRowsWithActual);
+    // C1-b: 선택 전송 모달
+    var sendModalBtn = document.getElementById('pb-send-modal-btn');
+    if (sendModalBtn) sendModalBtn.addEventListener('click', openSendModal);
+    var sendClose = document.getElementById('pb-send-modal-close');
+    if (sendClose) sendClose.addEventListener('click', closeSendModal);
+    var sendCancel = document.getElementById('pb-send-cancel');
+    if (sendCancel) sendCancel.addEventListener('click', closeSendModal);
+    var sendGo = document.getElementById('pb-send-go');
+    if (sendGo) sendGo.addEventListener('click', doSendToLabor);
+    var sendOverlay = document.getElementById('pb-send-modal');
+    if (sendOverlay) {
+      sendOverlay.addEventListener('click', function (e) { if (e.target === sendOverlay) closeSendModal(); });
+      sendOverlay.addEventListener('change', function (e) {
+        if (e.target && e.target.name === 'pb-send-field') updateSendModalUI();
+      });
+    }
+    var sendCheckAll = document.getElementById('pb-send-check-all');
+    if (sendCheckAll) sendCheckAll.addEventListener('click', function () {
+      document.querySelectorAll('.pb-send-person-cb').forEach(function (c) { c.checked = true; });
+    });
+    var sendUncheckAll = document.getElementById('pb-send-uncheck-all');
+    if (sendUncheckAll) sendUncheckAll.addEventListener('click', function () {
+      document.querySelectorAll('.pb-send-person-cb').forEach(function (c) { c.checked = false; });
+    });
 
     var saveBtn = document.getElementById('pb-save-btn');
     if (saveBtn) saveBtn.addEventListener('click', saveBudgetDataExplicit);

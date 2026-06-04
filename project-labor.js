@@ -365,11 +365,59 @@
   //   필요 시 monthlySalaryOverride를 객체로 확장: { default: N, '2026-04': M, ... }
   //   또는 별도 필드 추가. 이 경우 자동 재계산 정책도 함께 재검토 필요
   //   (현재는 무조건 재계산 — 연중 변경 도입 시 "이미 입력된 금액 보존" 옵션 고려).
-  function getEffectiveMonthlySalary(person, /* unused */ _project) {
+  // ====================================================================
+  // §4.4 — 마스터 연봉 변경 시점(연중 인상) 해석
+  //   person.salaryChanges = [{ from:'YYYY-MM', annualSalary:원 }, ...]
+  //   그 달부터 새 연봉, 그 전엔 기본 annualSalary (계단식). 비면 기존과 100% 동일.
+  //   ※ persons-master.js 와 동일 알고리즘(공용 위치 승격은 추후). 변경 시 양쪽 동기.
+  // ====================================================================
+  function normalizeYm(s) {
+    var m = String(s == null ? '' : s).trim().match(/^(\d{4})\s*[-.\/]?\s*(\d{1,2})$/);
+    if (!m) return null;
+    var mo = parseInt(m[2], 10);
+    if (mo < 1 || mo > 12) return null;
+    return m[1] + '-' + (mo < 10 ? '0' + mo : '' + mo);
+  }
+  function sanitizeSalaryChanges(arr) {
+    if (!Array.isArray(arr)) return [];
+    var map = {};
+    arr.forEach(function (c) {
+      if (!c) return;
+      var ym = normalizeYm(c.from);
+      var digits = String(c.annualSalary == null ? '' : c.annualSalary).replace(/[^\d]/g, '');
+      var sal = digits === '' ? null : Math.round(Number(digits));
+      if (ym && sal != null && sal > 0) map[ym] = sal;
+    });
+    return Object.keys(map).sort().map(function (ym) { return { from: ym, annualSalary: map[ym] }; });
+  }
+  function getAnnualSalaryAt(person, ym) {
+    if (!person) return 0;
+    var base = (person.annualSalary != null && !isNaN(person.annualSalary)) ? Number(person.annualSalary) : 0;
+    var changes = sanitizeSalaryChanges(person.salaryChanges);
+    if (!changes.length || !ym) return base;
+    var picked = base;
+    changes.forEach(function (c) { if (c.from <= ym) picked = c.annualSalary; });
+    return picked;
+  }
+  function getMonthlySalaryAt(person, ym) {
+    var a = getAnnualSalaryAt(person, ym);
+    return a ? Math.ceil(a / 12) : 0;
+  }
+  // 이 인력이 연중 연봉 변경(변경 시점)을 가지고 있나
+  function hasSalaryTimeline(person) {
+    return !!(person && sanitizeSalaryChanges(person.salaryChanges).length);
+  }
+
+  // 우선순위: ① 과제 오버라이드(평탄, >0) ② 마스터 연봉(그 달 기준) ③ person.monthlySalary
+  //   ym 없거나 변경시점 없으면 기존 동작(person.monthlySalary)과 동일 — 안전.
+  function getEffectiveMonthlySalary(person, ym) {
     if (!person) return 0;
     var roles = state.personRoles && state.personRoles[person.id];
     if (roles && typeof roles.monthlySalaryOverride === 'number' && roles.monthlySalaryOverride > 0) {
       return roles.monthlySalaryOverride;
+    }
+    if (ym && hasSalaryTimeline(person)) {
+      return getMonthlySalaryAt(person, ym);
     }
     return person.monthlySalary || 0;
   }
@@ -1737,6 +1785,18 @@
         ? '과제 오버라이드 적용 중 (마스터: ' + (person.monthlySalary ? person.monthlySalary.toLocaleString('ko-KR') + '원' : '미등록') + ')\n빈 값으로 두면 마스터 값 복원'
         : '클릭해서 이 과제에 한해 다른 월급으로 변경할 수 있습니다';
       salWrap.appendChild(salInput);
+      // §4.4: 연중 연봉 변경이 있는 인력 표시 (오버라이드 없을 때만 — 오버라이드가 우선이라)
+      if (!hasOverride && hasSalaryTimeline(person)) {
+        var chips = sanitizeSalaryChanges(person.salaryChanges).map(function (c) {
+          return c.from + '부터 ' + Math.ceil(c.annualSalary / 12).toLocaleString('ko-KR') + '원';
+        }).join('\n');
+        var mark = document.createElement('span');
+        mark.className = 'pl-salary-timeline-mark';
+        mark.textContent = '📅';
+        mark.title = '연중 연봉 변경 있음 (인사 마스터 등록)\n' + chips +
+          '\n\n월 자동 계산은 각 달의 연봉을 사용합니다. 이미 입력된 금액은 "📅 연봉 변경 반영" 또는 ⚡ 일괄 계산으로 갱신하세요.';
+        salWrap.appendChild(mark);
+      }
     } else {
       // 실제/비교 탭 — read-only 표시
       var salSpan = document.createElement('span');
@@ -2218,14 +2278,16 @@
 
         // 각 행은 자기 값만
         if (rowType.key === 'planned') {
-          appendCompareCell(tr, hasPlanned ? planned.rate : null, '%', false, rateSepCls);
+          appendCompareCell(tr, hasPlanned ? planned.rate : null, '%', false, rateSepCls,
+            { personId: person.id, ym: m.ym, mode: 'planned', memo: planned.memo || '' });
           if (refund) {
             appendCompareCell(tr, hasPlanned ? planned.cash : null, '원', false, '');
             if (hasSelfCash) appendCompareCell(tr, hasPlanned ? planned.selfCash : null, '원', false, '');
             appendCompareCell(tr, hasPlanned ? planned.inkind : null, '원', false, inkindSepCls);
           }
         } else if (rowType.key === 'actual') {
-          appendCompareCell(tr, hasActual ? actual.rate : null, '%', false, rateSepCls);
+          appendCompareCell(tr, hasActual ? actual.rate : null, '%', false, rateSepCls,
+            { personId: person.id, ym: m.ym, mode: 'actual', memo: actual.memo || '' });
           if (refund) {
             appendCompareCell(tr, hasActual ? actual.cash : null, '원', false, '');
             if (hasSelfCash) appendCompareCell(tr, hasActual ? actual.selfCash : null, '원', false, '');
@@ -2251,7 +2313,7 @@
     });
   }
 
-  function appendCompareCell(tr, value, unit, isDiff, extraClass) {
+  function appendCompareCell(tr, value, unit, isDiff, extraClass, memoInfo) {
     var td = document.createElement('td');
     td.style.textAlign = 'right';
     td.style.padding = '0.55rem 0.5rem';
@@ -2278,6 +2340,18 @@
     } else {
       // v5.1: 일반 셀도 fmtMoneyFull로 (원 단위)
       td.textContent = unit === '원' ? fmtMoneyFull(value) : (value ? value + '%' : '-');
+    }
+    // C3: 비교 탭 메모 — 예상행→planned·실제행→actual 참여율 셀에만 부여(차이행 없음)
+    if (memoInfo) {
+      td.classList.add('pl-compare-memocell');
+      td.dataset.personId = memoInfo.personId;
+      td.dataset.ym = memoInfo.ym;
+      td.dataset.mode = memoInfo.mode;
+      if (memoInfo.memo) {
+        td.classList.add('pl-cell-has-memo');
+        td.title = memoInfo.memo;
+        td.appendChild(buildMemoMarker(memoInfo.personId, memoInfo.ym, memoInfo.mode, memoInfo.memo));
+      }
     }
     tr.appendChild(td);
   }
@@ -2426,7 +2500,7 @@
           ? { cash: cur.rates.cash || 0, selfCash: cur.rates.selfCash || 0, inkind: cur.rates.inkind || 0 }
           : (function () { var s = { cash: 0, selfCash: 0, inkind: 0 }; var pf = moneyFieldOf(pci); s[pf] = cur.rate || 0; return s; })();
         rates[sf] = val;
-        var salSp = getEffectiveMonthlySalary(person);
+        var salSp = getEffectiveMonthlySalary(person, ym);
         var sumRate = (rates.cash || 0) + (rates.selfCash || 0) + (rates.inkind || 0);
         setCell(dataMap, project.id, ym, personId, {
           rates: rates,
@@ -2458,7 +2532,7 @@
       var role = (state.personRoles && state.personRoles[personId]) || {};
       var targetField = moneyFieldOf(role.cashOrInkind);
       var otherFields = otherMoneyFields(targetField);   // 나머지 두 금액 필드
-      var autoAmount = Math.round(getEffectiveMonthlySalary(person) * val / 100);
+      var autoAmount = Math.round(getEffectiveMonthlySalary(person, ym) * val / 100);
 
       var patch = { rate: val };
       patch[targetField] = autoAmount;
@@ -2505,7 +2579,7 @@
         ? { cash: cur.rates.cash || 0, selfCash: cur.rates.selfCash || 0, inkind: cur.rates.inkind || 0 }
         : (function () { var s = { cash: 0, selfCash: 0, inkind: 0 }; s[pci] = cur.rate || 0; return s; })();
       rates[sf] = val;
-      var sal = getEffectiveMonthlySalary(person);
+      var sal = getEffectiveMonthlySalary(person, ym);
       var sumRate = (rates.cash || 0) + (rates.selfCash || 0) + (rates.inkind || 0);
       setCell(dataMap, project.id, ym, personId, {
         rates: rates,
@@ -2735,7 +2809,7 @@
     var srcAmount = srcCell[moneyField] || 0;
     if (srcAmount === 0) {
       // 폴백: source 셀에 값이 없으면 raw 계산값 사용 (이전 동작)
-      var monthlySalary = getEffectiveMonthlySalary(person);
+      var monthlySalary = getEffectiveMonthlySalary(person, fromYm);
       srcAmount = Math.round(monthlySalary * rate / 100);
     }
     var autoAmount = srcAmount;
@@ -2962,9 +3036,19 @@
 
   // 우클릭 컨텍스트 메뉴 — 예상 탭만, 참여율 셀(채우기)과 현금/현물 셀(버림)에서 표시
   function onCellContextMenu(e) {
+    // C3: 비교 탭 메모 셀(td, input 아님) — 예상행/실제행 참여율 셀에서 메모 추가/편집(메모 전용 메뉴)
+    var memoTd = e.target.closest && e.target.closest('.pl-compare-memocell');
+    if (memoTd && memoTd.dataset.personId && memoTd.dataset.ym && memoTd.dataset.mode) {
+      e.preventDefault();
+      showCellContextMenu(e.clientX, e.clientY, memoTd.dataset.personId, memoTd.dataset.ym, '0', 'rate', memoTd.dataset.mode);
+      return;
+    }
+
     var input = e.target;
     if (!input.classList || !input.classList.contains('pl-cell-input')) return;
-    if (input.dataset.mode !== 'planned') return;     // 예상 탭만
+    // C3: 예상 탭은 전체 메뉴, 실제 탭은 메모 전용 메뉴(showCellContextMenu에서 분기)
+    var cmMode = input.dataset.mode;
+    if (cmMode !== 'planned' && cmMode !== 'actual') return;
     var field = input.dataset.field;
     if (field !== 'rate' && field !== 'cash' && field !== 'inkind') return;
     e.preventDefault();
@@ -2974,15 +3058,31 @@
     var raw      = input.dataset.raw || '0';
     if (!personId || !ym) return;
 
-    showCellContextMenu(e.clientX, e.clientY, personId, ym, raw, field);
+    showCellContextMenu(e.clientX, e.clientY, personId, ym, raw, field, cmMode);
   }
 
   var _ctxMenuEl = null;
 
-  function showCellContextMenu(x, y, personId, ym, raw, field) {
+  function showCellContextMenu(x, y, personId, ym, raw, field, mode) {
     hideCellContextMenu();
+    mode = mode || 'planned';
     var menu = document.createElement('div');
     menu.className = 'pl-ctx-menu';
+
+    // C3: 실제 탭(비교 탭 실제행 포함) — 메모 전용 메뉴(값 편집/잠금/색은 예상 탭만)
+    if (mode === 'actual') {
+      var _aproj = getProject();
+      var _acell = _aproj ? (state.actual[getLaborKey(_aproj.id, ym, personId)] || {}) : {};
+      var _ahasMemo = !!(_acell.memo && _acell.memo.trim());
+      menu.innerHTML =
+        '<button type="button" class="pl-ctx-item" data-action="memo">' +
+          '💬 메모 ' + (_ahasMemo ? '편집' : '추가') +
+        '</button>';
+      document.body.appendChild(menu);
+      _ctxMenuEl = menu;
+      positionAndBindCtxMenu(menu, x, y, personId, ym, raw, field, mode);
+      return;
+    }
 
     // v5.3: 사용자 잠금 셀은 어느 필드든 '잠금 해제' 메뉴만 표시
     //   v7.4.3: 단, 메모는 값이 아닌 주석이므로 잠금과 무관하게 추가/편집 허용
@@ -3000,7 +3100,7 @@
         '</button>';
       document.body.appendChild(menu);
       _ctxMenuEl = menu;
-      positionAndBindCtxMenu(menu, x, y, personId, ym, raw, field);
+      positionAndBindCtxMenu(menu, x, y, personId, ym, raw, field, mode);
       return;
     }
 
@@ -3064,11 +3164,12 @@
     menu.innerHTML = html;
     document.body.appendChild(menu);
     _ctxMenuEl = menu;
-    positionAndBindCtxMenu(menu, x, y, personId, ym, raw, field);
+    positionAndBindCtxMenu(menu, x, y, personId, ym, raw, field, mode);
   }
 
   // v5.3: 메뉴 위치 보정 + 클릭 핸들러 — 공통화
-  function positionAndBindCtxMenu(menu, x, y, personId, ym, raw, field) {
+  // C3: mode(planned/actual) — 메모 팝오버 타깃 결정
+  function positionAndBindCtxMenu(menu, x, y, personId, ym, raw, field, mode) {
     // 화면 밖으로 나가지 않게 위치 보정
     var rect = menu.getBoundingClientRect();
     var maxX = window.innerWidth - rect.width - 8;
@@ -3095,7 +3196,7 @@
         var colorKey = btn.dataset.color || '';
         applyCellColor(personId, ym, field, colorKey || null);
       } else if (action === 'memo') {
-        openMemoPopover(personId, ym, 'planned', { left: x, top: y });
+        openMemoPopover(personId, ym, mode || 'planned', { left: x, top: y });
       }
     });
   }
@@ -3111,7 +3212,7 @@
   // v7.4.3 §4.1: 셀 메모 — 모서리 마커 + 편집 팝오버
   //   - 데이터: cell.memo (셀 키 {projectId}_{ym}_{personId}, 나눔도 동일 키)
   //   - 진입: 우클릭 메뉴 "메모" 항목 / 메모 있는 셀의 모서리 마커 클릭
-  //   - 편집은 예상(planned) 탭만. 실제 탭은 읽기전용, 비교 탭은 마커 없음.
+  //   - C3(v8.3): 예상·실제 탭 모두 편집(실제는 메모 전용 메뉴). 비교 탭은 예상행→planned·실제행→actual 마커+우클릭, 차이행 비허용.
   // ====================================================================
   function buildMemoMarker(personId, ym, mode, memo) {
     var mk = document.createElement('span');
@@ -3149,7 +3250,8 @@
     hideCellContextMenu();
     var project = getProject();
     if (!project) return;
-    var editable = (mode === 'planned');
+    // C3: 예상·실제 탭 모두 편집 가능(차이행은 호출 자체를 안 함). 비교 탭은 예상행→planned·실제행→actual.
+    var editable = (mode === 'planned' || mode === 'actual');
     var dataMap  = (mode === 'actual') ? state.actual : state.planned;
     var cell = getCell(dataMap, project.id, ym, personId);
     var memo = cell.memo || '';
@@ -4026,7 +4128,7 @@
           months.forEach(function (m) {
             var cell = getCell(dataMap, project.id, m.ym, person.id);
             if (cell.rate > 0) {
-              var amt = Math.round(getEffectiveMonthlySalary(person) * cell.rate / 100);
+              var amt = Math.round(getEffectiveMonthlySalary(person, m.ym) * cell.rate / 100);
               var patch = {};
               patch[targetField] = amt;
               otherFields.forEach(function (f) { patch[f] = 0; });   // 나머지 금액 0
@@ -4333,7 +4435,7 @@
       if (person) {
         var role = (state.personRoles && state.personRoles[entry.personId]) || {};
         targetMoneyField = moneyFieldOf(role.cashOrInkind);
-        var oldMoney  = Math.round(getEffectiveMonthlySalary(person) * oldVal / 100);
+        var oldMoney  = Math.round(getEffectiveMonthlySalary(person, entry.ym) * oldVal / 100);
         var p2 = {};
         p2[targetMoneyField] = oldMoney;
         setCell(dataMap, project.id, entry.ym, entry.personId, p2);
@@ -4360,7 +4462,7 @@
             var moneyInput = tr.querySelector('.pl-input-' + targetMoneyField + '[data-ym="' + entry.ym + '"]');
             if (moneyInput) {
               var person2 = _allPersons.find(function (p) { return p.id === entry.personId; });
-              var newMoney = person2 ? Math.round(getEffectiveMonthlySalary(person2) * oldVal / 100) : 0;
+              var newMoney = person2 ? Math.round(getEffectiveMonthlySalary(person2, entry.ym) * oldVal / 100) : 0;
               moneyInput.dataset.raw = String(newMoney);
               // 포커스 중이 아니므로 포맷팅된 표시값
               moneyInput.value = fmtCellMoneyDisplay(newMoney);

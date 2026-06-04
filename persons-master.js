@@ -24,6 +24,15 @@
   // 상태
   // ====================================================================
   var _persons = [];               // Firestore에서 받아온 원본 배열
+
+  // ====================================================================
+  // 연봉 슬롯 (공유 슬롯) — '실제'(annualSalary) 외 용도별 연봉
+  //   저장: person.salarySlots = { [슬롯명]: 연봉(원) }  (월급은 사용처에서 ceil/12)
+  //   가용 슬롯 = 기본 슬롯 ∪ 전체 인력 salarySlots 키 합집합 (별도 설정 문서 없음)
+  // ====================================================================
+  var DEFAULT_SALARY_SLOTS = ['제안서용(공개 가능)'];
+  var _modalSlotNames = [];        // 현재 열린 모달에서 보여줄 슬롯명 목록
+  var _modalSalaryChanges = [];    // §4.4: 현재 모달의 연봉 변경 시점 행 [{from, annualSalary}] (편집 중 raw)
   var _filter = {
     keyword: '',                   // 이름 검색
     status: 'active',              // 'all' | 'active' | 'exited'
@@ -1386,8 +1395,21 @@
       var annualVal = (person.annualSalary != null)
         ? person.annualSalary
         : (person.monthlySalary != null ? person.monthlySalary * 12 : '');
-      el.formAnnualSalary.value = (annualVal === null || annualVal === undefined) ? '' : annualVal;
+      el.formAnnualSalary.value = (annualVal === null || annualVal === undefined || annualVal === '') ? '' : fmtComma(annualVal);
       el.formMemo.value = person.memo || '';
+      // 연봉 슬롯: 가용 슬롯 ∪ 본인이 가진 슬롯 키
+      _modalSlotNames = getAvailableSlotNames();
+      if (person.salarySlots && typeof person.salarySlots === 'object') {
+        Object.keys(person.salarySlots).forEach(function (k) {
+          if (k && k !== '실제' && _modalSlotNames.indexOf(k) === -1) _modalSlotNames.push(k);
+        });
+      }
+      renderSalarySlots(person);
+      // §4.4 연봉 변경 시점
+      _modalSalaryChanges = sanitizeSalaryChanges(person.salaryChanges).map(function (c) {
+        return { from: c.from, annualSalary: c.annualSalary };
+      });
+      renderSalaryChanges();
     } else {
       el.formName.value          = '';
       setDateParts(el.formBirthY, el.formBirthM, el.formBirthD, null);
@@ -1399,6 +1421,10 @@
       if (el.formSsnTail) el.formSsnTail.value = '';
       el.formAnnualSalary.value  = '';
       el.formMemo.value          = '';
+      _modalSlotNames = getAvailableSlotNames();
+      renderSalarySlots(null);
+      _modalSalaryChanges = [];
+      renderSalaryChanges();
     }
 
     updateAnnualSalaryHint();
@@ -1598,8 +1624,8 @@
 
   function updateAnnualSalaryHint() {
     if (!el.annualSalaryHint || !el.formAnnualSalary) return;
-    var v = Number(el.formAnnualSalary.value);
-    if (!isNaN(v) && v > 0) {
+    var v = parseMoney(el.formAnnualSalary.value);
+    if (v != null && v > 0) {
       var monthly = Math.ceil(v / 12);
       el.annualSalaryHint.innerHTML =
         '월급 환산: <strong>' + monthly.toLocaleString('ko-KR') + '원/월</strong> (자동 저장됨)';
@@ -1608,6 +1634,251 @@
       el.annualSalaryHint.textContent = '비워두면 인건비 자동 계산에서 제외됩니다 (나중에 입력해도 OK)';
       el.annualSalaryHint.style.color = '';
     }
+  }
+
+  // 실제 연봉 입력 → 콤마 포맷(캐럿 끝) + 힌트 갱신
+  function onAnnualSalaryInput() {
+    if (!el.formAnnualSalary) return;
+    var n = parseMoney(el.formAnnualSalary.value);
+    el.formAnnualSalary.value = (n == null) ? '' : fmtComma(n);
+    updateAnnualSalaryHint();
+  }
+
+  // ====================================================================
+  // 연봉 슬롯 헬퍼
+  // ====================================================================
+  // 금액 파싱/포맷 (콤마 표시 ↔ 숫자)
+  function parseMoney(s) {
+    var d = String(s == null ? '' : s).replace(/[^\d]/g, '');
+    return d === '' ? null : Number(d);
+  }
+  function fmtComma(n) {
+    if (n == null || n === '' || isNaN(n)) return '';
+    return Number(n).toLocaleString('ko-KR');
+  }
+
+  // 슬롯명 정규화/검증 (Firestore 맵 키 안전 + 중복/예약어 방지)
+  function sanitizeSlotName(raw) {
+    var s = (raw || '').trim();
+    if (!s) return null;
+    if (s === '실제') return null;                 // 예약(실제 연봉)
+    if (/[.\/\[\]*~`#$]/.test(s)) return null;     // Firestore 키/표시 안전
+    if (s.length > 20) s = s.slice(0, 20);
+    return s;
+  }
+
+  // 가용 슬롯 = 기본 ∪ 전체 인력 salarySlots 키 (정렬: 기본 먼저, 그 외 가나다)
+  function getAvailableSlotNames() {
+    var seen = {};
+    var defaults = [];
+    DEFAULT_SALARY_SLOTS.forEach(function (n) { if (!seen[n]) { seen[n] = 1; defaults.push(n); } });
+    var others = [];
+    (_persons || []).forEach(function (p) {
+      var slots = p && p.salarySlots;
+      if (slots && typeof slots === 'object') {
+        Object.keys(slots).forEach(function (k) {
+          if (k && k !== '실제' && !seen[k]) { seen[k] = 1; others.push(k); }
+        });
+      }
+    });
+    others.sort(function (a, b) { return a.localeCompare(b, 'ko'); });
+    return defaults.concat(others);
+  }
+
+  // ====================================================================
+  // §4.4 1단계 — 연봉 변경 시점 (연중 인상 등)
+  //   person.salaryChanges = [{ from:'YYYY-MM', annualSalary:원 }, ...]
+  //     · 그 달(from)부터 새 연봉, 그 전까지는 기본 annualSalary (계단식)
+  //     · 비어 있으면 1년 내내 기본 annualSalary = 기존 동작과 100% 동일(안전)
+  //   ⚠️ 2단계(project-labor)·3단계(project-budget)에서 같은 해석을 써야 하므로
+  //      거기로 갈 때 getAnnualSalaryAt/getMonthlySalaryAt을 공용 위치로 승격 예정.
+  // ====================================================================
+
+  // 'YYYY-MM' / 'YYYY.M' / 'YYYY/M' → 'YYYY-MM' (월 01~12), 그 외 null
+  function normalizeYm(s) {
+    var m = String(s == null ? '' : s).trim().match(/^(\d{4})\s*[-.\/]?\s*(\d{1,2})$/);
+    if (!m) return null;
+    var mo = parseInt(m[2], 10);
+    if (mo < 1 || mo > 12) return null;
+    return m[1] + '-' + (mo < 10 ? '0' + mo : '' + mo);
+  }
+
+  // 변경 시점 배열 정규화: from=YYYY-MM·연봉>0만, 같은 달 중복은 마지막 값, from 오름차순
+  //   (annualSalary는 숫자 또는 콤마 문자열 '72,000,000' 모두 허용)
+  function sanitizeSalaryChanges(arr) {
+    if (!Array.isArray(arr)) return [];
+    var map = {};
+    arr.forEach(function (c) {
+      if (!c) return;
+      var ym = normalizeYm(c.from);
+      var digits = String(c.annualSalary == null ? '' : c.annualSalary).replace(/[^\d]/g, '');
+      var sal = digits === '' ? null : Math.round(Number(digits));
+      if (ym && sal != null && sal > 0) map[ym] = sal;
+    });
+    return Object.keys(map).sort().map(function (ym) {
+      return { from: ym, annualSalary: map[ym] };
+    });
+  }
+
+  // 특정 월(ym='YYYY-MM')의 연봉 = from<=ym 인 가장 최근 변경값, 없으면 기본 annualSalary
+  function getAnnualSalaryAt(person, ym) {
+    if (!person) return 0;
+    var base = (person.annualSalary != null && !isNaN(person.annualSalary)) ? Number(person.annualSalary) : 0;
+    var changes = sanitizeSalaryChanges(person.salaryChanges);
+    if (!changes.length || !ym) return base;
+    var picked = base;
+    changes.forEach(function (c) { if (c.from <= ym) picked = c.annualSalary; });
+    return picked;
+  }
+  function getMonthlySalaryAt(person, ym) {
+    var a = getAnnualSalaryAt(person, ym);
+    return a ? Math.ceil(a / 12) : 0;
+  }
+
+  // 현재 모달의 슬롯 행 렌더 (person=편집 대상 또는 null)
+  function renderSalarySlots(person) {
+    if (!el.formSalarySlots) return;
+    var slots = (person && person.salarySlots && typeof person.salarySlots === 'object') ? person.salarySlots : {};
+    if (!_modalSlotNames.length) {
+      el.formSalarySlots.innerHTML = '<div class="pm-slots-empty">항목이 없습니다. "+ 항목 추가"로 만들 수 있어요.</div>';
+      return;
+    }
+    el.formSalarySlots.innerHTML = _modalSlotNames.map(function (name) {
+      var v = slots[name];
+      var val = (v != null && !isNaN(v)) ? v : '';
+      var monthly = val !== '' ? Math.ceil(Number(val) / 12) : null;
+      return '<div class="pm-slot-row" data-slot="' + escAttr(name) + '">' +
+        '<span class="pm-slot-name">' + escHtml(name) + '</span>' +
+        '<div class="pm-slot-fields">' +
+          '<input type="text" inputmode="numeric" autocomplete="off" class="pm-slot-input" data-slot="' + escAttr(name) + '" ' +
+            'placeholder="비우면 실제 연봉 사용" value="' + (val === '' ? '' : fmtComma(val)) + '">' +
+          '<span class="pm-slot-monthly">' + (monthly != null ? '월 ' + monthly.toLocaleString('ko-KR') + '원' : '—') + '</span>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+  }
+
+  function escHtml(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+  function escAttr(s) { return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;'); }
+
+  // 슬롯 입력 → 콤마 포맷 + 월급 미리보기 갱신
+  function onSlotInput(e) {
+    var input = e.target;
+    if (!input || !input.classList || !input.classList.contains('pm-slot-input')) return;
+    var n = parseMoney(input.value);
+    input.value = (n == null) ? '' : fmtComma(n);          // 콤마 표시(캐럿 끝)
+    var row = input.closest('.pm-slot-row');
+    if (!row) return;
+    var span = row.querySelector('.pm-slot-monthly');
+    if (!span) return;
+    span.textContent = (n != null && n >= 0) ? ('월 ' + Math.ceil(n / 12).toLocaleString('ko-KR') + '원') : '—';
+  }
+
+  // "+ 슬롯 추가"
+  function onAddSlot() {
+    var raw = window.prompt('예산 전용 연봉 항목 이름을 입력하세요. (예: 제안서용(공개 가능), 낮춤값)');
+    if (raw == null) return;
+    var name = sanitizeSlotName(raw);
+    if (!name) { alert('사용할 수 없는 이름입니다. ("실제"·특수문자 불가)'); return; }
+    if (_modalSlotNames.indexOf(name) !== -1) { alert('이미 있는 항목입니다: ' + name); return; }
+    _modalSlotNames.push(name);
+    // 현재 입력값 보존하며 재렌더
+    renderSalarySlots({ salarySlots: collectSalarySlotsFromForm() });
+  }
+
+  // 폼의 슬롯 입력값 수집 → { 슬롯명: 연봉 } (빈 값 제외)
+  function collectSalarySlotsFromForm() {
+    var out = {};
+    if (!el.formSalarySlots) return out;
+    var inputs = el.formSalarySlots.querySelectorAll('.pm-slot-input');
+    Array.prototype.forEach.call(inputs, function (inp) {
+      var name = inp.dataset.slot;
+      var n = parseMoney(inp.value);
+      if (!name || n == null || n < 0) return;
+      out[name] = Math.round(n);
+    });
+    return out;
+  }
+
+  // ===== §4.4 연봉 변경 시점 UI =====
+
+  // _modalSalaryChanges 배열로 행 렌더 (편집 중 raw 값 그대로)
+  function renderSalaryChanges() {
+    if (!el.formSalaryChanges) return;
+    if (!_modalSalaryChanges.length) {
+      el.formSalaryChanges.innerHTML = '<div class="pm-slots-empty">변경 시점이 없습니다. 연중에 연봉이 바뀌면 "+ 변경 시점 추가".</div>';
+      return;
+    }
+    el.formSalaryChanges.innerHTML = _modalSalaryChanges.map(function (c, i) {
+      var fromVal = (c && c.from != null) ? c.from : '';
+      var salRaw = (c && c.annualSalary != null && c.annualSalary !== '') ? c.annualSalary : '';
+      var salNum = parseMoney(salRaw);
+      var salDisp = (salNum == null) ? '' : fmtComma(salNum);
+      var monthly = (salNum != null && salNum >= 0) ? Math.ceil(salNum / 12) : null;
+      return '<div class="pm-change-row" data-idx="' + i + '">' +
+        '<input type="text" inputmode="numeric" autocomplete="off" class="pm-change-from" data-idx="' + i + '" ' +
+          'placeholder="2026-07" value="' + escAttr(fromVal) + '" maxlength="7">' +
+        '<span class="pm-change-arrow">→</span>' +
+        '<input type="text" inputmode="numeric" autocomplete="off" class="pm-change-salary" data-idx="' + i + '" ' +
+          'placeholder="새 연봉(원)" value="' + escAttr(salDisp) + '">' +
+        '<span class="pm-change-monthly">' + (monthly != null ? '월 ' + monthly.toLocaleString('ko-KR') + '원' : '—') + '</span>' +
+        '<button type="button" class="pm-change-del" data-idx="' + i + '" title="삭제">✕</button>' +
+      '</div>';
+    }).join('');
+  }
+
+  // 현재 DOM 입력값을 _modalSalaryChanges 로 동기화 (구조 변경 전 호출)
+  function syncSalaryChangesFromDom() {
+    if (!el.formSalaryChanges) return;
+    var rows = el.formSalaryChanges.querySelectorAll('.pm-change-row');
+    var next = [];
+    Array.prototype.forEach.call(rows, function (row) {
+      var fromInp = row.querySelector('.pm-change-from');
+      var salInp = row.querySelector('.pm-change-salary');
+      next.push({
+        from: fromInp ? (fromInp.value || '').trim() : '',
+        annualSalary: salInp ? salInp.value : ''
+      });
+    });
+    _modalSalaryChanges = next;
+  }
+
+  function onAddSalaryChange() {
+    syncSalaryChangesFromDom();
+    _modalSalaryChanges.push({ from: '', annualSalary: '' });
+    renderSalaryChanges();
+  }
+
+  // 입력 중: 연봉칸 콤마 포맷 + 월급 미리보기 (재렌더 없이 해당 행만)
+  function onSalaryChangeInput(e) {
+    var input = e.target;
+    if (!input || !input.classList) return;
+    var row = input.closest('.pm-change-row');
+    if (!row) return;
+    if (input.classList.contains('pm-change-salary')) {
+      var n = parseMoney(input.value);
+      input.value = (n == null) ? '' : fmtComma(n);
+      var span = row.querySelector('.pm-change-monthly');
+      if (span) span.textContent = (n != null && n >= 0) ? ('월 ' + Math.ceil(n / 12).toLocaleString('ko-KR') + '원') : '—';
+    }
+  }
+
+  // 삭제 버튼 (위임)
+  function onSalaryChangeClick(e) {
+    var btn = e.target;
+    if (!btn || !btn.classList || !btn.classList.contains('pm-change-del')) return;
+    syncSalaryChangesFromDom();
+    var idx = parseInt(btn.dataset.idx, 10);
+    if (!isNaN(idx)) {
+      _modalSalaryChanges.splice(idx, 1);
+      renderSalaryChanges();
+    }
+  }
+
+  // 폼 → 정규화된 변경 시점 배열
+  function collectSalaryChangesFromForm() {
+    syncSalaryChangesFromDom();
+    return sanitizeSalaryChanges(_modalSalaryChanges);
   }
 
   function readForm() {
@@ -1686,17 +1957,15 @@
 
     var isYouth = !!el.formIsYouth.checked;
 
-    // 연봉
-    var salaryStr = (el.formAnnualSalary.value || '').trim();
-    var annualSalary = null;
+    // 연봉 (콤마 허용)
+    var annualSalary = parseMoney(el.formAnnualSalary.value);
     var monthlySalary = null;
-    if (salaryStr !== '') {
-      var n = Number(salaryStr);
-      if (isNaN(n) || n < 0) {
+    if (annualSalary != null) {
+      if (annualSalary < 0) {
         showFormError('연봉은 0 이상의 숫자여야 해요.', el.formAnnualSalary);
         return null;
       }
-      annualSalary = Math.round(n);
+      annualSalary = Math.round(annualSalary);
       monthlySalary = Math.ceil(annualSalary / 12);
     }
 
@@ -1719,6 +1988,8 @@
       isYouth: isYouth,
       annualSalary: annualSalary,
       monthlySalary: monthlySalary,
+      salarySlots: collectSalarySlotsFromForm(),
+      salaryChanges: collectSalaryChangesFromForm(),
       memo: memo,
       status: status
     };
@@ -1815,7 +2086,20 @@
       });
     }
     if (el.formAnnualSalary) {
-      el.formAnnualSalary.addEventListener('input', updateAnnualSalaryHint);
+      el.formAnnualSalary.addEventListener('input', onAnnualSalaryInput);
+    }
+    if (el.formAddSlot) {
+      el.formAddSlot.addEventListener('click', onAddSlot);
+    }
+    if (el.formSalarySlots) {
+      el.formSalarySlots.addEventListener('input', onSlotInput);
+    }
+    if (el.formAddSalaryChange) {
+      el.formAddSalaryChange.addEventListener('click', onAddSalaryChange);
+    }
+    if (el.formSalaryChanges) {
+      el.formSalaryChanges.addEventListener('input', onSalaryChangeInput);
+      el.formSalaryChanges.addEventListener('click', onSalaryChangeClick);
     }
 
     // Y/M/D 3칸 자동 이동
@@ -2004,6 +2288,40 @@
     { key: 'memo',       header: '메모',             width: 25 }
   ];
 
+  // C6 3단계 — 예산 전용 연봉(슬롯) 엑셀 컬럼
+  //   헤더: '연봉:' + 슬롯명 (예: '연봉:제안서용(공개 가능)')
+  //   '연봉(원)'(실제 연봉)은 '연봉(' 로 시작해 충돌 없음 → '연봉:' 접두로 슬롯만 식별
+  var SLOT_COL_PREFIX = '연봉:';
+
+  // 가용 슬롯(기본 ∪ 전 인력 키 합집합)을 다운로드/업로드 컬럼 정의로
+  function getSlotColumns() {
+    return getAvailableSlotNames().map(function (name) {
+      return { key: 'slot:' + name, header: SLOT_COL_PREFIX + name, width: 16, slotName: name, isSlot: true };
+    });
+  }
+
+  // 고정 컬럼 + 슬롯 컬럼 (슬롯은 '연봉(원)' 바로 뒤에 삽입)
+  function getBulkColumns() {
+    var cols = [];
+    var slotCols = getSlotColumns();
+    BULK_COLUMNS.forEach(function (c) {
+      cols.push(c);
+      if (c.key === 'annualSalary') {
+        slotCols.forEach(function (sc) { cols.push(sc); });
+      }
+    });
+    return cols;
+  }
+
+  // 금액 셀 파싱 (콤마/공백/'원' 제거 → 0 이상 정수, 그 외 null)
+  function parseSalaryCell(raw) {
+    if (raw === '' || raw == null) return null;
+    var s = String(raw).replace(/[,\s원]/g, '');
+    var n = Number(s);
+    if (!isNaN(n) && n >= 0) return Math.round(n);
+    return null;
+  }
+
   function formatGenderForExcel(g) {
     if (g === 'M') return '남';
     if (g === 'F') return '여';
@@ -2040,8 +2358,10 @@
       return na < nb ? -1 : (na > nb ? 1 : 0);
     });
 
+    var slotCols = getSlotColumns();
     return sorted.map(function (p, idx) {
-      return {
+      var slots = (p.salarySlots && typeof p.salarySlots === 'object') ? p.salarySlots : {};
+      var rowObj = {
         no: idx + 1,
         id: p.id || '',
         company: p.company || '',
@@ -2055,6 +2375,12 @@
         isYouth: formatBoolForExcel(!!p.isYouth),
         memo: p.memo || ''
       };
+      // C6 3단계: 예산 전용 연봉(슬롯) 값
+      slotCols.forEach(function (sc) {
+        var v = slots[sc.slotName];
+        rowObj[sc.key] = (v != null && !isNaN(v)) ? v : '';
+      });
+      return rowObj;
     });
   }
 
@@ -2070,33 +2396,34 @@
       return;
     }
 
-    // 2D 배열로 변환 (헤더 + 데이터)
-    var headers = BULK_COLUMNS.map(function (c) { return c.header; });
+    // 2D 배열로 변환 (헤더 + 데이터). C6 3단계: 고정 컬럼 + 슬롯 컬럼
+    var cols = getBulkColumns();
+    var headers = cols.map(function (c) { return c.header; });
     var data = [headers];
     rows.forEach(function (r) {
-      data.push(BULK_COLUMNS.map(function (c) { return r[c.key]; }));
+      data.push(cols.map(function (c) { return r[c.key]; }));
     });
 
     var ws = XLSX.utils.aoa_to_sheet(data);
 
     // 컬럼 너비 설정
-    ws['!cols'] = BULK_COLUMNS.map(function (c) { return { wch: c.width }; });
+    ws['!cols'] = cols.map(function (c) { return { wch: c.width }; });
 
-    // 연봉 컬럼(annualSalary)을 숫자 형식으로 (천단위 콤마)
-    var annualColIdx = -1;
-    for (var i = 0; i < BULK_COLUMNS.length; i++) {
-      if (BULK_COLUMNS[i].key === 'annualSalary') { annualColIdx = i; break; }
+    // 금액 컬럼(실제 연봉 + 슬롯)을 숫자 형식으로 (천단위 콤마)
+    var moneyColIdxs = [];
+    for (var i = 0; i < cols.length; i++) {
+      if (cols[i].key === 'annualSalary' || cols[i].isSlot) moneyColIdxs.push(i);
     }
-    if (annualColIdx >= 0) {
+    moneyColIdxs.forEach(function (ci) {
       for (var r = 1; r < data.length; r++) {
-        var cellAddr = XLSX.utils.encode_cell({ r: r, c: annualColIdx });
+        var cellAddr = XLSX.utils.encode_cell({ r: r, c: ci });
         var cell = ws[cellAddr];
         if (cell && typeof cell.v === 'number') {
           cell.t = 'n';
           cell.z = '#,##0';
         }
       }
-    }
+    });
 
     var wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, '인력 마스터');
@@ -2144,6 +2471,17 @@
             });
           });
 
+          // C6 3단계: '연봉:슬롯명' 헤더 → 슬롯 컬럼 매핑
+          //   ('연봉(원)'은 '연봉(' 으로 시작해 '연봉:' 접두와 충돌 없음)
+          var slotColMap = [];   // [{ slotName, idx }]
+          headerRow.forEach(function (cell, idx) {
+            var h = String(cell == null ? '' : cell).trim();
+            if (h.indexOf(SLOT_COL_PREFIX) === 0) {
+              var slotName = sanitizeSlotName(h.slice(SLOT_COL_PREFIX.length));
+              if (slotName) slotColMap.push({ slotName: slotName, idx: idx });
+            }
+          });
+
           // 필수 컬럼 확인: id, 이름
           if (colIdx.id < 0 || colIdx.name < 0) {
             reject(new Error(
@@ -2186,6 +2524,13 @@
               }
             }
 
+            // C6 3단계: 슬롯 컬럼 → salarySlots (양수만, 빈 칸은 미설정)
+            var salarySlots = {};
+            slotColMap.forEach(function (sc) {
+              var sv = parseSalaryCell(row[sc.idx]);
+              if (sv != null && sv > 0) salarySlots[sc.slotName] = sv;
+            });
+
             result.push({
               id: id || null,
               name: name,
@@ -2198,6 +2543,7 @@
               annualSalary: annualSalary,
               isYouth: colIdx.isYouth >= 0 ? parseBoolFromExcel(row[colIdx.isYouth]) : false,
               memo: colIdx.memo >= 0 ? String(row[colIdx.memo] || '').trim() : '',
+              salarySlots: salarySlots,
               _rowNum: r + 1  // 사용자가 엑셀에서 보는 행 번호 (에러 메시지용)
             });
           }
@@ -2288,6 +2634,18 @@
           existing.memo = row.memo || '';
           changed = true;
         }
+        // C6 3단계: 예산 전용 연봉(슬롯) — 비어있지 않은 슬롯만 병합(비파괴)
+        //   (빈 칸은 변경 없음 = 실제 연봉과 동일 규칙. 슬롯 삭제는 편집 모달에서)
+        if (row.salarySlots && Object.keys(row.salarySlots).length) {
+          var curSlots = (existing.salarySlots && typeof existing.salarySlots === 'object') ? existing.salarySlots : {};
+          var mergedSlots = {};
+          Object.keys(curSlots).forEach(function (k) { mergedSlots[k] = curSlots[k]; });
+          var slotChanged = false;
+          Object.keys(row.salarySlots).forEach(function (k) {
+            if (mergedSlots[k] !== row.salarySlots[k]) { mergedSlots[k] = row.salarySlots[k]; slotChanged = true; }
+          });
+          if (slotChanged) { existing.salarySlots = mergedSlots; changed = true; }
+        }
 
         if (changed) {
           existing.updatedAt = new Date().toISOString();
@@ -2344,6 +2702,10 @@
           createdAt: now,
           updatedAt: now
         };
+        // C6 3단계: 신규 인력의 예산 전용 연봉(슬롯)
+        if (row.salarySlots && Object.keys(row.salarySlots).length) {
+          newPerson.salarySlots = row.salarySlots;
+        }
         list.push(newPerson);
         idToPerson[newPerson.id] = newPerson;
         added++;
@@ -2641,6 +3003,10 @@
     el.formIsYouth       = $('form-is-youth');
     el.formAnnualSalary  = $('form-annual-salary');
     el.annualSalaryHint  = $('annual-salary-hint');
+    el.formSalarySlots   = $('form-salary-slots');
+    el.formAddSlot       = $('form-add-slot');
+    el.formSalaryChanges = $('form-salary-changes');
+    el.formAddSalaryChange = $('form-add-salary-change');
     el.formExitDateRow   = $('form-exit-date-row');
     el.formMemo          = $('form-memo');
 
