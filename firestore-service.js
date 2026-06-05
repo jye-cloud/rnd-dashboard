@@ -712,6 +712,144 @@
     return !!configured;
   }
 
+  // ====================================================================
+  // §4.4 — 마스터 연봉 변경 시점(연중 인상) 해석 — 공용 유틸 (window.SalaryUtil)
+  //   person.salaryChanges = [{ from:'YYYY-MM', annualSalary:원 }, ...]
+  //     · 그 달(from)부터 새 연봉, 그 전까지는 기본 annualSalary (계단식)
+  //     · 비어 있으면 1년 내내 기본 annualSalary = 기존 동작과 100% 동일(안전)
+  //   ※ 단일 진실 소스. persons-master·project-labor·project-budget가 모두 참조.
+  //      (firestore-service는 전 페이지가 먼저 로드하므로 window.SalaryUtil 보장.)
+  // ====================================================================
+
+  // 'YYYY-MM' / 'YYYY.M' / 'YYYY/M' → 'YYYY-MM' (월 01~12), 그 외 null
+  function salaryNormalizeYm(s) {
+    var m = String(s == null ? '' : s).trim().match(/^(\d{4})\s*[-.\/]?\s*(\d{1,2})$/);
+    if (!m) return null;
+    var mo = parseInt(m[2], 10);
+    if (mo < 1 || mo > 12) return null;
+    return m[1] + '-' + (mo < 10 ? '0' + mo : '' + mo);
+  }
+
+  // 변경 시점 배열 정규화: from=YYYY-MM·연봉>0만, 같은 달 중복은 마지막 값, from 오름차순
+  //   (annualSalary는 숫자 또는 콤마 문자열 '72,000,000' 모두 허용)
+  function salarySanitizeChanges(arr) {
+    if (!Array.isArray(arr)) return [];
+    var map = {};
+    arr.forEach(function (c) {
+      if (!c) return;
+      var ym = salaryNormalizeYm(c.from);
+      var digits = String(c.annualSalary == null ? '' : c.annualSalary).replace(/[^\d]/g, '');
+      var sal = digits === '' ? null : Math.round(Number(digits));
+      if (ym && sal != null && sal > 0) map[ym] = sal;
+    });
+    return Object.keys(map).sort().map(function (ym) {
+      return { from: ym, annualSalary: map[ym] };
+    });
+  }
+
+  // 특정 월(ym='YYYY-MM')의 연봉 = from<=ym 인 가장 최근 변경값, 없으면 기본 annualSalary
+  function salaryAnnualAt(person, ym) {
+    if (!person) return 0;
+    var base = (person.annualSalary != null && !isNaN(person.annualSalary)) ? Number(person.annualSalary) : 0;
+    var changes = salarySanitizeChanges(person.salaryChanges);
+    if (!changes.length || !ym) return base;
+    var picked = base;
+    changes.forEach(function (c) { if (c.from <= ym) picked = c.annualSalary; });
+    return picked;
+  }
+  function salaryMonthlyAt(person, ym) {
+    var a = salaryAnnualAt(person, ym);
+    return a ? Math.ceil(a / 12) : 0;
+  }
+
+  window.SalaryUtil = {
+    normalizeYm: salaryNormalizeYm,
+    sanitizeSalaryChanges: salarySanitizeChanges,
+    getAnnualSalaryAt: salaryAnnualAt,
+    getMonthlySalaryAt: salaryMonthlyAt
+  };
+
+  // ====================================================================
+  // 연도 필터 드롭다운 공용 (window.YearFilterUtil)
+  //   과제 데이터(시작/종료/제출일 + 연차 yearBudgets)에서 연도를 모아 드롭다운을
+  //   동적 구성. HTML 하드코딩 대신 이걸 호출하면 이후 연도가 자동으로 보임.
+  //   ※ 단일 진실 소스. projects·projects-history·dashboard·funding·labor-dashboard 공유.
+  // ====================================================================
+  function yearCollectFromProjects(items) {
+    var ys = {};
+    function add(s) {
+      var y = String(s == null ? '' : s).slice(0, 4);
+      if (/^\d{4}$/.test(y)) ys[y] = true;
+    }
+    (Array.isArray(items) ? items : []).forEach(function (it) {
+      if (!it) return;
+      add(it.startDate || it.start || it['시작일']);
+      add(it.endDate || it.end || it['종료일']);
+      add(it.submitDate || it['제출일']);
+      var arr = it.yearBudgets || it.annualData || it.budgets || [];
+      if (Array.isArray(arr)) arr.forEach(function (yb) {
+        if (!yb) return;
+        add(yb.startDate || yb.start);
+        add(yb.endDate || yb.end);
+        if (yb.year != null) add(String(yb.year));
+      });
+    });
+    return Object.keys(ys).map(Number).filter(function (n) { return n >= 2000 && n <= 2100; })
+      .sort(function (a, b) { return b - a; });
+  }
+
+  // selectEl 옵션을 (데이터 연도 ∪ 올해)의 min~max 연속 내림차순으로 재구성.
+  //   opts:
+  //     includeAll   (bool)        "전체" 옵션을 맨 위에
+  //     allLabel     (string)      "전체" 라벨 (기본 '전체')
+  //     storageKey   (string|null) sessionStorage 키 — 있으면 저장값 읽어 선택(쓰진 않음)
+  //     preferredValue (string|null) 최우선 선택값 (예: URL ?year=)
+  //     defaultValue (string|null) 폴백 선택값. '' = 전체, 'YYYY' = 그 연도, 미지정/ null = 올해
+  //   선택 우선순위: preferredValue > sessionStorage > defaultValue > 올해 > (전체 or 최신연도)
+  //   범위가 그대로면(같은 select) 재구성/포커스 방해 없이 그대로 둠.
+  function yearPopulate(selectEl, items, opts) {
+    if (!selectEl) return;
+    opts = opts || {};
+    var includeAll = !!opts.includeAll;
+    var allLabel = opts.allLabel || '전체';
+    var cur = (new Date()).getFullYear();
+
+    var years = yearCollectFromProjects(items);
+    years.push(cur); // 올해는 항상 포함(기본값 보장)
+    if (opts.defaultValue != null && /^\d{4}$/.test(String(opts.defaultValue))) years.push(Number(opts.defaultValue));
+    var maxY = Math.max.apply(null, years);
+    var minY = Math.min.apply(null, years);
+
+    var sig = (includeAll ? 'A:' + allLabel + ':' : '') + minY + '_' + maxY;
+    if (selectEl.getAttribute('data-yrange') === sig) return; // 변화 없음 — 그대로
+    selectEl.setAttribute('data-yrange', sig);
+
+    var html = includeAll ? '<option value="">' + allLabel + '</option>' : '';
+    for (var y = maxY; y >= minY; y--) html += '<option value="' + y + '">' + y + '년</option>';
+    selectEl.innerHTML = html;
+
+    function hasOpt(v) {
+      if (v == null) return false;
+      v = String(v);
+      for (var i = 0; i < selectEl.options.length; i++) if (selectEl.options[i].value === v) return true;
+      return false;
+    }
+    var want = (opts.preferredValue != null) ? String(opts.preferredValue) : null;
+    if (want == null && opts.storageKey) {
+      try { var s = sessionStorage.getItem(opts.storageKey); if (s !== null) want = s; } catch (e) {}
+    }
+    if (want == null) want = (opts.defaultValue != null) ? String(opts.defaultValue) : String(cur);
+
+    if (hasOpt(want)) selectEl.value = want;
+    else if (hasOpt(String(cur))) selectEl.value = String(cur);
+    else selectEl.value = includeAll ? '' : String(maxY);
+  }
+
+  window.YearFilterUtil = {
+    collectYears: yearCollectFromProjects,
+    populate: yearPopulate
+  };
+
   window.firestoreService = {
     isConfigured: isConfigured,
     getHrData: getHrData,

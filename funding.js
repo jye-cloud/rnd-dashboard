@@ -108,6 +108,23 @@
     return { planned: planned, actual: actual };
   }
 
+  // 연차의 정산 차감(이자 반납 등) 합 + 귀속 연도(가: 마지막 예정 입금 연도, 없으면 종료/시작일 연도)
+  function getYbDeduction(yb) {
+    var sum = 0;
+    if (yb && Array.isArray(yb.deductions)) {
+      yb.deductions.forEach(function (d) { sum += Number((d && d.amount) || 0); });
+    }
+    if (sum <= 0) return { amount: 0, year: '' };
+    var pays = getPaymentsFromYb(yb);
+    var lastY = '';
+    pays.planned.forEach(function (p) {
+      var y = getYearFromDate(p.date);
+      if (y && Number(p.amount || 0) > 0 && y > lastY) lastY = y;  // 'YYYY' 문자열 비교 = 최신 연도
+    });
+    var year = lastY || getYearFromDate(yb.endDate) || getYearFromDate(yb.startDate) || '';
+    return { amount: sum, year: year };
+  }
+
   function getYearFromDate(s) { return (s || '').toString().slice(0, 4); }
   function getMonthFromDate(s) {
     var v = (s || '').toString().slice(5, 7);
@@ -161,6 +178,7 @@
     var monthActTask  = 0, monthActOther  = 0;
     var yearPlanTask  = 0, yearPlanOther  = 0;
     var yearActTask   = 0, yearActOther   = 0;
+    var yearDedTask   = 0, yearDedOther   = 0;
 
     items.forEach(function (it) {
       var isTask = (it.division1 === '과제');
@@ -189,6 +207,10 @@
             if (isTask) monthActTask += amt; else monthActOther += amt;
           }
         });
+        var ded = getYbDeduction(yb);
+        if (ded.amount > 0 && ded.year === currentYear) {
+          if (isTask) yearDedTask += ded.amount; else yearDedOther += ded.amount;
+        }
       });
     });
 
@@ -218,9 +240,9 @@
     setEl('funding-sum-year-actual',        formatNum(yearAct));
     setEl('funding-sum-year-actual-task',   formatNum(yearActTask));
     setEl('funding-sum-year-actual-other',  formatNum(yearActOther));
-    setEl('funding-sum-year-rate',          formatNum(unpaid(yearPlan,      yearAct)));
-    setEl('funding-sum-year-rate-task',     formatNum(unpaid(yearPlanTask,  yearActTask)));
-    setEl('funding-sum-year-rate-other',    formatNum(unpaid(yearPlanOther, yearActOther)));
+    setEl('funding-sum-year-rate',          formatNum(Math.max(0, yearPlan      - yearAct      - (yearDedTask + yearDedOther))));
+    setEl('funding-sum-year-rate-task',     formatNum(Math.max(0, yearPlanTask  - yearActTask  - yearDedTask)));
+    setEl('funding-sum-year-rate-other',    formatNum(Math.max(0, yearPlanOther - yearActOther - yearDedOther)));
   }
 
   // ===== 과제별 입금 추적 표 (v6.2: 누적 차이 3행 구조)
@@ -301,6 +323,9 @@
           totalPc += b.pc; totalAc += b.ac;
         });
 
+        var dedInfo = getYbDeduction(yb);
+        var rowDeduction = (dedInfo.amount > 0 && dedInfo.year === currentYear) ? dedInfo.amount : 0;
+
         rows.push({
           name: it.keywords || it.keyword || it['키워드'] || it.projectName || '(이름 없음)',
           cha: (ybIdx + 1) + '차',
@@ -311,6 +336,7 @@
           totalP: totalP, totalA: totalA,
           totalPc: totalPc, totalAc: totalAc,
           totalCumDiff: cumDiffs[numBins - 1] || 0,
+          deduction: rowDeduction,
           sortDate: (it.startDate || yb.startDate || ''),
           ybIdx: ybIdx
         });
@@ -360,6 +386,8 @@
     }
     var totalTotalP = 0, totalTotalA = 0;
     rows.forEach(function (r) { totalTotalP += r.totalP; totalTotalA += r.totalA; });
+    var grandDeduction = 0;
+    rows.forEach(function (r) { grandDeduction += (r.deduction || 0); });
     var grandTotalCumDiff = totalCumDiffs[numBins - 1] || 0;
 
     // ── 셀 HTML 헬퍼 (미수 컨셉: 음수는 표시 안 함) ─────────
@@ -407,7 +435,8 @@
                      'style="color:#1d4ed8;text-decoration:none;">' + escapeHtml(r.name) + '</a> ' +
                      '<span class="f-cha">' + r.cha + '</span>';
 
-      var unpaidTotalRes = unpaidTotalResult(r.totalCumDiff, r.totalA > 0);
+      var adjCumDiff = r.totalCumDiff - (r.deduction || 0);
+      var unpaidTotalRes = unpaidTotalResult(adjCumDiff, (r.totalA > 0 || (r.deduction || 0) > 0));
       var isCompleted = unpaidTotalRes.isCompleted;
 
       // 완료인 경우 예정 셀에 취소선 + 진한 회색 적용
@@ -441,10 +470,21 @@
         actualCells +
         '<td class="f-cell f-cell-total">' + (r.totalA > 0 ? formatNum(r.totalA) : '-') + '</td>' +
       '</tr>';
+      var dedNote = (r.deduction || 0) > 0
+        ? '<div style="font-size:0.7rem;color:#f97316;margin-top:2px;font-weight:600;">반납 ' + formatNum(r.deduction) + ' 반영</div>'
+        : '';
+      var unpaidTotalCell;
+      if ((r.deduction || 0) > 0) {
+        unpaidTotalCell = (adjCumDiff <= 0)
+          ? '<td class="f-cell"><span class="f-completed-badge">✓ 완료</span>' + dedNote + '</td>'
+          : '<td class="f-cell f-cell-diff-positive">' + formatNum(adjCumDiff) + dedNote + '</td>';
+      } else {
+        unpaidTotalCell = unpaidTotalHtml(r.totalCumDiff, r.totalA > 0);
+      }
       var unpaidRow = '<tr class="f-row-trio-bot">' +
         '<td class="f-kind f-kind-diff">미수</td>' +
         unpaidCells +
-        unpaidTotalHtml(r.totalCumDiff, r.totalA > 0) +
+        unpaidTotalCell +
       '</tr>';
       return plannedRow + actualRow + unpaidRow;
     }).join('');
@@ -469,7 +509,11 @@
       '<tr class="f-row-grand-bot">' +
         '<td class="f-kind f-kind-diff"><strong>미수</strong></td>' +
         totalUnpaidCells +
-        unpaidTotalHtml(grandTotalCumDiff, totalTotalA > 0) +
+        (grandDeduction > 0
+          ? ((grandTotalCumDiff - grandDeduction) <= 0
+              ? '<td class="f-cell"><span class="f-completed-badge">✓ 완료</span><div style="font-size:0.7rem;color:#f97316;margin-top:2px;font-weight:600;">반납 ' + formatNum(grandDeduction) + ' 반영</div></td>'
+              : '<td class="f-cell f-cell-diff-positive"><strong>' + formatNum(grandTotalCumDiff - grandDeduction) + '</strong><div style="font-size:0.7rem;color:#f97316;margin-top:2px;font-weight:600;">반납 ' + formatNum(grandDeduction) + ' 반영</div></td>')
+          : unpaidTotalHtml(grandTotalCumDiff, totalTotalA > 0)) +
       '</tr>';
 
     var headerCells = binLabels.map(function (lb) { return '<th>' + lb + '</th>'; }).join('');

@@ -1867,6 +1867,7 @@
               <button type="button" class="ui-btn" id="pl-snapshot-btn" style="flex:1; justify-content:center; font-size:0.78rem; padding:0.45rem 0.3rem; white-space:nowrap;">📸 스냅샷</button>
               <button type="button" class="ui-btn" id="pl-copy-prev-btn" style="flex:1; justify-content:center; font-size:0.78rem; padding:0.45rem 0.3rem; white-space:nowrap;">📋 이전 분기 복사</button>
               <button type="button" class="ui-btn ui-btn--success" id="pl-calc-all-btn" style="flex:1; justify-content:center; font-size:0.78rem; padding:0.45rem 0.3rem; white-space:nowrap;">⚡ 일괄 자동 계산</button>
+              <button type="button" class="ui-btn" id="pl-salary-update-btn" style="flex:1; justify-content:center; font-size:0.78rem; padding:0.45rem 0.3rem; white-space:nowrap;" title="연중 연봉 변경이 있는 인력의 예상 셀을 변경월부터 '그 달 연봉 × 참여율'로 재계산">📅 연봉 변경 반영</button>
               <button type="button" class="ui-btn ui-btn--primary" id="pl-add-person-top-btn" style="flex:1; justify-content:center; font-size:0.78rem; padding:0.45rem 0.3rem; white-space:nowrap;">+ 인력 추가</button>
             </div>
 
@@ -2047,6 +2048,53 @@
       </div>
       <div class="pl-modal-footer">
         <button type="button" class="ui-btn" id="pl-snap-close-2" onclick="document.getElementById('pl-snapshot-modal').hidden=true">닫기</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- §4.4 2b: 연봉 변경 반영 — 인력 선택 모달 -->
+  <div class="pl-modal-overlay" id="pl-salary-update-modal" hidden>
+    <div class="pl-modal-panel pl-snap-panel" role="dialog" aria-modal="true" aria-labelledby="pl-salup-title">
+      <div class="pl-modal-header">
+        <h2 class="pl-modal-title" id="pl-salup-title">📅 연봉 변경 반영</h2>
+        <button type="button" class="pl-modal-close" id="pl-salup-close" aria-label="닫기">×</button>
+      </div>
+      <div class="pl-modal-body">
+        <p class="pl-modal-desc">연중 연봉 변경이 있는 인력의 <strong>예상</strong> 셀을 변경월부터 “그 달 연봉 × 참여율”로 다시 계산합니다. 확정된 월과 값이 없는 셀은 건드리지 않습니다.</p>
+        <div style="display:flex; align-items:center; gap:0.5rem; margin:0.25rem 0 0.6rem;">
+          <button type="button" class="ui-btn" id="pl-salup-all" style="font-size:0.76rem; padding:0.3rem 0.6rem;">전체 선택</button>
+          <button type="button" class="ui-btn" id="pl-salup-none" style="font-size:0.76rem; padding:0.3rem 0.6rem;">전체 해제</button>
+          <span id="pl-salup-selcount" style="font-size:0.8rem; color:var(--text-secondary);"></span>
+        </div>
+        <div id="pl-salup-list" class="pl-snap-list"></div>
+        <div id="pl-salup-override" style="margin-top:0.9rem;"></div>
+      </div>
+      <div class="pl-modal-footer">
+        <button type="button" class="ui-btn" id="pl-salup-cancel">취소</button>
+        <button type="button" class="ui-btn ui-btn--primary" id="pl-salup-apply">반영</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- §4.4 2b: 수동 조정 셀 결정 모달 -->
+  <div class="pl-modal-overlay" id="pl-salary-manual-modal" hidden>
+    <div class="pl-modal-panel pl-snap-panel" role="dialog" aria-modal="true" aria-labelledby="pl-salman-title">
+      <div class="pl-modal-header">
+        <h2 class="pl-modal-title" id="pl-salman-title">✏️ 수동 조정 셀 확인</h2>
+        <button type="button" class="pl-modal-close" id="pl-salman-close" aria-label="닫기">×</button>
+      </div>
+      <div class="pl-modal-body">
+        <p class="pl-modal-desc"><strong id="pl-salman-count">0</strong>개 셀이 공식값과 달라 <strong>수동으로 조정된 것으로 보입니다.</strong> 이 셀들을 새 연봉 기준으로 덮어쓸지 선택하세요. (공식값 셀은 선택과 무관하게 항상 반영됩니다.)</p>
+        <div id="pl-salman-list" class="pl-snap-list" style="display:none;"></div>
+      </div>
+      <div class="pl-modal-footer" id="pl-salman-footer">
+        <button type="button" class="ui-btn" id="pl-salman-skip">전체 건너뛰기</button>
+        <button type="button" class="ui-btn" id="pl-salman-each">하나씩 결정</button>
+        <button type="button" class="ui-btn ui-btn--primary" id="pl-salman-overwrite">전체 덮어쓰기</button>
+      </div>
+      <div class="pl-modal-footer" id="pl-salman-footer-each" style="display:none;">
+        <button type="button" class="ui-btn" id="pl-salman-each-cancel">← 뒤로</button>
+        <button type="button" class="ui-btn ui-btn--primary" id="pl-salman-each-apply">선택한 셀만 덮어쓰기</button>
       </div>
     </div>
   </div>

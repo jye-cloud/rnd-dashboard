@@ -773,6 +773,14 @@
       window.firestoreService.subscribeProjects(function (list) {
         state.projects = list || [];
         state.loaded.projects = true;
+        // 연도 드롭다운 동적 채움(공용) — 데이터 이후 연도 노출, 기본=올해(state.year)
+        if (window.YearFilterUtil) {
+          var ldYearSel = document.getElementById('ld-year');
+          if (ldYearSel) {
+            window.YearFilterUtil.populate(ldYearSel, state.projects, { defaultValue: String(state.year) });
+            state.year = parseInt(ldYearSel.value, 10) || state.year;
+          }
+        }
         if (state.loaded.persons) refreshAll();
       });
     } else {

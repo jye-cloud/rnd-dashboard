@@ -367,42 +367,14 @@
   //   (현재는 무조건 재계산 — 연중 변경 도입 시 "이미 입력된 금액 보존" 옵션 고려).
   // ====================================================================
   // §4.4 — 마스터 연봉 변경 시점(연중 인상) 해석
-  //   person.salaryChanges = [{ from:'YYYY-MM', annualSalary:원 }, ...]
-  //   그 달부터 새 연봉, 그 전엔 기본 annualSalary (계단식). 비면 기존과 100% 동일.
-  //   ※ persons-master.js 와 동일 알고리즘(공용 위치 승격은 추후). 변경 시 양쪽 동기.
+  //   해석 4함수는 firestore-service.js의 window.SalaryUtil로 승격(단일 진실 소스).
+  //   아래는 호출부 호환용 얇은 위임 래퍼(함수 선언 = 호이스팅 보존).
+  //   (firestore-service가 항상 먼저 로드되어 window.SalaryUtil 보장.)
   // ====================================================================
-  function normalizeYm(s) {
-    var m = String(s == null ? '' : s).trim().match(/^(\d{4})\s*[-.\/]?\s*(\d{1,2})$/);
-    if (!m) return null;
-    var mo = parseInt(m[2], 10);
-    if (mo < 1 || mo > 12) return null;
-    return m[1] + '-' + (mo < 10 ? '0' + mo : '' + mo);
-  }
-  function sanitizeSalaryChanges(arr) {
-    if (!Array.isArray(arr)) return [];
-    var map = {};
-    arr.forEach(function (c) {
-      if (!c) return;
-      var ym = normalizeYm(c.from);
-      var digits = String(c.annualSalary == null ? '' : c.annualSalary).replace(/[^\d]/g, '');
-      var sal = digits === '' ? null : Math.round(Number(digits));
-      if (ym && sal != null && sal > 0) map[ym] = sal;
-    });
-    return Object.keys(map).sort().map(function (ym) { return { from: ym, annualSalary: map[ym] }; });
-  }
-  function getAnnualSalaryAt(person, ym) {
-    if (!person) return 0;
-    var base = (person.annualSalary != null && !isNaN(person.annualSalary)) ? Number(person.annualSalary) : 0;
-    var changes = sanitizeSalaryChanges(person.salaryChanges);
-    if (!changes.length || !ym) return base;
-    var picked = base;
-    changes.forEach(function (c) { if (c.from <= ym) picked = c.annualSalary; });
-    return picked;
-  }
-  function getMonthlySalaryAt(person, ym) {
-    var a = getAnnualSalaryAt(person, ym);
-    return a ? Math.ceil(a / 12) : 0;
-  }
+  function normalizeYm(s)             { return window.SalaryUtil.normalizeYm(s); }
+  function sanitizeSalaryChanges(arr) { return window.SalaryUtil.sanitizeSalaryChanges(arr); }
+  function getAnnualSalaryAt(p, ym)   { return window.SalaryUtil.getAnnualSalaryAt(p, ym); }
+  function getMonthlySalaryAt(p, ym)  { return window.SalaryUtil.getMonthlySalaryAt(p, ym); }
   // 이 인력이 연중 연봉 변경(변경 시점)을 가지고 있나
   function hasSalaryTimeline(person) {
     return !!(person && sanitizeSalaryChanges(person.salaryChanges).length);
@@ -2862,6 +2834,378 @@
     showToast('→ ' + targets.length + '개 월 채움 (' + rate + '%)', 'success');
   }
 
+  // ====================================================================
+  // §4.4 2b — 인건비 "📅 연봉 변경 반영" 선택 반영 엔진 (예상 탭 전용)
+  //   연중 연봉 변경(salaryChanges) 있는 인력을 골라, 변경월(from)부터 예상 셀을
+  //   '그 달 연봉 × 참여율'로 재계산. ⚡일괄계산/onSalaryInputBlur/가로채우기 패턴 본뜸.
+  //   · 확정월(meta.confirmed) 제외 · 값 없는 셀(rate 0) 제외 · 변경월 이전 제외
+  //   · 과제 오버라이드(monthlySalaryOverride>0) 인력 = 마스터 변경 영향 0 → 따로 표시(반영 안 함)
+  //   · 수동 조정 셀(공식값과 불일치)은 덮어쓰지 않고 호출자에게 알림 → 정책으로 결정
+  //   · 묶음 undo 1개 (기존 undoLastCell가 batch 복원)
+  // ====================================================================
+
+  // 셀 한 칸(또는 split의 한 필드) 분류: 'already' | 'formula' | 'manual'
+  //   current=현재 금액, rate=그 필드 참여율(%), targetMonthly=그 달 월급,
+  //   plausibleMonthlies=공식값일 수 있는 월급 후보(base + 각 변경 + legacy).
+  //   - 이미 목표값과 같으면 already(반영 불필요)
+  //   - 빈 금액(0)이거나 과거 공식값과 일치하면 formula(안전하게 재계산)
+  //   - 그 외 = 사용자가 손댄 값(manual)
+  function classifySalaryCellValue(current, rate, targetMonthly, plausibleMonthlies) {
+    current = Math.round(current || 0);
+    var expectedTarget = Math.round((targetMonthly || 0) * (rate || 0) / 100);
+    if (current === expectedTarget) return 'already';
+    if (current === 0) return 'formula';
+    for (var i = 0; i < plausibleMonthlies.length; i++) {
+      if (Math.round((plausibleMonthlies[i] || 0) * (rate || 0) / 100) === current) return 'formula';
+    }
+    return 'manual';
+  }
+
+  // 현재 과제·예상탭에서 연봉변경 인력별 반영 후보 수집 (mutation 없음).
+  //   반환 항목: { personId, name, isOverride, firstChangeYm,
+  //               recalc:[{ym,field,rate,oldVal,newVal}], manual:[...같은 구조...],
+  //               alreadyCount, overrideCount }
+  function collectSalaryUpdateCandidates() {
+    var project = getProject();
+    if (!project) return [];
+    var dataMap = state.planned;
+    var months  = getAllMonths(state.year);
+    var out = [];
+
+    _allPersons.forEach(function (person) {
+      if (!person || !hasSalaryTimeline(person)) return;                 // 연봉 변경 있는 사람만
+      if (state.personIds && state.personIds.indexOf(person.id) < 0) return; // 현재 과제 인력만
+
+      var role = (state.personRoles && state.personRoles[person.id]) || {};
+      var isOverride = (typeof role.monthlySalaryOverride === 'number' && role.monthlySalaryOverride > 0);
+      var changes = sanitizeSalaryChanges(person.salaryChanges);
+      var firstChangeYm = changes.length ? changes[0].from : null;
+
+      // 과제 오버라이드 인력 — 마스터 연봉 변경 영향 0. 변경월~ 값 있는 셀 수만 집계.
+      if (isOverride) {
+        var ovCount = 0;
+        months.forEach(function (m) {
+          if (firstChangeYm && m.ym < firstChangeYm) return;
+          if ((state.meta[m.ym] || {}).confirmed) return;
+          if ((getCell(dataMap, project.id, m.ym, person.id).rate || 0) > 0) ovCount++;
+        });
+        out.push({ personId: person.id, name: person.name || person.id, isOverride: true,
+                   firstChangeYm: firstChangeYm, recalc: [], manual: [], alreadyCount: 0, overrideCount: ovCount });
+        return;
+      }
+
+      // 공식값 후보 월급들 (base + legacy monthlySalary + 각 변경)
+      var plausible = [];
+      function addPl(v) { v = Math.round(v || 0); if (v && plausible.indexOf(v) < 0) plausible.push(v); }
+      addPl(getMonthlySalaryAt(person, null));   // = ceil(baseAnnual/12)
+      addPl(person.monthlySalary);
+      changes.forEach(function (c) { addPl(Math.ceil((c.annualSalary || 0) / 12)); });
+
+      var recalc = [], manual = [], alreadyCount = 0;
+      var isSplit = !!role.split;
+      var moneyField = moneyFieldOf(role.cashOrInkind);
+
+      months.forEach(function (m) {
+        if (firstChangeYm && m.ym < firstChangeYm) return;     // 변경월 이전 제외
+        if ((state.meta[m.ym] || {}).confirmed) return;        // 확정월 제외
+        var cell = getCell(dataMap, project.id, m.ym, person.id);
+        var rate = cell.rate || 0;
+        if (rate === 0) return;                                // 값 없는 셀 제외
+        var targetMonthly = getMonthlySalaryAt(person, m.ym);
+
+        if (isSplit && cell.rates) {
+          var rr = cell.rates;
+          var cellHasManual = false;
+          var cellChanges = [];
+          ['cash', 'selfCash', 'inkind'].forEach(function (f) {
+            var frate = +rr[f] || 0;
+            var cur = cell[f] || 0;
+            var cls = classifySalaryCellValue(cur, frate, targetMonthly, plausible);
+            if (cls === 'already') return;
+            if (cls === 'manual') cellHasManual = true;
+            cellChanges.push({ ym: m.ym, field: f, rate: frate, oldVal: cur, newVal: Math.round(targetMonthly * frate / 100) });
+          });
+          if (!cellChanges.length) { alreadyCount++; return; }
+          if (cellHasManual) manual = manual.concat(cellChanges);
+          else recalc = recalc.concat(cellChanges);
+          return;
+        }
+
+        var curM = cell[moneyField] || 0;
+        var cls = classifySalaryCellValue(curM, rate, targetMonthly, plausible);
+        if (cls === 'already') { alreadyCount++; return; }
+        var item = { ym: m.ym, field: moneyField, rate: rate, oldVal: curM, newVal: Math.round(targetMonthly * rate / 100) };
+        if (cls === 'manual') manual.push(item); else recalc.push(item);
+      });
+
+      out.push({ personId: person.id, name: person.name || person.id, isOverride: false,
+                 firstChangeYm: firstChangeYm, recalc: recalc, manual: manual, alreadyCount: alreadyCount });
+    });
+
+    return out;
+  }
+
+  // 선택 인력 반영. manualPolicy: 'skip' | 'overwrite' | { keys: { 'pid|ym|field': true } }
+  //   공식 셀(recalc)은 항상 반영, 수동 셀(manual)은 정책에 따름. 묶음 undo 1개.
+  //   반환: { changed, persons }
+  function applySalaryUpdate(selectedPersonIds, manualPolicy) {
+    var project = getProject();
+    if (!project) return { changed: 0, persons: 0 };
+    var dataMap = state.planned;
+    var cand = collectSalaryUpdateCandidates();
+    var selSet = {};
+    (selectedPersonIds || []).forEach(function (id) { selSet[id] = true; });
+
+    var batchItems = [];
+    var personsChanged = {};
+    function pushItem(pid, it) {
+      if (it.oldVal === it.newVal) return;
+      batchItems.push({ personId: pid, ym: it.ym, field: it.field, oldVal: it.oldVal, newVal: it.newVal });
+      personsChanged[pid] = true;
+    }
+    cand.forEach(function (c) {
+      if (!selSet[c.personId] || c.isOverride) return;
+      c.recalc.forEach(function (it) { pushItem(c.personId, it); });   // 공식 셀 — 항상
+      c.manual.forEach(function (it) {
+        var doIt = false;
+        if (manualPolicy === 'overwrite') doIt = true;
+        else if (manualPolicy && manualPolicy.keys) doIt = !!manualPolicy.keys[c.personId + '|' + it.ym + '|' + it.field];
+        if (doIt) pushItem(c.personId, it);
+      });
+    });
+
+    if (!batchItems.length) return { changed: 0, persons: 0 };
+
+    batchItems.forEach(function (it) {
+      var patch = {}; patch[it.field] = it.newVal;
+      setCell(dataMap, project.id, it.ym, it.personId, patch);
+    });
+
+    _undoStack.push({
+      batch: true, mode: 'planned',
+      label: '연봉 변경 반영 (' + Object.keys(personsChanged).length + '명 · ' + batchItems.length + '칸)',
+      items: batchItems
+    });
+    if (_undoStack.length > 50) _undoStack.shift();
+
+    renderAll();
+    scheduleSave();
+    return { changed: batchItems.length, persons: Object.keys(personsChanged).length };
+  }
+
+  // -------- §4.4 2b UI: 연봉 변경 반영 모달 --------
+  var _salUpSelected = [];   // 선택 personId
+  var _salUpCand = [];       // 마지막 collect 결과
+  var _salManItems = [];     // 수동 모달에 표시할 셀 목록
+
+  function salupMonth(ym) {
+    var p = String(ym || '').split('-');
+    return p.length === 2 ? (parseInt(p[1], 10) + '월') : ym;
+  }
+  function salupFieldLabel(f) {
+    return f === 'inkind' ? '현물' : (f === 'selfCash' ? '현금' : '지원금');
+  }
+
+  function renderSalaryUpdateBtnVisibility() {
+    var b = document.getElementById('pl-salary-update-btn');
+    if (b) b.style.display = (state.activeTab === 'planned') ? '' : 'none';
+  }
+
+  function openSalaryUpdateModal() {
+    if (state.activeTab !== 'planned') { showToast('연봉 변경 반영은 예상 탭에서만 사용할 수 있습니다.', 'warn'); return; }
+    if (!getProject()) { showToast('과제를 먼저 선택하세요.', 'warn'); return; }
+    _salUpCand = collectSalaryUpdateCandidates();
+    // 기본 선택: 반영할 게 있는(비오버라이드) 인력 전체
+    _salUpSelected = _salUpCand
+      .filter(function (c) { return !c.isOverride && (c.recalc.length + c.manual.length) > 0; })
+      .map(function (c) { return c.personId; });
+    renderSalaryUpdateList();
+    var modal = document.getElementById('pl-salary-update-modal');
+    if (modal) modal.hidden = false;
+  }
+  function closeSalaryUpdateModal() {
+    var m = document.getElementById('pl-salary-update-modal');
+    if (m) m.hidden = true;
+  }
+
+  function renderSalaryUpdateList() {
+    var listEl = document.getElementById('pl-salup-list');
+    var ovEl   = document.getElementById('pl-salup-override');
+    if (!listEl) return;
+    var active    = _salUpCand.filter(function (c) { return !c.isOverride; });
+    var overrides = _salUpCand.filter(function (c) { return c.isOverride; });
+
+    if (!active.length && !overrides.length) {
+      listEl.innerHTML = '<div class="pl-snap-empty">연봉 변경(연중 인상)이 등록된 인력이 없습니다. 인력 마스터에서 먼저 변경 시점을 입력하세요.</div>';
+      if (ovEl) ovEl.innerHTML = '';
+      updateSalUpSelCount();
+      return;
+    }
+
+    var selMap = {}; _salUpSelected.forEach(function (id) { selMap[id] = true; });
+    listEl.innerHTML = active.map(function (c) {
+      var n = c.recalc.length, m = c.manual.length, k = c.alreadyCount;
+      var nothing = (n + m) === 0;
+      var checked = (selMap[c.personId] && !nothing) ? ' checked' : '';
+      var dis = nothing ? ' disabled' : '';
+      var parts = [];
+      if (n) parts.push('<span style="color:#059669;">재계산 ' + n + '칸</span>');
+      if (m) parts.push('<span style="color:#d97706;">수동 ' + m + '칸</span>');
+      if (k) parts.push('<span style="color:var(--text-secondary);">이미반영 ' + k + '칸</span>');
+      if (nothing) parts = ['<span style="color:var(--text-secondary);">반영할 셀 없음</span>'];
+      return '<label style="display:flex; align-items:center; gap:0.6rem; padding:0.5rem 0.65rem; border:1px solid var(--border-color); border-radius:0.5rem;' + (nothing ? ' opacity:0.55;' : '') + '">' +
+        '<input type="checkbox" class="pl-salup-chk" data-person-id="' + escapeAttr(c.personId) + '"' + checked + dis + '>' +
+        '<span style="font-weight:600;">' + escapeAttr(c.name) + '</span>' +
+        '<span style="margin-left:auto; font-size:0.8rem; display:flex; gap:0.6rem;">' + parts.join('') + '</span>' +
+      '</label>';
+    }).join('');
+
+    if (ovEl) {
+      ovEl.innerHTML = overrides.length ? (
+        '<div class="pl-modal-section-title" style="margin-bottom:0.4rem;">과제 오버라이드 (마스터 연봉 변경 영향 없음)</div>' +
+        overrides.map(function (c) {
+          return '<div style="display:flex; align-items:center; gap:0.6rem; padding:0.4rem 0.65rem; color:var(--text-secondary); font-size:0.82rem;">' +
+            '<span>🔒</span><span style="font-weight:600;">' + escapeAttr(c.name) + '</span>' +
+            '<span style="margin-left:auto;">월급 오버라이드 적용 중 · ' + (c.overrideCount || 0) + '칸</span></div>';
+        }).join('')
+      ) : '';
+    }
+    updateSalUpSelCount();
+  }
+
+  function readSalUpChecks() {
+    var ids = [];
+    document.querySelectorAll('#pl-salup-list .pl-salup-chk:checked').forEach(function (ch) { ids.push(ch.dataset.personId); });
+    return ids;
+  }
+  function updateSalUpSelCount() {
+    var el = document.getElementById('pl-salup-selcount');
+    if (el) el.textContent = readSalUpChecks().length + '명 선택됨';
+  }
+
+  function onSalaryUpdateApply() {
+    var selected = readSalUpChecks();
+    if (!selected.length) { showToast('반영할 인력을 선택하세요.', 'warn'); return; }
+    _salUpSelected = selected;
+    var selMap = {}; selected.forEach(function (id) { selMap[id] = true; });
+    var manual = [];
+    _salUpCand.forEach(function (c) {
+      if (!selMap[c.personId] || c.isOverride) return;
+      c.manual.forEach(function (it) {
+        manual.push({ personId: c.personId, name: c.name, ym: it.ym, field: it.field, oldVal: it.oldVal, newVal: it.newVal });
+      });
+    });
+    if (manual.length) openSalaryManualModal(manual);
+    else doSalaryApplyAndClose('skip');
+  }
+
+  function doSalaryApplyAndClose(policy) {
+    var r = applySalaryUpdate(_salUpSelected, policy);
+    closeSalaryManualModal();
+    closeSalaryUpdateModal();
+    if (r.changed > 0) showToast('📅 연봉 변경 반영 — ' + r.persons + '명 · ' + r.changed + '칸 (Ctrl+Z로 되돌리기)', 'success');
+    else showToast('반영할 변경이 없습니다.', 'info');
+  }
+
+  // 수동 셀 결정 모달
+  function openSalaryManualModal(manualItems) {
+    _salManItems = manualItems;
+    var cntEl = document.getElementById('pl-salman-count');
+    if (cntEl) cntEl.textContent = String(manualItems.length);
+    var f    = document.getElementById('pl-salman-footer');
+    var fe   = document.getElementById('pl-salman-footer-each');
+    var list = document.getElementById('pl-salman-list');
+    if (f)    f.style.display = '';
+    if (fe)   fe.style.display = 'none';
+    if (list) list.style.display = 'none';
+    renderSalaryManualList(false);
+    var m = document.getElementById('pl-salary-manual-modal');
+    if (m) m.hidden = false;
+  }
+  function closeSalaryManualModal() {
+    var m = document.getElementById('pl-salary-manual-modal');
+    if (m) m.hidden = true;
+  }
+  function renderSalaryManualList(withChecks) {
+    var list = document.getElementById('pl-salman-list');
+    if (!list) return;
+    list.innerHTML = _salManItems.map(function (it, idx) {
+      var chk = withChecks ? '<input type="checkbox" class="pl-salman-chk" data-idx="' + idx + '" checked style="margin-right:0.5rem;">' : '';
+      return '<label style="display:flex; align-items:center; gap:0.5rem; padding:0.4rem 0.6rem; border:1px solid var(--border-color); border-radius:0.5rem; font-size:0.82rem;">' +
+        chk + '<span style="font-weight:600;">' + escapeAttr(it.name) + '</span>' +
+        '<span style="color:var(--text-secondary);">' + salupMonth(it.ym) + ' · ' + salupFieldLabel(it.field) + '</span>' +
+        '<span style="margin-left:auto;">' + fmtWon(it.oldVal) + ' → <strong>' + fmtWon(it.newVal) + '</strong></span></label>';
+    }).join('');
+  }
+  function onSalaryManualEach() {
+    var f    = document.getElementById('pl-salman-footer');
+    var fe   = document.getElementById('pl-salman-footer-each');
+    var list = document.getElementById('pl-salman-list');
+    if (f)    f.style.display = 'none';
+    if (fe)   fe.style.display = '';
+    if (list) list.style.display = '';
+    renderSalaryManualList(true);
+  }
+  function onSalaryManualEachBack() {
+    var f    = document.getElementById('pl-salman-footer');
+    var fe   = document.getElementById('pl-salman-footer-each');
+    var list = document.getElementById('pl-salman-list');
+    if (f)    f.style.display = '';
+    if (fe)   fe.style.display = 'none';
+    if (list) list.style.display = 'none';
+  }
+  function onSalaryManualEachApply() {
+    var keys = {};
+    document.querySelectorAll('#pl-salman-list .pl-salman-chk:checked').forEach(function (ch) {
+      var it = _salManItems[+ch.dataset.idx];
+      if (it) keys[it.personId + '|' + it.ym + '|' + it.field] = true;
+    });
+    doSalaryApplyAndClose({ keys: keys });
+  }
+
+  function bindSalaryUpdateEvents() {
+    var openBtn = document.getElementById('pl-salary-update-btn');
+    if (openBtn) openBtn.addEventListener('click', openSalaryUpdateModal);
+    var closeBtn = document.getElementById('pl-salup-close');
+    if (closeBtn) closeBtn.addEventListener('click', closeSalaryUpdateModal);
+    var cancelBtn = document.getElementById('pl-salup-cancel');
+    if (cancelBtn) cancelBtn.addEventListener('click', closeSalaryUpdateModal);
+    var overlay = document.getElementById('pl-salary-update-modal');
+    if (overlay) overlay.addEventListener('click', function (e) { if (e.target === overlay) closeSalaryUpdateModal(); });
+    var allBtn = document.getElementById('pl-salup-all');
+    if (allBtn) allBtn.addEventListener('click', function () {
+      document.querySelectorAll('#pl-salup-list .pl-salup-chk:not(:disabled)').forEach(function (ch) { ch.checked = true; });
+      updateSalUpSelCount();
+    });
+    var noneBtn = document.getElementById('pl-salup-none');
+    if (noneBtn) noneBtn.addEventListener('click', function () {
+      document.querySelectorAll('#pl-salup-list .pl-salup-chk').forEach(function (ch) { ch.checked = false; });
+      updateSalUpSelCount();
+    });
+    var listEl = document.getElementById('pl-salup-list');
+    if (listEl) listEl.addEventListener('change', function (e) {
+      if (e.target.classList && e.target.classList.contains('pl-salup-chk')) updateSalUpSelCount();
+    });
+    var applyBtn = document.getElementById('pl-salup-apply');
+    if (applyBtn) applyBtn.addEventListener('click', onSalaryUpdateApply);
+
+    // 수동 셀 결정 모달
+    var mClose = document.getElementById('pl-salman-close');
+    if (mClose) mClose.addEventListener('click', closeSalaryManualModal);
+    var mOverlay = document.getElementById('pl-salary-manual-modal');
+    if (mOverlay) mOverlay.addEventListener('click', function (e) { if (e.target === mOverlay) closeSalaryManualModal(); });
+    var mSkip = document.getElementById('pl-salman-skip');
+    if (mSkip) mSkip.addEventListener('click', function () { doSalaryApplyAndClose('skip'); });
+    var mOver = document.getElementById('pl-salman-overwrite');
+    if (mOver) mOver.addEventListener('click', function () { doSalaryApplyAndClose('overwrite'); });
+    var mEach = document.getElementById('pl-salman-each');
+    if (mEach) mEach.addEventListener('click', onSalaryManualEach);
+    var mEachCancel = document.getElementById('pl-salman-each-cancel');
+    if (mEachCancel) mEachCancel.addEventListener('click', onSalaryManualEachBack);
+    var mEachApply = document.getElementById('pl-salman-each-apply');
+    if (mEachApply) mEachApply.addEventListener('click', onSalaryManualEachApply);
+  }
+
   // v5.3: 단일 셀 버림 — 우클릭 메뉴에서 호출
   //   - 예상 탭의 cash/inkind 셀에만 적용
   //   - 현재 값을 unit 단위로 내림 (Math.floor)
@@ -5118,6 +5462,7 @@
   function renderSnapshotBtnVisibility() {
     var btn = document.getElementById('pl-snapshot-btn');
     if (btn) btn.style.display = (state.activeTab === 'planned') ? '' : 'none';
+    renderSalaryUpdateBtnVisibility();   // §4.4 2b: 📅 연봉 변경 반영도 예상 탭에서만
   }
 
   function bindSnapshotEvents() {
@@ -5905,6 +6250,7 @@
     bindEvents();
     bindModalEvents();
     bindSnapshotEvents();   // v7.4.4 §4.2: 예상 계획 스냅샷
+    bindSalaryUpdateEvents();   // §4.4 2b: 연봉 변경 반영
     bindKeyboard();
   }
 

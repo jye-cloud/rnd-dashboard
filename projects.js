@@ -5,8 +5,8 @@
   'use strict';
 
   var CUTOFF = '2026-01-01';
-  var STAT_YEAR = 2026;
-  var COL_KEYS = ['부처', '과제명', '시작일', '종료일', '지원금총', '비고'];
+  var STAT_YEAR = new Date().getFullYear();  // 기준연도 기본 = 올해(자동)
+  var COL_KEYS = ['제출일', '부처', '과제명', '시작일', '종료일', '지원금총', '비고'];
 
   function projectOverlapsYear(it, year) {
     var y = String(year);
@@ -24,7 +24,7 @@
     if (end && end < yearStart) return false;
     return true;
   }
-  var COL_FIELDS = { '부처': 'department', '과제명': 'projectName', '시작일': 'startDate', '종료일': 'endDate', '지원금총': 'supportTotal', '비고': 'note' };
+  var COL_FIELDS = { '제출일': 'submitDate', '부처': 'department', '과제명': 'projectName', '시작일': 'startDate', '종료일': 'endDate', '지원금총': 'supportTotal', '비고': 'note' };
 
   function getVal(item, key) {
     var f = COL_FIELDS[key];
@@ -32,23 +32,26 @@
   }
 
   function getResearchPeriodDisplay(item, filterYear) {
-    var fallbackStart = (item.startDate || item.start || '').toString().slice(0, 10);
-    var fallbackEnd = (item.endDate || item.end || '').toString().slice(0, 10);
-    var yearStr = filterYear ? String(filterYear) : null;
+    // 연구기간 = 과제 전체 기간 (연차 슬라이스가 아니라 시작~종료 전체).
+    //   과제 유형(과제/용역/지원사업)·연차예산 유무와 무관하게 일관 표시하기 위해
+    //   상위 startDate/endDate ∪ 연차 yearBudgets 의 최저 시작 ~ 최고 종료를 사용.
+    //   (filterYear 인자는 호환 위해 유지하되, 전체 기간 표시이므로 사용 안 함)
+    var starts = [], ends = [];
+    function pushS(v) { var s = (v || '').toString().slice(0, 10); if (s) starts.push(s); }
+    function pushE(v) { var e = (v || '').toString().slice(0, 10); if (e) ends.push(e); }
+    pushS(item.startDate || item.start);
+    pushE(item.endDate || item.end);
     var arr = item.annualData || item.yearBudgets || [];
-    if (!Array.isArray(arr)) arr = [];
-    for (var i = 0; i < arr.length; i++) {
-      var y = arr[i];
-      var s = (y.start || y.startDate || '').toString().slice(0, 10);
-      var e = (y.end || y.endDate || '').toString().slice(0, 10);
-      if (!s && !e) continue;
-      var sYear = s ? s.slice(0, 4) : '';
-      var eYear = e ? e.slice(0, 4) : '';
-      if (yearStr && sYear && eYear && sYear <= yearStr && yearStr <= eYear) {
-        return (s || '-') + ' ~ ' + (e || '-');
-      }
+    if (Array.isArray(arr)) {
+      arr.forEach(function (y) {
+        if (!y) return;
+        pushS(y.start || y.startDate);
+        pushE(y.end || y.endDate);
+      });
     }
-    if (fallbackStart || fallbackEnd) return (fallbackStart || '-') + ' ~ ' + (fallbackEnd || '-');
+    var minStart = starts.length ? starts.sort()[0] : '';
+    var maxEnd   = ends.length ? ends.sort()[ends.length - 1] : '';
+    if (minStart || maxEnd) return (minStart || '-') + ' ~ ' + (maxEnd || '-');
     return '-';
   }
 
@@ -398,8 +401,9 @@
           it.yearBudgets.forEach(function (y) {
             sy += supportInYear(y, statsYear);
           });
-        } else if (it.supportYear != null && !isNaN(Number(it.supportYear)) && Number(statsYear) === STAT_YEAR) {
-          // 옛 데이터 폴백
+        } else if (it.supportYear != null && !isNaN(Number(it.supportYear)) && Number(statsYear) === 2026) {
+          // 옛 데이터 폴백 — supportYear(연도 미상 구 데이터)는 2026 기준으로 고정.
+          //   STAT_YEAR(기본 기준연도)이 올해 자동으로 바뀌어도 폴백 연도는 따라가지 않게 분리.
           sy = Number(it.supportYear);
         }
       }
@@ -536,6 +540,62 @@
     });
   }
 
+  // ── 당해 인건비 환급예정액 (예상 탭 지원금 합) ──────────────────
+  //   projectLabor/{id}_planned 의 cells 중 그 해(ym) cash 합. funding의 "환급 예정액"과 동일 정의.
+  //   과제 목록은 인건비 문서를 안 읽으므로 여기서 비동기 로드(연도별 캐시) 후 셀 채움.
+  var LABOR_COLL = 'projectLabor';
+  var _refundCache = {};        // { [projectId]: 그 해 예상 지원금 합 }
+  var _refundCacheYear = null;  // 캐시가 담고 있는 연도(문자열)
+  var _refundToken = 0;         // 연도 빠르게 바뀔 때 stale 반영 방지
+
+  function laborDb() { return window.__firebaseDb || null; }
+
+  function fillRefundCells() {
+    var cells = document.querySelectorAll('#projects-table [data-refund-project]');
+    cells.forEach(function (td) {
+      var pid = td.getAttribute('data-refund-project');
+      if (Object.prototype.hasOwnProperty.call(_refundCache, pid)) {
+        var v = _refundCache[pid];
+        td.textContent = v > 0 ? formatNum(v) : '0';
+      } else {
+        td.textContent = '-';   // 인건비 관리 대상 아님 / 데이터 없음
+      }
+    });
+  }
+
+  function loadRefundForYear(items, year) {
+    if (!year || !laborDb()) { return; }
+    var yStr = String(year);
+    if (_refundCacheYear === yStr) { fillRefundCells(); return; }   // 캐시 히트
+    var myToken = ++_refundToken;
+    _refundCacheYear = yStr;
+    _refundCache = {};
+    var targets = (items || []).filter(function (p) { return p && p.id && p.laborManaged; });
+    if (!targets.length) { fillRefundCells(); return; }
+    var db = laborDb();
+    var promises = targets.map(function (p) {
+      var prefix = p.id + '_';
+      return db.collection(LABOR_COLL).doc(p.id + '_planned').get().then(function (snap) {
+        if (myToken !== _refundToken) return;   // 그새 연도 바뀜 → 버림
+        var data = snap.exists ? snap.data() : null;
+        var cellsObj = (data && data.cells) ? data.cells : {};
+        var sum = 0;
+        Object.keys(cellsObj).forEach(function (key) {
+          if (key.indexOf(prefix) !== 0) return;
+          var ym = key.slice(prefix.length, prefix.length + 7);   // YYYY-MM
+          if (!/^\d{4}-\d{2}$/.test(ym)) return;
+          if (ym.slice(0, 4) !== yStr) return;
+          var c = cellsObj[key];
+          sum += Number((c && c.cash) || 0);
+        });
+        _refundCache[p.id] = sum;
+      }).catch(function () { if (myToken === _refundToken) _refundCache[p.id] = 0; });
+    });
+    Promise.all(promises).then(function () {
+      if (myToken === _refundToken) fillRefundCells();
+    });
+  }
+
   function renderTable(items, colVis, filterYear, onEdit) {
     var tbody = document.getElementById('projects-tbody');
     if (!tbody) return;
@@ -607,18 +667,20 @@
         '<td>' + escapeHtml(no) + '</td>',
         '<td>' + typeCellHtml + '</td>',
         '<td><span class="projects-badge ' + badgeClass + '">' + escapeHtml(statusDisplay) + '</span></td>',
-        '<td>' + escapeHtml(submitDate || '-') + '</td>',
         '<td>' + getKeywordHtml(it) + '</td>',
         '<td>' + escapeHtml(it.manager || it.책임자 || '-') + '</td>',
         '<td>' + escapeHtml(researchPeriod) + '</td>',
         '<td>' + escapeHtml(institution) + '</td>',
+        '<td class="col-num">' + escapeHtml(totalSupport) + '</td>',
         '<td class="col-num">' + escapeHtml(thisYearIncome) + '</td>',
-        '<td class="col-num">' + escapeHtml(totalSupport) + '</td>'
+        '<td class="col-num col-year-only" data-refund-project="' + escapeHtml(id) + '">' + (filterYear ? '…' : '-') + '</td>'
       ];
 
       COL_KEYS.forEach(function (k) {
         var val;
-        if (k === '시작일') {
+        if (k === '제출일') {
+          val = ((it.submitDate || it['제출일'] || '').toString().slice(0, 10)) || '-';
+        } else if (k === '시작일') {
           val = start || '-';
         } else if (k === '종료일') {
           val = end || '-';
@@ -729,6 +791,21 @@
       } catch (e) { /* sessionStorage 접근 실패 시 무시 */ }
     })();
 
+    // ----- 연도 필터 옵션 동적 채움 (공용 window.YearFilterUtil) -----
+    //   HTML 하드코딩 대신 데이터(시작/종료/제출일 + 연차)에서 연도를 모아 채움.
+    //   기본값 = 올해(자동), 전체 옵션 포함, URL ?year= 최우선, 그다음 sessionStorage.
+    function populateYearOptions(items) {
+      if (!yearFilter || !window.YearFilterUtil) return;
+      var urlYear = null;
+      try { urlYear = new URLSearchParams(location.search).get('year'); } catch (e) {}
+      window.YearFilterUtil.populate(yearFilter, items, {
+        includeAll: true,
+        storageKey: 'projects-filter-year',
+        preferredValue: urlYear || null,
+        defaultValue: String(STAT_YEAR)   // 올해(자동) — STAT_YEAR가 올해로 설정됨
+      });
+    }
+
     // ----- 활성 필터 상태 -----
     // activeCardFilter: 'continue' | 'new' | 'unselected' (카드 클릭으로 활성화)
     // activeStatusFilter: '수행' | '예정' | '종료' (URL ?status= 진입 시, 카드와 매칭 안 되는 status용)
@@ -742,6 +819,7 @@
     var activeSummaryDivision = null;  // filter-summary-row 유형별 클릭 필터 (과제/지원사업/용역/기타), 기존 분류 pill과 독립. 활성 카드필터 ∩ 분류
     var activeExcludeDivisionFilter = null;
     var activeNewProposalOnly = false;
+    var activeSubmitMonth = null;   // 대시보드 월별 신규제안 그래프에서 월 클릭 진입 시 (1~12)
     var activeSearchQuery = '';
     var lastFilteredItems = []; // 엑셀 내보내기용 — 현재 화면에 보이는 아이템들
 
@@ -797,6 +875,12 @@
 
       if (newProposal === '1' || newProposal === 'true') {
         activeNewProposalOnly = true;
+      }
+
+      var submitMonthParam = params.get('submitMonth');
+      if (submitMonthParam) {
+        var smm = parseInt(submitMonthParam, 10);
+        if (smm >= 1 && smm <= 12) activeSubmitMonth = smm;
       }
 
       // URL year 파라미터 — sessionStorage보다 우선. 대시보드에서 진입 시 사용
@@ -1063,6 +1147,14 @@
         });
       }
 
+      // 4-d단계: 제출 월 필터 — 그 해·그 달 제출분만 (대시보드 월별 신규제안 그래프 월 클릭 진입 시)
+      if (activeSubmitMonth && filterYear) {
+        var smPrefix = String(filterYear) + '-' + (activeSubmitMonth < 10 ? '0' + activeSubmitMonth : '' + activeSubmitMonth);
+        listItems = listItems.filter(function (it) {
+          return (it.submitDate || it['제출일'] || '').toString().slice(0, 7) === smPrefix;
+        });
+      }
+
       // 5단계: 검색 키워드 필터
       if (activeSearchQuery) {
         listItems = listItems.filter(function (it) {
@@ -1128,13 +1220,28 @@
       if (subEnded)    subEnded.classList.toggle('active', activeCardFilter === 'ended');
 
       renderTable(listItems, colVis, filterYear, projectEditHandler);
+      // 당해 환급예정 컬럼: 연도 선택 시만 표시(전체면 숨김). CSS에 의존하지 않고 JS로 직접 토글.
+      var showYearCol = !!filterYear;
+      var ptable = document.getElementById('projects-table');
+      if (ptable) {
+        ptable.classList.toggle('projects-table--no-year', !showYearCol);  // CSS 중복 방어
+        var yth = ptable.querySelector('thead th.col-year-only');
+        if (yth) yth.style.display = showYearCol ? '' : 'none';
+        ptable.querySelectorAll('tbody td.col-year-only').forEach(function (td) {
+          td.style.display = showYearCol ? '' : 'none';
+        });
+      }
+      if (filterYear) loadRefundForYear(latestItems, filterYear);
       updateFilterSummary(summaryBase, activeCardFilter, activeSummaryDivision, listItems.length);
 
       if (filterHint) {
         var listLabel = filterYear ? filterYear + '년' : '전체';
         var statsLabel = filterYear ? filterYear + '년' : STAT_YEAR + '년';
         var hintText = '리스트: ' + listLabel + ' / 통계: ' + statsLabel + ' 기준';
-        if (activeSearchQuery || activeCardFilter || activeStatusFilter || activeDivisionFilter) {
+        if (activeSubmitMonth) {
+          hintText += ' · ' + activeSubmitMonth + '월 제출';
+        }
+        if (activeSearchQuery || activeCardFilter || activeStatusFilter || activeDivisionFilter || activeSubmitMonth) {
           hintText += ' · 결과 ' + listItems.length + '건';
         }
         filterHint.textContent = hintText;
@@ -1369,9 +1476,11 @@
 
     if (svc && typeof svc.subscribeProjects === 'function') {
       svc.subscribeProjects(function (items) {
+        populateYearOptions(items);
         applyFilterAndRender(items);
       });
     } else {
+      populateYearOptions([]);
       applyFilterAndRender([]);
     }
 

@@ -5,7 +5,7 @@
   'use strict';
 
   var CUTOFF = '2026-01-01';
-  var STAT_YEAR = 2026;
+  var STAT_YEAR = new Date().getFullYear();  // 기준연도 기본 = 올해(자동). 단 이 페이지 드롭다운 기본은 '전체(누적)'.
   // 열 선택 옵션 (책임자 / 부처 / 사업명 / 키워드)
   var COL_KEYS = ['책임자', '부처', '사업명', '키워드'];
   var COL_FIELDS = { '책임자': 'manager', '부처': 'department', '사업명': 'business', '키워드': '__keywords' };
@@ -368,8 +368,8 @@
         it.yearBudgets.forEach(function (y) {
           sy += supportInYear(y, statsYear);
         });
-      } else if (it.supportYear != null && !isNaN(Number(it.supportYear)) && Number(statsYear) === STAT_YEAR) {
-        // 옛 데이터 폴백
+      } else if (it.supportYear != null && !isNaN(Number(it.supportYear)) && Number(statsYear) === 2026) {
+        // 옛 데이터 폴백 — supportYear는 2026 기준 고정(기본 기준연도와 분리)
         sy = Number(it.supportYear);
       }
       yearSum += sy;
@@ -1566,11 +1566,23 @@
       });
     }
 
+    // 연도 드롭다운 동적 채움 (공용). 이 페이지 기본은 '전체 (누적)' 유지.
+    function populateYearOptions(items) {
+      if (!yearFilter || !window.YearFilterUtil) return;
+      window.YearFilterUtil.populate(yearFilter, items, {
+        includeAll: true,
+        allLabel: '전체 (누적)',
+        defaultValue: ''   // 기본 = 전체(누적)
+      });
+    }
+
     if (svc && typeof svc.subscribeProjects === 'function') {
       svc.subscribeProjects(function (items) {
+        populateYearOptions(items);
         applyFilterAndRender(items);
       });
     } else {
+      populateYearOptions([]);
       applyFilterAndRender([]);
     }
 

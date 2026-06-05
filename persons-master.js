@@ -1694,43 +1694,41 @@
   //      거기로 갈 때 getAnnualSalaryAt/getMonthlySalaryAt을 공용 위치로 승격 예정.
   // ====================================================================
 
-  // 'YYYY-MM' / 'YYYY.M' / 'YYYY/M' → 'YYYY-MM' (월 01~12), 그 외 null
+  // §4.4 해석 함수 — 평소엔 firestore-service.js의 window.SalaryUtil 사용(단일 진실 소스),
+  //   미로드 시엔 로컬 폴백으로 동작(연봉 변경 저장/표시가 절대 깨지지 않도록 — 저장 핵심 경로).
   function normalizeYm(s) {
+    if (window.SalaryUtil) return window.SalaryUtil.normalizeYm(s);
     var m = String(s == null ? '' : s).trim().match(/^(\d{4})\s*[-.\/]?\s*(\d{1,2})$/);
     if (!m) return null;
     var mo = parseInt(m[2], 10);
     if (mo < 1 || mo > 12) return null;
     return m[1] + '-' + (mo < 10 ? '0' + mo : '' + mo);
   }
-
-  // 변경 시점 배열 정규화: from=YYYY-MM·연봉>0만, 같은 달 중복은 마지막 값, from 오름차순
-  //   (annualSalary는 숫자 또는 콤마 문자열 '72,000,000' 모두 허용)
   function sanitizeSalaryChanges(arr) {
+    if (window.SalaryUtil) return window.SalaryUtil.sanitizeSalaryChanges(arr);
     if (!Array.isArray(arr)) return [];
     var map = {};
     arr.forEach(function (c) {
       if (!c) return;
       var ym = normalizeYm(c.from);
-      var digits = String(c.annualSalary == null ? '' : c.annualSalary).replace(/[^\d]/g, '');
-      var sal = digits === '' ? null : Math.round(Number(digits));
+      var d = String(c.annualSalary == null ? '' : c.annualSalary).replace(/[^\d]/g, '');
+      var sal = d === '' ? null : Math.round(Number(d));
       if (ym && sal != null && sal > 0) map[ym] = sal;
     });
-    return Object.keys(map).sort().map(function (ym) {
-      return { from: ym, annualSalary: map[ym] };
-    });
+    return Object.keys(map).sort().map(function (ym) { return { from: ym, annualSalary: map[ym] }; });
   }
-
-  // 특정 월(ym='YYYY-MM')의 연봉 = from<=ym 인 가장 최근 변경값, 없으면 기본 annualSalary
   function getAnnualSalaryAt(person, ym) {
+    if (window.SalaryUtil) return window.SalaryUtil.getAnnualSalaryAt(person, ym);
     if (!person) return 0;
     var base = (person.annualSalary != null && !isNaN(person.annualSalary)) ? Number(person.annualSalary) : 0;
-    var changes = sanitizeSalaryChanges(person.salaryChanges);
-    if (!changes.length || !ym) return base;
+    var ch = sanitizeSalaryChanges(person.salaryChanges);
+    if (!ch.length || !ym) return base;
     var picked = base;
-    changes.forEach(function (c) { if (c.from <= ym) picked = c.annualSalary; });
+    ch.forEach(function (c) { if (c.from <= ym) picked = c.annualSalary; });
     return picked;
   }
   function getMonthlySalaryAt(person, ym) {
+    if (window.SalaryUtil) return window.SalaryUtil.getMonthlySalaryAt(person, ym);
     var a = getAnnualSalaryAt(person, ym);
     return a ? Math.ceil(a / 12) : 0;
   }
@@ -1976,6 +1974,23 @@
     // 주민번호 뒷자리 (숫자만 추출, 비어있으면 null)
     var ssnTailRaw = (el.formSsnTail && el.formSsnTail.value) ? el.formSsnTail.value.replace(/[^0-9]/g, '') : '';
     var ssnTail = ssnTailRaw || null;
+
+    // §4.4: 연봉 변경 시점 검증 — 부분 입력/형식 오류 행을 조용히 버리지 않고 막음
+    //   (예: 월을 "2026"만 입력, 연봉만 입력 등 → 저장 시 사라지는 문제 방지)
+    syncSalaryChangesFromDom();
+    var _scBad = [];
+    _modalSalaryChanges.forEach(function (c, i) {
+      var fromStr = (c && c.from != null) ? String(c.from).trim() : '';
+      var salDigits = String((c && c.annualSalary != null) ? c.annualSalary : '').replace(/[^\d]/g, '');
+      if (fromStr === '' && salDigits === '') return;            // 완전 빈 행 — 무시
+      var okFrom = !!normalizeYm(fromStr);
+      var okSal  = salDigits !== '' && Number(salDigits) > 0;
+      if (!okFrom || !okSal) _scBad.push(i + 1);
+    });
+    if (_scBad.length) {
+      showFormError('연봉 변경 시점 ' + _scBad.join(', ') + '행: 월(예: 2026-07)과 새 연봉을 모두 정확히 입력하거나, 빈 행은 ✕로 지워 주세요.', el.formSalaryChanges);
+      return null;
+    }
 
     return {
       name: name,

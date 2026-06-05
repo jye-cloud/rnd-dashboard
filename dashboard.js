@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var DEFAULT_YEAR = 2026;
+  var DEFAULT_YEAR = new Date().getFullYear();  // 기준연도 기본 = 올해(자동)
 
   // 상태별 색상 — 기존 projects-badge 색상과 톤 일치
   var STATUS_COLORS = {
@@ -914,6 +914,22 @@
         options: {
           responsive: true, maintainAspectRatio: false,
           interaction: { mode: 'index', intersect: false },
+          onHover: function (evt, els) {
+            var e = (evt && evt.native) ? evt.native : evt;
+            if (e && e.target) e.target.style.cursor = (els && els.length) ? 'pointer' : 'default';
+          },
+          onClick: function (evt, els, chart) {
+            var idx = -1;
+            if (els && els.length) idx = els[0].index;
+            else if (chart && chart.getElementsAtEventForMode) {
+              var pts = chart.getElementsAtEventForMode(evt, 'index', { intersect: false }, true);
+              if (pts && pts.length) idx = pts[0].index;
+            }
+            if (idx < 0) return;
+            // 그 달 제출 과제 리스트로 이동 (제출일이 year-month 인 신규 제안)
+            window.location.href = 'projects.html?year=' + encodeURIComponent(year) +
+              '&submitMonth=' + (idx + 1) + '&newProposal=1';
+          },
           layout: { padding: { top: 28 } },
           scales: {
             x: { stacked: true, grid: { display: false } },
@@ -1007,6 +1023,11 @@
     if (svc && typeof svc.subscribeProjects === 'function') {
       svc.subscribeProjects(function (items) {
         latestItems = Array.isArray(items) ? items : [];
+        // 연도 드롭다운 동적 채움(공용) — 데이터 이후 연도 노출, 기본=올해
+        if (window.YearFilterUtil && yearSelect) {
+          window.YearFilterUtil.populate(yearSelect, latestItems, { defaultValue: String(DEFAULT_YEAR) });
+          currentYear = parseInt(yearSelect.value, 10) || DEFAULT_YEAR;
+        }
         rerender();
       });
     } else {

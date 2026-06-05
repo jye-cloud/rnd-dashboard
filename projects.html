@@ -359,6 +359,34 @@
     .projects-col-panel.open { display: block; }
     .projects-col-panel label { display: flex; align-items: center; gap: 0.5rem; padding: 0.35rem 0; cursor: pointer; font-size: 0.875rem; }
     .projects-table .col-opt { display: none; }
+    /* 당해 환급예정 — 연도 미선택(전체)일 때 숨김 */
+    .projects-table.projects-table--no-year .col-year-only { display: none; }
+    /* 헤더 안내 툴팁 — 큼직한 호버 박스 */
+    .pj-tip { position: relative; display: inline-flex; align-items: center; gap: 0.3rem; cursor: help; }
+    .pj-tip .pj-tip-icon {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 1.15em; height: 1.15em; border-radius: 50%;
+      background: #93c5fd; color: #fff; font-size: 0.72rem; font-weight: 700;
+      line-height: 1; font-style: normal;
+    }
+    .pj-tip .pj-tip-box {
+      display: none; position: absolute; top: 100%; right: 0; margin-top: 0.45rem;
+      width: max-content; max-width: 300px; padding: 0.7rem 0.85rem;
+      background: #ffffff; color: #1e293b; font-size: 0.9rem; font-weight: 500;
+      line-height: 1.5; letter-spacing: -0.01em; border-radius: 0.6rem;
+      border: 1.5px solid #93c5fd; box-shadow: 0 8px 24px rgba(15,23,42,0.18);
+      white-space: normal; text-align: left; z-index: 1000; pointer-events: none;
+    }
+    .pj-tip .pj-tip-box::before {
+      content: ""; position: absolute; bottom: 100%; right: 0.7rem;
+      border: 7px solid transparent; border-bottom-color: #93c5fd;
+    }
+    .pj-tip .pj-tip-box::after {
+      content: ""; position: absolute; bottom: 100%; right: 0.78rem;
+      border: 6px solid transparent; border-bottom-color: #ffffff;
+    }
+    .pj-tip:hover .pj-tip-icon { background: #60a5fa; }
+    .pj-tip:hover .pj-tip-box { display: block; }
 
     /* 클릭 가능한 통계 카드 */
     .projects-stat-card.clickable {
@@ -897,6 +925,7 @@
             <div class="projects-col-dropdown">
               <button type="button" class="ui-btn ui-btn--ghost" id="col-toggle-btn">열 선택</button>
               <div class="projects-col-panel" id="col-panel">
+                <label><input type="checkbox" data-col="제출일"> 제출일</label>
                 <label><input type="checkbox" data-col="부처"> 부처</label>
                 <label><input type="checkbox" data-col="과제명"> 과제명</label>
                 <label><input type="checkbox" data-col="시작일"> 시작일</label>
@@ -918,13 +947,14 @@
                 <th>No</th>
                 <th>유형</th>
                 <th>진행 여부</th>
-                <th>제출일</th>
                 <th>키워드</th>
                 <th>책임자</th>
                 <th>연구기간</th>
                 <th>기관명</th>
-                <th class="col-num">당해 입금</th>
-                <th class="col-num">총 지원금</th>
+                <th class="col-num"><span class="pj-tip">총 지원금<i class="pj-tip-icon">i</i><span class="pj-tip-box">전체 연차 기준 지원금 총 합계입니다.</span></span></th>
+                <th class="col-num"><span class="pj-tip">당해 입금<i class="pj-tip-icon">i</i><span class="pj-tip-box">당해 연도에 입금되는 지원금입니다.</span></span></th>
+                <th class="col-num col-year-only"><span class="pj-tip">당해 환급예정<i class="pj-tip-icon">i</i><span class="pj-tip-box">당해 연도 총 인건비 환급 예정액(예정)입니다.<br>자금 관리 페이지의 과제별 "예상 금액의 합"과 동일한 금액입니다.</span></span></th>
+                <th class="col-opt" data-col="제출일">제출일</th>
                 <th class="col-opt" data-col="부처">부처</th>
                 <th class="col-opt" data-col="과제명">과제명</th>
                 <th class="col-opt" data-col="시작일">시작일</th>

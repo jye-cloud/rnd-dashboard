@@ -258,8 +258,8 @@
     if (tbodyEl) {
       tbodyEl.querySelectorAll('tr').forEach(function (r) {
         if (isServiceMode()) {
-          var t = parseNum((r.querySelector('.yb-total') || {}).value || '0');
-          ourSupport += Math.round(t / 1.1);
+          // 총 지원금(분모)이 VAT 포함이므로, 우리 분담(분자)도 VAT 포함 총액으로 맞춰 비중 왜곡 방지
+          ourSupport += parseNum((r.querySelector('.yb-total') || {}).value || '0');
         } else {
           ourSupport += parseNum((r.querySelector('.yb-support') || {}).value || '0');
         }
@@ -748,6 +748,7 @@
   function migratePayments(yb) {
     var planned = Array.isArray(yb.plannedPayments) ? yb.plannedPayments.slice() : [];
     var actual = Array.isArray(yb.actualPayments) ? yb.actualPayments.slice() : [];
+    var deductions = Array.isArray(yb.deductions) ? yb.deductions.slice() : [];
     if (planned.length === 0 && actual.length === 0 && Array.isArray(yb.payments)) {
       yb.payments.forEach(function (p) {
         if (p.plannedDate || (p.plannedAmount && p.plannedAmount > 0)) {
@@ -758,7 +759,7 @@
         }
       });
     }
-    return { planned: planned, actual: actual };
+    return { planned: planned, actual: actual, deductions: deductions };
   }
 
   function renderPayments(initialByIdx) {
@@ -794,6 +795,9 @@
         : '';
       var actualRows = (pays.actual || []).length
         ? pays.actual.map(function (p) { return actualRowHtml(idx, p); }).join('')
+        : '';
+      var deductionRows = (pays.deductions || []).length
+        ? pays.deductions.map(function (d) { return deductionRowHtml(idx, d); }).join('')
         : '';
       var plannedSection =
         '<div class="payment-section payment-section--planned">' +
@@ -834,8 +838,26 @@
           '</table>' +
           '<div class="payment-sum-msg actual-sum-msg"></div>' +
         '</div>';
+      var deductionSection =
+        '<div class="payment-section payment-section--deduction">' +
+          '<div class="payment-section-header">' +
+            '<div class="payment-section-title"><span class="pay-section-emoji">➖</span>정산 차감 (이자 반납 등)</div>' +
+            '<div class="payment-section-actions">' +
+              '<button type="button" class="payment-add-btn pay-add-deduction-btn" data-yb-idx="' + idx + '">+ 차감 추가</button>' +
+            '</div>' +
+          '</div>' +
+          '<table class="payment-table payment-deduction-table">' +
+            '<thead><tr>' +
+              '<th style="width:160px; text-align:right">차감 금액</th>' +
+              '<th>사유</th>' +
+              '<th style="width:32px"></th>' +
+            '</tr></thead>' +
+            '<tbody class="deduction-tbody">' + deductionRows + '</tbody>' +
+          '</table>' +
+          '<div class="payment-sum-msg deduction-sum-msg"></div>' +
+        '</div>';
       return '<div class="payment-group" data-yb-idx="' + idx + '" data-support="' + (yb.support || 0) + '">' +
-        header + plannedSection + actualSection +
+        header + plannedSection + actualSection + deductionSection +
         '<div class="payment-quarterly-wrap"></div>' +
       '</div>';
     }).join('');
@@ -870,6 +892,18 @@
         '<td class="pay-q-label">' + qLabel + '</td>' +
         '<td><input type="text" class="pay-date pay-actual-date" placeholder="YYYY-MM-DD" maxlength="10" inputmode="numeric" value="' + escapeHtml(date) + '"></td>' +
         '<td><input type="text" class="pay-amount pay-actual-amount" inputmode="numeric" value="' + escapeHtml(amount) + '"></td>' +
+        '<td class="pay-del"><button type="button" class="pay-del-btn" title="이 행 삭제">×</button></td>' +
+      '</tr>'
+    );
+  }
+  function deductionRowHtml(ybIdx, d) {
+    d = d || {};
+    var amount = d.amount != null && d.amount !== '' ? formatNum(d.amount) : '';
+    var reason = (d.reason || '').toString();
+    return (
+      '<tr class="payment-row deduction-row" data-yb-idx="' + ybIdx + '">' +
+        '<td><input type="text" class="pay-amount pay-deduction-amount" inputmode="numeric" value="' + escapeHtml(amount) + '"></td>' +
+        '<td><input type="text" class="pay-deduction-reason" placeholder="예: 지원금 이자 반납" style="width:100%" value="' + escapeHtml(reason) + '"></td>' +
         '<td class="pay-del"><button type="button" class="pay-del-btn" title="이 행 삭제">×</button></td>' +
       '</tr>'
     );
@@ -1043,6 +1077,18 @@
         updateQuarterlySummary(group);
       };
     });
+    container.querySelectorAll('.pay-add-deduction-btn').forEach(function (btn) {
+      btn.onclick = function () {
+        var idx = btn.getAttribute('data-yb-idx');
+        var group = container.querySelector('.payment-group[data-yb-idx="' + idx + '"]');
+        if (!group) return;
+        var tbody = group.querySelector('.deduction-tbody');
+        if (!tbody) return;
+        tbody.insertAdjacentHTML('beforeend', deductionRowHtml(idx, {}));
+        bindPaymentEvents();
+        updatePaymentSum(group);
+      };
+    });
     container.querySelectorAll('.pay-del-btn').forEach(function (btn) {
       btn.onclick = function () {
         var row = btn.closest('.payment-row');
@@ -1104,6 +1150,10 @@
     groupEl.querySelectorAll('.actual-row .pay-actual-amount').forEach(function (inp) {
       actualSum += parseNum(inp.value);
     });
+    var deductionSum = 0;
+    groupEl.querySelectorAll('.deduction-row .pay-deduction-amount').forEach(function (inp) {
+      deductionSum += parseNum(inp.value);
+    });
     var plannedMsgEl = groupEl.querySelector('.planned-sum-msg');
     if (plannedMsgEl) {
       if (plannedSum === 0) { plannedMsgEl.className = 'payment-sum-msg planned-sum-msg'; plannedMsgEl.innerHTML = ''; }
@@ -1124,22 +1174,36 @@
     }
     var actualMsgEl = groupEl.querySelector('.actual-sum-msg');
     if (actualMsgEl) {
-      if (actualSum === 0) { actualMsgEl.className = 'payment-sum-msg actual-sum-msg'; actualMsgEl.innerHTML = ''; }
+      var settled = actualSum + deductionSum;
+      var dedTxt = deductionSum > 0 ? ' + 차감 ' + formatNum(deductionSum) + '원' : '';
+      if (settled === 0) { actualMsgEl.className = 'payment-sum-msg actual-sum-msg'; actualMsgEl.innerHTML = ''; }
       else if (plannedSum > 0) {
-        var remain = plannedSum - actualSum;
+        var remain = plannedSum - settled;
         if (remain === 0) {
           actualMsgEl.className = 'payment-sum-msg actual-sum-msg payment-sum-ok';
-          actualMsgEl.innerHTML = '✓ 실제 수령 ' + formatNum(actualSum) + '원 (전액 수령 완료)';
+          actualMsgEl.innerHTML = deductionSum > 0
+            ? '✓ 정산 완료 — 실수령 ' + formatNum(actualSum) + '원' + dedTxt + ' = 예정 ' + formatNum(plannedSum) + '원 (미수금 0)'
+            : '✓ 실제 수령 ' + formatNum(actualSum) + '원 (전액 수령 완료)';
         } else if (remain < 0) {
           actualMsgEl.className = 'payment-sum-msg actual-sum-msg payment-sum-error';
-          actualMsgEl.innerHTML = '⚠️ 실제 수령 ' + formatNum(actualSum) + '원이 예정 ' + formatNum(plannedSum) + '원보다 ' + formatNum(-remain) + '원 많습니다';
+          actualMsgEl.innerHTML = '⚠️ 실수령 ' + formatNum(actualSum) + '원' + dedTxt + '이 예정 ' + formatNum(plannedSum) + '원보다 ' + formatNum(-remain) + '원 많습니다';
         } else {
           actualMsgEl.className = 'payment-sum-msg actual-sum-msg';
-          actualMsgEl.innerHTML = '실제 수령 ' + formatNum(actualSum) + '원 · 잔액 ' + formatNum(remain) + '원';
+          actualMsgEl.innerHTML = '실수령 ' + formatNum(actualSum) + '원' + dedTxt + ' · 미수금 ' + formatNum(remain) + '원';
         }
       } else {
         actualMsgEl.className = 'payment-sum-msg actual-sum-msg';
-        actualMsgEl.innerHTML = '실제 수령 ' + formatNum(actualSum) + '원';
+        actualMsgEl.innerHTML = '실수령 ' + formatNum(actualSum) + '원' + dedTxt;
+      }
+    }
+    var deductionMsgEl = groupEl.querySelector('.deduction-sum-msg');
+    if (deductionMsgEl) {
+      if (deductionSum > 0) {
+        deductionMsgEl.className = 'payment-sum-msg deduction-sum-msg';
+        deductionMsgEl.innerHTML = '차감 합 ' + formatNum(deductionSum) + '원 (예정 − 실수령 − 차감 = 미수금)';
+      } else {
+        deductionMsgEl.className = 'payment-sum-msg deduction-sum-msg';
+        deductionMsgEl.innerHTML = '';
       }
     }
   }
@@ -1147,7 +1211,7 @@
     var container = document.getElementById('payment-groups');
     if (!container) return {};
     var byIdx = {};
-    function ensureIdx(idx) { if (!byIdx[idx]) byIdx[idx] = { planned: [], actual: [] }; return byIdx[idx]; }
+    function ensureIdx(idx) { if (!byIdx[idx]) byIdx[idx] = { planned: [], actual: [], deductions: [] }; return byIdx[idx]; }
     container.querySelectorAll('.planned-row').forEach(function (row) {
       var idx = row.getAttribute('data-yb-idx');
       if (idx == null) return;
@@ -1169,6 +1233,17 @@
       if (date) p.date = date;
       if (amount > 0) p.amount = amount;
       ensureIdx(idx).actual.push(p);
+    });
+    container.querySelectorAll('.deduction-row').forEach(function (row) {
+      var idx = row.getAttribute('data-yb-idx');
+      if (idx == null) return;
+      var amount = parseNum((row.querySelector('.pay-deduction-amount') || {}).value);
+      var reason = ((row.querySelector('.pay-deduction-reason') || {}).value || '').trim();
+      if (!amount && !reason) return;
+      var d = {};
+      if (amount > 0) d.amount = amount;
+      if (reason) d.reason = reason;
+      ensureIdx(idx).deductions.push(d);
     });
     return byIdx;
   }
@@ -1416,7 +1491,7 @@
     updateConsortiumLabels();
     updateConsortiumCount();
     var totalBudget = item.consortiumTotalBudget != null ? item.consortiumTotalBudget : (item.ourBudget != null ? item.ourBudget : '');
-    setFormValue('consortium-total-budget', totalBudget !== '' ? String(totalBudget) : '');
+    setFormValue('consortium-total-budget', (totalBudget !== '' && totalBudget != null) ? formatNum(parseNum(totalBudget)) : '');
 
     clearManagerHistory();
     var history = item.managerHistory || [];
@@ -1596,6 +1671,7 @@
       if (ps) {
         if (ps.planned && ps.planned.length) ybObj.plannedPayments = ps.planned;
         if (ps.actual && ps.actual.length) ybObj.actualPayments = ps.actual;
+        if (ps.deductions && ps.deductions.length) ybObj.deductions = ps.deductions;
       }
       years.push(ybObj);
       if (s && (!startDate || s < startDate)) startDate = s;
@@ -2495,7 +2571,13 @@
     });
 
     var consortiumTotalEl = document.getElementById('consortium-total-budget');
-    if (consortiumTotalEl) consortiumTotalEl.addEventListener('input', updateBudgetPercent);
+    if (consortiumTotalEl) consortiumTotalEl.addEventListener('input', function (e) {
+      var inp = e.target;
+      var raw = String(inp.value || '').replace(/\D/g, '');
+      inp.value = raw === '' ? '' : formatNum(parseInt(raw, 10) || 0);
+      try { inp.setSelectionRange(inp.value.length, inp.value.length); } catch (err) {}
+      updateBudgetPercent();
+    });
     updateParticipationVisibility();
 
     if (saveTopBtn) saveTopBtn.addEventListener('click', saveProject);
