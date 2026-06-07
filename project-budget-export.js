@@ -206,12 +206,19 @@
       var person = row.personId ? api.getPersonById(row.personId) : null;
       var included = selectedIds ? selectedIds.has(row.id) : true;
 
-      var monthly  = Number(row.actualPay) || Number(row.monthlySalary) || (person && person.monthlySalary) || 0;
+      // row.actualPay = 월급(단일 기준). 폴백 row.monthlySalary 는 급여총액(연봉)이므로 ÷12.
+      //   (원 단위 무조건 올림 — 마스터 페이지 Math.ceil(연봉/12)와 동일)
+      var monthly  = Number(row.actualPay)
+        || (Number(row.monthlySalary) ? Math.ceil(Number(row.monthlySalary) / 12) : 0)
+        || (person && person.monthlySalary) || 0;
       var annual   = monthly * 12; // 급여총액(A)
       var rate     = Number(row.rate) || 0;
       var months   = Number(row.participMonths) || 0;
       // 합계 = (A/12) × B × (C/100) = monthly × months × rate/100
-      var total    = Math.round(monthly * months * rate / 100);
+      //   단, 예산 페이지에서 총액을 수동 수정(totalOverride)했으면 그 값을 사용 (원단위 조정 등)
+      var total    = (row.totalOverride != null && !isNaN(row.totalOverride))
+        ? Math.round(Number(row.totalOverride))
+        : Math.round(monthly * months * rate / 100);
 
       // 참여기간: 인력별 오버라이드 → 프로젝트 기본
       var period = _state.periodOverride[row.id] || defaultPeriod;

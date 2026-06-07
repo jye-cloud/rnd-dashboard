@@ -2099,6 +2099,35 @@
     </div>
   </div>
 
+  <!-- 이월금: 다음 연차로 이월 확정 모달 -->
+  <div class="pl-modal-overlay" id="pl-carryover-modal" hidden>
+    <div class="pl-modal-panel pl-snap-panel" role="dialog" aria-modal="true" aria-labelledby="pl-carry-title">
+      <div class="pl-modal-header">
+        <h2 class="pl-modal-title" id="pl-carry-title">📥 다음 연차로 이월</h2>
+        <button type="button" class="pl-modal-close" id="pl-carry-close" aria-label="닫기">×</button>
+      </div>
+      <div class="pl-modal-body">
+        <p class="pl-modal-desc">이번 연차에서 안 쓴 금액을 <strong id="pl-carry-path">다음 연차</strong> 이월금으로 넘깁니다. 받은 돈이라 입금·미수에는 영향을 주지 않고, 다음 연차 잔액 관리에만 더해집니다. <strong>현물은 이월할 수 없습니다.</strong></p>
+        <div style="display:flex; flex-direction:column; gap:0.9rem; margin-top:0.6rem;">
+          <div>
+            <label for="pl-carry-cash" style="display:block; font-weight:600; font-size:0.85rem; margin-bottom:0.25rem;">지원금 이월 (원)</label>
+            <input type="text" id="pl-carry-cash" inputmode="numeric" style="width:100%; padding:0.5rem 0.6rem; border:1px solid var(--border-color); border-radius:0.45rem; font-size:0.95rem; text-align:right;">
+            <div id="pl-carry-cash-info" style="font-size:0.76rem; color:var(--text-secondary); margin-top:0.25rem;">예산 − 실제 = 잔액 (자동 계산 · 승인액이 다르면 수정하세요)</div>
+          </div>
+          <div>
+            <label for="pl-carry-self" style="display:block; font-weight:600; font-size:0.85rem; margin-bottom:0.25rem;">자부담현금 이월 (원)</label>
+            <input type="text" id="pl-carry-self" inputmode="numeric" value="0" style="width:100%; padding:0.5rem 0.6rem; border:1px solid var(--border-color); border-radius:0.45rem; font-size:0.95rem; text-align:right;">
+            <div style="font-size:0.76rem; color:var(--text-secondary); margin-top:0.25rem;">자부담현금은 집행 자동집계가 없어 <strong>직접 입력</strong>합니다.</div>
+          </div>
+        </div>
+      </div>
+      <div class="pl-modal-footer">
+        <button type="button" class="ui-btn" id="pl-carry-cancel">취소</button>
+        <button type="button" class="ui-btn ui-btn--primary" id="pl-carry-apply">이월 확정</button>
+      </div>
+    </div>
+  </div>
+
   <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-firestore-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-auth-compat.js"></script>

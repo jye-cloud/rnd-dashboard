@@ -233,6 +233,10 @@
     // { [personId]: { newOrExisting: '기존'|'신규', cashOrInkind: '현금'|'현물', subRole: string } }
     personRoles: {},
 
+    // v8.8 신규: 연차별 인력 표시 순서. key = 'y'+연차index (연차 없으면 'cy'+연도) → [personId, ...]
+    //   명단(personIds)은 과제 공용이라 연차마다 순서를 달리할 수 없어서, 순서만 연차별로 분리 저장.
+    //   없으면 personIds 순서로 폴백(비파괴). 새로 들어온 인력은 표시 시 맨 뒤에 붙임.
+    personOrderByYear: {},
     // v5 Step 2 신규: 화면 모드
     // 'all12' = 1~12월 모두 노출 (기본)
     // 'quarter' = 현재 분기 3개월만 펼치고 나머지 9개월 자동 접힘
@@ -290,6 +294,23 @@
   // - 'all12'   → 12개월 전체 (월 접기는 별도 Step 3에서)
   // - 'quarter' → 분기 3개월만 (기존 동작 유지)
   function getVisibleMonths() {
+    var proj = getProject();
+    var hasYb = proj && Array.isArray(proj.yearBudgets) && proj.yearBudgets.length > 0;
+    if (hasYb) {
+      // 연차 기준
+      if (state.viewMode === 'quarter') {
+        // 분기 보기: 연차가 닿는 분기들 중 state.quarter 번째 분기(3개월). 연차 밖 월은 회색+잠금.
+        var qs = getYearQuarters();
+        if (qs.length) {
+          var qi = Math.min(Math.max(state.quarter, 1), qs.length) - 1;
+          return qs[qi].months;
+        }
+        return getActiveYearMonths();   // 폴백(꼬리연도 등)
+      }
+      // 전체 보기: 연차 실제 기간 전체
+      return getActiveYearMonths();
+    }
+    // 연차 정보 없는 과제 → 기존 달력연도/분기 동작 유지
     if (state.viewMode === 'quarter') {
       return getMonths(state.year, state.quarter);
     }
@@ -309,11 +330,15 @@
   function isMonthCollapsed(month) {
     // 1. 명시적 접힘
     if (state.collapsedMonths.has(month)) return true;
-    // 2. 분기 모드 자동 접힘
+    // 2. 분기 모드 자동 접힘 — 단, 연차 있는 과제는 연차 전체를 펼쳐 보여줌(분기 회색처리는 2단계).
     if (state.viewMode === 'quarter') {
-      var qStart = (state.quarter - 1) * 3 + 1;
-      var qEnd   = qStart + 2;
-      if (month < qStart || month > qEnd) return true;
+      var p = getProject();
+      var hasYb = p && Array.isArray(p.yearBudgets) && p.yearBudgets.length > 0;
+      if (!hasYb) {
+        var qStart = (state.quarter - 1) * 3 + 1;
+        var qEnd   = qStart + 2;
+        if (month < qStart || month > qEnd) return true;
+      }
     }
     return false;
   }
@@ -380,13 +405,40 @@
     return !!(person && sanitizeSalaryChanges(person.salaryChanges).length);
   }
 
-  // 우선순위: ① 과제 오버라이드(평탄, >0) ② 마스터 연봉(그 달 기준) ③ person.monthlySalary
-  //   ym 없거나 변경시점 없으면 기존 동작(person.monthlySalary)과 동일 — 안전.
+  // v8.9: 연차별 과제 월급 오버라이드 — 한 연차에서 바꿔도 다른 연차에 연동 안 됨.
+  //   ym이 속한 연차(없으면 활성 연차) 인덱스. yearBudgets 기간 포함으로 판정, 못 찾으면 활성 연차.
+  function getYearIndexForYm(ym) {
+    var proj = getProject();
+    if (!proj || !Array.isArray(proj.yearBudgets) || !ym) return getYearIndexForState();
+    var key = String(ym).slice(0, 7);
+    for (var i = 0; i < proj.yearBudgets.length; i++) {
+      var yb = proj.yearBudgets[i];
+      if (!yb || !yb.startDate || !yb.endDate) continue;
+      var s = String(yb.startDate).slice(0, 7), e = String(yb.endDate).slice(0, 7);
+      if (key >= s && key <= e) return i + 1;
+    }
+    return getYearIndexForState();
+  }
+
+  // 과제 오버라이드 값 — 연차별 우선, 없으면 기존 단일값 폴백(연차별 값 없는 연차는 기존대로). 없으면 null.
+  //   yearIndex 미지정 시 활성 연차.
+  function getYearOverrideValue(roles, yearIndex) {
+    if (!roles) return null;
+    var yi = yearIndex || getYearIndexForState();
+    var byY = roles.monthlySalaryOverrideByYear;
+    if (yi && byY && typeof byY[yi] === 'number' && byY[yi] > 0) return byY[yi];
+    if (typeof roles.monthlySalaryOverride === 'number' && roles.monthlySalaryOverride > 0) return roles.monthlySalaryOverride;
+    return null;
+  }
+
+  // 우선순위: ① 연차별 오버라이드 ② 기존 단일 오버라이드(폴백) ③ 마스터 연봉(그 달) ④ person.monthlySalary
+  //   ym 없으면 활성 연차 기준, ym 있으면 그 달이 속한 연차 기준.
   function getEffectiveMonthlySalary(person, ym) {
     if (!person) return 0;
     var roles = state.personRoles && state.personRoles[person.id];
-    if (roles && typeof roles.monthlySalaryOverride === 'number' && roles.monthlySalaryOverride > 0) {
-      return roles.monthlySalaryOverride;
+    if (roles) {
+      var ov = getYearOverrideValue(roles, ym ? getYearIndexForYm(ym) : null);
+      if (ov !== null) return ov;
     }
     if (ym && hasSalaryTimeline(person)) {
       return getMonthlySalaryAt(person, ym);
@@ -600,6 +652,50 @@
       .filter(Boolean);
   }
 
+  // 인력이 "현재 보는 연도(연차)"에 셀(데이터)이 있는지 — 표시 필터용.
+  //   셀은 연차별(월)로 분리돼 있는데 명단(personIds)은 과제 전체 공유라,
+  //   그 연차에 셀이 있는 사람만 그려야 "넣은 연차에만 보인다"가 됨.
+  //   (연차 정렬 후에는 이 창이 '연도 12개월' → '연차 실제 기간'으로 바뀜.)
+  //   빈 셀(rate 0)도 키만 있으면 소속으로 인정 → 수동 추가 인력 자리 표시 가능.
+  function personHasDataInView(personId) {
+    var proj = getProject();
+    if (!proj) return false;
+    var months = getActiveYearMonths();   // 연차 실제 기간(연차 없으면 달력연도 12개월)
+    for (var i = 0; i < months.length; i++) {
+      var key = getLaborKey(proj.id, months[i].ym, personId);
+      if (state.planned[key] || state.actual[key]) return true;
+    }
+    return false;
+  }
+
+  // 화면에 그릴 인력 = 명단 중 현재 연도(연차)에 데이터 있는 사람만.
+  // 주의: 재배열/저장/카운트 외 로직은 getPersons()(명단 전체)를 그대로 사용.
+  function getVisiblePersons() {
+    return getPersons().filter(function (p) { return personHasDataInView(p.id); });
+  }
+
+  // v8.8: 현재 보는 연차의 순서 키. 연차 있으면 'y'+연차index, 없으면 'cy'+달력연도.
+  function getOrderKey() {
+    var yi = (typeof getYearIndexForState === 'function') ? getYearIndexForState() : null;
+    return (yi != null) ? ('y' + yi) : ('cy' + state.year);
+  }
+
+  // v8.8: 화면에 그릴 인력을 "이 연차의 저장된 순서(personOrderByYear)"대로 정렬.
+  //   - 저장 순서에 없는(새로 들어온) 인력은 뒤에 붙임(기존 personIds 상대순서 유지).
+  //   - 저장 순서가 없으면 기존 getVisiblePersons() 순서 그대로(비파괴 폴백).
+  //   명단(personIds)은 과제 공용이라 손대지 않고, '보이는 사람의 표시 순서'만 연차별로 분리.
+  function getDisplayPersons() {
+    var visible = getVisiblePersons();
+    var saved = state.personOrderByYear && state.personOrderByYear[getOrderKey()];
+    if (!Array.isArray(saved) || saved.length === 0) return visible;
+    var pos = {};
+    saved.forEach(function (id, i) { pos[id] = i; });
+    var inSaved = [], rest = [];
+    visible.forEach(function (p) { (pos[p.id] != null ? inSaved : rest).push(p); });
+    inSaved.sort(function (a, b) { return pos[a.id] - pos[b.id]; });
+    return inSaved.concat(rest);
+  }
+
   // ====================================================================
   // v5 Step 2 헬퍼: 예산총액 / 이월금 / 누계 / 차액
   // ====================================================================
@@ -611,12 +707,103 @@
     var proj = getProject();
     if (!proj || !Array.isArray(proj.yearBudgets)) return null;
     var year = state.year;
+    // "그 해에 시작하는 연차"를 고름 (시작연도 기준). 범위 겹침이 아니라 시작연도 일치.
+    //   → 24.11~25.4 연차는 2024에만 잡힘(2025 꼬리는 2024에서 봄). 2027이 1차로 오인되던 버그도 해소.
+    for (var i = 0; i < proj.yearBudgets.length; i++) {
+      var yb = proj.yearBudgets[i];
+      if (!yb || !yb.startDate) continue;
+      var sy = parseInt(String(yb.startDate).slice(0, 4), 10);
+      if (isFinite(sy) && sy === year) return i + 1;
+    }
+    return null;
+  }
+
+  // 두 날짜('YYYY-MM-..') 사이의 월 객체 목록 — 연차 실제 기간(달력연도 걸쳐도 통째로).
+  function ymRange(startDateStr, endDateStr) {
+    var out = [];
+    if (!startDateStr || !endDateStr) return out;
+    var sY = parseInt(String(startDateStr).slice(0, 4), 10), sM = parseInt(String(startDateStr).slice(5, 7), 10);
+    var eY = parseInt(String(endDateStr).slice(0, 4), 10),  eM = parseInt(String(endDateStr).slice(5, 7), 10);
+    if (!isFinite(sY) || !isFinite(sM) || !isFinite(eY) || !isFinite(eM)) return out;
+    var y = sY, m = sM, guard = 0;
+    while ((y < eY || (y === eY && m <= eM)) && guard < 240) {
+      out.push({ year: y, month: m, ym: y + '-' + pad2(m) });
+      m++; if (m > 12) { m = 1; y++; }
+      guard++;
+    }
+    return out;
+  }
+
+  // 현재 활성 연차 객체 (yearBudgets[idx-1]) — 없으면 null.
+  function getActiveYearObj() {
+    var proj = getProject();
+    var idx = getYearIndexForState();
+    if (!proj || !Array.isArray(proj.yearBudgets) || !idx) return null;
+    return proj.yearBudgets[idx - 1] || null;
+  }
+
+  // 현재 활성 연차의 실제 월 목록 (시작~종료, 달력연도 걸쳐도 통째로).
+  //   - 연차+날짜 있으면 그 기간.
+  //   - 연차는 있는데 이 연도에 '시작'하는 연차가 없으면(꼬리연도) → [] (안내 표시용).
+  //   - 연차 정보가 아예 없는 과제 → 기존 달력연도 12개월 폴백.
+  function getActiveYearMonths() {
+    var proj = getProject();
+    var hasYb = proj && Array.isArray(proj.yearBudgets) && proj.yearBudgets.length > 0;
+    var yb = getActiveYearObj();
+    if (yb && yb.startDate && yb.endDate) {
+      var r = ymRange(yb.startDate, yb.endDate);
+      if (r.length) return r;
+    }
+    if (hasYb) return [];          // 꼬리연도 — 시작연도에서 봐야 함
+    return getAllMonths(state.year);  // 연차 없는 과제: 기존 동작
+  }
+
+  // 연차가 닿는 '달력 분기' 목록 (분기 보기용). 각 분기는 그 분기의 3개월 전체(연차 밖 월 포함).
+  //   예: 연차 24.11~25.4 → [2024Q4(10·11·12), 2025Q1(1·2·3), 2025Q2(4·5·6)]
+  //   연차 밖 월(10월·5월·6월)은 렌더 시 회색+잠금 처리(isYmInActiveYear로 판정).
+  function getYearQuarters() {
+    var months = getActiveYearMonths();
+    if (!months.length) return [];
+    var seen = Object.create(null);
+    var quarters = [];
+    months.forEach(function (m) {
+      var q = Math.ceil(m.month / 3);
+      var key = m.year + '-' + q;
+      if (seen[key]) return;
+      seen[key] = true;
+      var start = (q - 1) * 3 + 1;
+      var qMonths = [start, start + 1, start + 2].map(function (mm) {
+        return { year: m.year, month: mm, ym: m.year + '-' + pad2(mm) };
+      });
+      quarters.push({ year: m.year, q: q, months: qMonths });
+    });
+    quarters.sort(function (a, b) { return (a.year - b.year) || (a.q - b.q); });
+    return quarters;
+  }
+
+  // ym이 현재 활성 연차의 실제 기간 안에 있는지 (분기 보기에서 '연차 밖' 회색 판정용).
+  //   연차 없는 과제는 getActiveYearMonths가 달력 12개월이라 항상 true → 기존 동작.
+  function isYmInActiveYear(ym) {
+    var months = getActiveYearMonths();
+    for (var i = 0; i < months.length; i++) {
+      if (months[i].ym === ym) return true;
+    }
+    return false;
+  }
+
+  // 꼬리연도 안내용: 이 연도가 어느 연차의 일부인지(시작연도 포함).
+  function getTailYearHint() {
+    var proj = getProject();
+    if (!proj || !Array.isArray(proj.yearBudgets)) return null;
+    var year = state.year;
     for (var i = 0; i < proj.yearBudgets.length; i++) {
       var yb = proj.yearBudgets[i];
       if (!yb || !yb.startDate || !yb.endDate) continue;
       var sy = parseInt(String(yb.startDate).slice(0, 4), 10);
       var ey = parseInt(String(yb.endDate).slice(0, 4), 10);
-      if (isFinite(sy) && isFinite(ey) && year >= sy && year <= ey) return i + 1;
+      if (isFinite(sy) && isFinite(ey) && year > sy && year <= ey) {
+        return { yearIndex: i + 1, startYear: sy };
+      }
     }
     return null;
   }
@@ -636,15 +823,45 @@
     return { cash: c, selfCash: s, inkind: k, total: c + s + k };
   }
 
-  // 이월금: projects.yearBudgets[idx-1].carryover 에서 읽음.
-  // v5에서는 껍데기 — 입력 UI 없음, 기본 0. 향후 carryover 입력 페이지 결정 시 연결.
+  // 이월금(전년도 → 올해 받은 금액): 현재 연차 예산 문서(projectBudget/{id}_year{N})에서 읽음.
+  //   - carryoverCash     = 지원금 이월
+  //   - carryoverSelfCash = 자부담현금 이월
+  //   - 현물은 이월 불가 → 항목 없음.
+  // 반환: { cash, selfCash }. 값이 없으면 둘 다 0 (기존 동작과 동일).
   function getCarryover() {
+    var yb = state.yearBudget;
+    if (!yb) return { cash: 0, selfCash: 0 };
+    var cash = (typeof yb.carryoverCash     === 'number') ? yb.carryoverCash     : 0;
+    var self = (typeof yb.carryoverSelfCash === 'number') ? yb.carryoverSelfCash : 0;
+    return { cash: cash, selfCash: self };
+  }
+
+  // 다음 연차 인덱스 (이월 대상). 마지막 연차면 null.
+  function getNextYearIndex() {
     var proj = getProject();
-    if (!proj || !Array.isArray(proj.yearBudgets)) return 0;
-    var idx = getYearIndexForState();
-    if (!idx) return 0;
-    var yb = proj.yearBudgets[idx - 1];
-    return (yb && typeof yb.carryover === 'number') ? yb.carryover : 0;
+    var idx  = getYearIndexForState();
+    if (!proj || !Array.isArray(proj.yearBudgets) || !idx) return null;
+    var next = idx + 1;
+    return (next <= proj.yearBudgets.length) ? next : null;
+  }
+
+  // 현재 연도 실제 탭 지원금(cash) 집행 합 — 이월 확정 모달 프리필용.
+  function getActualCashSumForYear() {
+    var proj = getProject();
+    if (!proj) return 0;
+    var sum = 0;
+    var months = getActiveYearMonths();   // 연차 실제 기간
+    for (var mi = 0; mi < months.length; mi++) {
+      var ym = months[mi].ym;
+      for (var i = 0; i < state.personIds.length; i++) {
+        var pid = state.personIds[i];
+        var person = _allPersons.find(function (p) { return p.id === pid; });
+        if (!isPersonActiveInYm(person, ym)) continue;   // 입사 전/퇴사 후 제외
+        var cell = state.actual[getLaborKey(proj.id, ym, pid)];
+        if (cell && typeof cell.cash === 'number') sum += cell.cash;
+      }
+    }
+    return sum;
   }
 
   // 누계: 현재 연도 1~12월의 cell 합산 (state.activeTab 기준 — planned/actual)
@@ -659,13 +876,14 @@
     if (!proj) return { cash: 0, selfCash: 0, inkind: 0, total: 0 };
     var dataMap = state.activeTab === 'actual' ? state.actual : state.planned;
     var sumCash = 0, sumInkind = 0;
-    var year = state.year;
-    for (var m = 1; m <= 12; m++) {
-      var ym = year + '-' + pad2(m);
+    var months = getActiveYearMonths();   // 연차 실제 기간 전체(달력연도 걸쳐도 통째로)
+    for (var mi = 0; mi < months.length; mi++) {
+      var ym = months[mi].ym;
       for (var i = 0; i < state.personIds.length; i++) {
         var pid = state.personIds[i];
-        var key = getLaborKey(proj.id, ym, pid);
-        var cell = dataMap[key];
+        var person = _allPersons.find(function (p) { return p.id === pid; });
+        if (!isPersonActiveInYm(person, ym)) continue;   // 입사 전/퇴사 후(회색) 제외
+        var cell = dataMap[getLaborKey(proj.id, ym, pid)];
         if (!cell) continue;
         if (typeof cell.cash   === 'number') sumCash   += cell.cash;
         if (typeof cell.inkind === 'number') sumInkind += cell.inkind;
@@ -680,18 +898,21 @@
     };
   }
 
-  // 차액 = 예산총액 + 이월금 − 누계
-  // 항목별 차액 + 총합 차액 모두 반환
+  // 차액 = (예산 + 이월) − 누계, 항목별.
+  //   - 지원금/자부담: 이월금을 더함
+  //   - 현물: 이월 불가 → 예산 − 누계만
   function getRemainingBreakdown() {
     var b = getBudgetBreakdown();
     var c = getCumulativeBreakdown();
-    var carry = getCarryover();
-    // 이월금은 일단 총합에만 적용 (어떤 항목에 귀속될지 미정 — §6.X)
+    var carry = getCarryover();   // { cash, selfCash }
+    var rCash = b.cash     + (carry.cash     || 0) - c.cash;
+    var rSelf = b.selfCash + (carry.selfCash || 0) - c.selfCash;
+    var rInk  = b.inkind                          - c.inkind;   // 현물 이월 없음
     return {
-      cash:     b.cash     - c.cash,
-      selfCash: b.selfCash - c.selfCash,
-      inkind:   b.inkind   - c.inkind,
-      total:    b.total + carry - c.total,
+      cash:     rCash,
+      selfCash: rSelf,
+      inkind:   rInk,
+      total:    rCash + rSelf + rInk,
       carryover: carry,
     };
   }
@@ -725,6 +946,7 @@
       state.meta        = {};
       state.personIds   = [];
       state.personRoles = {};
+      state.personOrderByYear = {};
       state.yearBudget  = null;
       setLoading(false);
       renderAll();
@@ -755,6 +977,8 @@
       state.personIds   = (metaDoc.exists    && metaDoc.data().personIds)       ? metaDoc.data().personIds      : [];
       // v5 신규: personRoles 읽기 (없으면 빈 객체)
       state.personRoles = (metaDoc.exists    && metaDoc.data().personRoles)     ? metaDoc.data().personRoles    : {};
+      // v8.8: 연차별 표시 순서 (없으면 빈 객체 → personIds 순서로 폴백)
+      state.personOrderByYear = (metaDoc.exists && metaDoc.data().personOrderByYear) ? metaDoc.data().personOrderByYear : {};
 
       // v5 Step 2: 예산 캐시
       if (budgetDoc && budgetDoc.exists) {
@@ -764,6 +988,9 @@
           budgetCash:     d.budgetCash     || 0,
           budgetSelfCash: d.budgetSelfCash || 0,
           budgetInkind:   d.budgetInkind   || 0,
+          // 이월금(전년도→올해 받은 금액). 현물은 이월 불가 → 지원금/자부담만.
+          carryoverCash:     d.carryoverCash     || 0,
+          carryoverSelfCash: d.carryoverSelfCash || 0,
           period:         d.period         || null,
         };
       } else {
@@ -788,6 +1015,7 @@
       state.meta        = {};
       state.personIds   = [];
       state.personRoles = {};
+      state.personOrderByYear = {};
       state.yearBudget  = null;
       setLoading(false);
       renderAll();
@@ -817,6 +1045,8 @@
           budgetCash:     d.budgetCash     || 0,
           budgetSelfCash: d.budgetSelfCash || 0,
           budgetInkind:   d.budgetInkind   || 0,
+          carryoverCash:     d.carryoverCash     || 0,
+          carryoverSelfCash: d.carryoverSelfCash || 0,
           period:         d.period         || null,
         };
       } else {
@@ -889,6 +1119,7 @@
         meta:        state.meta,
         personIds:   state.personIds,
         personRoles: state.personRoles,  // v5 신규
+        personOrderByYear: state.personOrderByYear || {},  // v8.8: 연차별 표시 순서
         updatedAt:   new Date().toISOString()
       }
     );
@@ -1060,6 +1291,7 @@
     var qWord  = nav ? nav.previousElementSibling : null; // "분기" label
     var visible = state.viewMode === 'quarter';
     if (nav)   nav.style.display   = visible ? '' : 'none';
+    if (visible) updateQuarterLabel();   // 분기 라벨(연차 과제는 실제 달력 분기)도 갱신
     if (qWord && qWord.classList && qWord.classList.contains('history-toolbar-label') && qWord.textContent === '분기') {
       qWord.style.display = visible ? '' : 'none';
     }
@@ -1111,6 +1343,25 @@
     var carry = r.carryover;
     var yearIdx = getYearIndexForState();
 
+    // 자부담현금 별도 관리(hasSelfCash) OFF = 합산 보기:
+    //   지원금+자부담을 '현금' 한 줄로 합치고, 환급 기준(지원금)을 작은 서브라인으로 표기.
+    //   데이터/환급 계산은 그대로 지원금 분리 — 여긴 표시만.
+    var combined = !projHasSelfCash(project);
+    function cashRows(cashV, selfV, sub, disabledSelf) {
+      if (!combined) {
+        // 별도: 지원금 / 현금(자부담) 두 줄
+        return '<div><span>지원금</span><strong>' + fmtWon(cashV) + '</strong></div>' +
+               '<div' + (disabledSelf ? ' class="is-disabled"' : '') + '><span>현금</span><strong>' + fmtWon(selfV) + '</strong></div>';
+      }
+      // 합산: 현금 합계 한 줄 (+ 환급기준 지원금 서브라인)
+      var h = '<div><span>현금</span><strong>' + fmtWon(cashV + selfV) + '</strong></div>';
+      if (sub) {
+        h += '<div class="pl-sticky-refund-sub" style="opacity:0.62;">' +
+               '<span>└ ' + sub.label + '</span><strong>' + fmtWon(sub.value) + '</strong></div>';
+      }
+      return h;
+    }
+
     // 예산 페이지 링크 (있으면)
     var budgetLinkHref = 'project-budget.html';
     var hasYearBudget = (state.yearBudget != null);
@@ -1131,8 +1382,7 @@
         '</div>' +
         '<div class="pl-sticky-box-amount">' + fmtWon(b.total) + '</div>' +
         '<div class="pl-sticky-box-breakdown">' +
-          '<div><span>지원금</span><strong>' + fmtWon(b.cash) + '</strong></div>' +
-          '<div><span>자부담</span><strong>' + fmtWon(b.selfCash) + '</strong></div>' +
+          cashRows(b.cash, b.selfCash, { label: '환급기준(지원금)', value: b.cash }, false) +
           '<div><span>현물</span><strong>' + fmtWon(b.inkind) + '</strong></div>' +
         '</div>' +
         (hasYearBudget
@@ -1140,14 +1390,21 @@
           : '<div class="pl-sticky-box-note">' + (yearIdx ? (yearIdx + '차년도 예산 미입력') : '연차 정보 없음') + '</div>') +
       '</div>';
 
-    // ── 박스 2: 이월금 (껍데기) ──
+    // ── 박스 2: 이월금 (전년도→올해 받은 금액. 받은 표시만 — 다음 연차로 넘기는 버튼은 차액 박스로 이동) ──
+    var carryCash  = carry.cash     || 0;
+    var carrySelf  = carry.selfCash || 0;
+    var carryTotal = carryCash + carrySelf;
+    var nextIdx    = getNextYearIndex();
     html +=
       '<div class="pl-sticky-box pl-sticky-box--muted">' +
         '<div class="pl-sticky-box-head">' +
           '<span class="pl-sticky-box-title">이월금</span>' +
-          '<span class="pl-sticky-box-hint" title="v5에서는 표시만. 입력 방식은 추후 결정.">(껍데기)</span>' +
+          '<span class="pl-sticky-box-hint" title="전년도에서 이월받은 금액. 현물은 이월 불가.">전년도→올해</span>' +
         '</div>' +
-        '<div class="pl-sticky-box-amount">' + fmtWon(carry) + '</div>' +
+        '<div class="pl-sticky-box-amount">' + fmtWon(carryTotal) + '</div>' +
+        '<div class="pl-sticky-box-breakdown">' +
+          cashRows(carryCash, carrySelf, null, false) +
+        '</div>' +
       '</div>';
 
     // ── 박스 3: 누계 ──
@@ -1155,12 +1412,11 @@
     html +=
       '<div class="pl-sticky-box">' +
         '<div class="pl-sticky-box-head">' +
-          '<span class="pl-sticky-box-title">누계 (' + tabLabel + ' · 12개월)</span>' +
+          '<span class="pl-sticky-box-title">누계 (' + tabLabel + ')</span>' +
         '</div>' +
         '<div class="pl-sticky-box-amount">' + fmtWon(c.total) + '</div>' +
         '<div class="pl-sticky-box-breakdown">' +
-          '<div><span>지원금</span><strong>' + fmtWon(c.cash) + '</strong></div>' +
-          '<div class="is-disabled" title="v5 미반영 (셀에 selfCash 없음)"><span>자부담</span><strong>' + fmtWon(c.selfCash) + '</strong></div>' +
+          cashRows(c.cash, c.selfCash, { label: '지원금 집행', value: c.cash }, true) +
           '<div><span>현물</span><strong>' + fmtWon(c.inkind) + '</strong></div>' +
         '</div>' +
       '</div>';
@@ -1173,11 +1429,15 @@
         '</div>' +
         '<div class="pl-sticky-box-amount">' + fmtWon(r.total) + '</div>' +
         '<div class="pl-sticky-box-breakdown">' +
-          '<div><span>지원금</span><strong>' + fmtWon(r.cash) + '</strong></div>' +
-          '<div class="is-disabled"><span>자부담</span><strong>' + fmtWon(r.selfCash) + '</strong></div>' +
+          cashRows(r.cash, r.selfCash, { label: '환급 가능(지원금)', value: Math.max(0, r.cash) }, true) +
           '<div><span>현물</span><strong>' + fmtWon(r.inkind) + '</strong></div>' +
         '</div>' +
         '<div class="pl-sticky-box-formula">예산총액 + 이월금 − 누계</div>' +
+        (yearIdx
+          ? (nextIdx
+              ? '<button type="button" id="pl-carryover-btn" style="margin-top:0.5rem; width:100%; font-size:0.76rem; padding:0.4rem 0.3rem; border:1px solid var(--border-color); border-radius:0.4rem; background:#fff; color:var(--text-primary); cursor:pointer; white-space:nowrap;" title="이 차액(예산+이월−누계)을 ' + nextIdx + '차년도 이월금으로 넘깁니다.">📥 ' + nextIdx + '차년도로 이월</button>'
+              : '<div class="pl-sticky-box-note">마지막 연차 (이월 대상 없음)</div>')
+          : '') +
       '</div>';
 
     wrap.innerHTML = html;
@@ -1192,7 +1452,7 @@
   }
 
   function updateTabCounts() {
-    var persons = getPersons();
+    var persons = getVisiblePersons();   // 현재 연차에 보이는 인력 수
     // v5 Step 4 후속: 비교 탭은 count 자리에 "차이만" 토글이 들어가서 갱신 대상 아님
     ['planned', 'actual'].forEach(function (tab) {
       var el = document.getElementById('tab-count-' + tab);
@@ -1206,7 +1466,7 @@
   function buildTable(tableEl, mode) {
     if (!tableEl) return;
     var months  = getVisibleMonths();   // v5 Step 2: viewMode에 따라 12개월 or 3개월
-    var persons = getPersons();
+    var persons = getDisplayPersons();   // 현재 연차에 데이터 있는 인력만 (넣은 연차에만 보임) — v8.8: 연차별 순서 적용
     var project = getProject();
     var dataMap = mode === 'actual' ? state.actual : state.planned;
 
@@ -1240,6 +1500,24 @@
       var tbody0 = document.createElement('tbody');
       tbody0.appendChild(trEmpty);
       tableEl.appendChild(tbody0);
+      return;
+    }
+
+    // 꼬리연도: 이 과제에 연차는 있는데 '이 연도에 시작하는 연차'가 없는 경우.
+    //   (예: 연차 24.11~25.4 → 2025를 고르면 보여줄 게 없음. 그 연차는 2024에서 봄.)
+    if (months.length === 0) {
+      var hint = getTailYearHint();
+      var trTail = document.createElement('tr');
+      var tdTail = document.createElement('td');
+      tdTail.colSpan = totalCols || 4;
+      tdTail.className = 'pl-empty';
+      tdTail.textContent = hint
+        ? ('이 기간은 ' + hint.yearIndex + '차년도(' + hint.startYear + '년 시작)의 일부입니다. ' + hint.startYear + '년에서 보세요.')
+        : (state.year + '년에 시작하는 연차가 없습니다.');
+      trTail.appendChild(tdTail);
+      var tbodyTail = document.createElement('tbody');
+      tbodyTail.appendChild(trTail);
+      tableEl.appendChild(tbodyTail);
       return;
     }
 
@@ -1673,6 +1951,29 @@
     else if (!locked && idx >= 0) role.lockedYms.splice(idx, 1);
   }
 
+  // 재입사 등: 입사 전/퇴사 후라 자동 잠긴 월을 사용자가 '입력 허용'으로 풂 (월 단위).
+  //   - personRoles[pid].unlockedYms = ['2024-03', ...]
+  //   - 이 월은 자동 기간잠금을 무시하고 편집 가능 + 합계에도 포함(활성으로 간주).
+  //   - 모델 변경 없이 재직 구간 여러 개를 흉내내는 임시 방편.
+  function isYmManuallyUnlocked(personId, ym) {
+    var role = state.personRoles && state.personRoles[personId];
+    if (!role || !Array.isArray(role.unlockedYms)) return false;
+    return role.unlockedYms.indexOf(ym) >= 0;
+  }
+  function setYmUnlocked(personId, ym, unlocked) {
+    if (!state.personRoles) state.personRoles = {};
+    if (!state.personRoles[personId]) {
+      state.personRoles[personId] = {
+        newOrExisting: '기존', cashOrInkind: '현금', subRole: '', monthlySalaryOverride: null, lockedYms: [], unlockedYms: []
+      };
+    }
+    var role = state.personRoles[personId];
+    if (!Array.isArray(role.unlockedYms)) role.unlockedYms = [];
+    var idx = role.unlockedYms.indexOf(ym);
+    if (unlocked && idx < 0) role.unlockedYms.push(ym);
+    else if (!unlocked && idx >= 0) role.unlockedYms.splice(idx, 1);
+  }
+
   function getHireYm(person) {
     if (!person) return null;
     var candidates = [person.hireDate, person.hiredAt, person.joinDate, person.startDate];
@@ -1681,6 +1982,21 @@
       if (ym) return ym;
     }
     return null;
+  }
+
+  // 그 사람이 해당 월(ym)에 과제에 '활성'인지 — 입사 전/퇴사 후면 false.
+  //   합계 산정에서 비활성 월(예산 분배로 값만 채워진 회색 칸)을 제외하는 데 사용.
+  //   ※ 사용자가 직접 잠근 셀은 여기서 제외하지 않음(값을 일부러 남긴 것으로 보고 합계 유지).
+  function isPersonActiveInYm(person, ym) {
+    if (!person) return true;
+    if (isYmManuallyUnlocked(person.id, ym)) return true;   // 수동 입력허용 월 → 활성으로 간주(합계 포함)
+    var hireYm = getHireYm(person);
+    if (hireYm && ym < hireYm) return false;
+    if (person.status === 'exited') {
+      var exitYm = getExitYm(person);
+      if (exitYm && ym > exitYm) return false;
+    }
+    return true;
   }
 
   // ---- 일반 행 ----
@@ -1737,7 +2053,7 @@
     var tdSalary = document.createElement('td');
     tdSalary.className = 'td-fixed pl-td-salary';
     var roles  = (state.personRoles && state.personRoles[person.id]) || {};
-    var hasOverride = (typeof roles.monthlySalaryOverride === 'number' && roles.monthlySalaryOverride > 0);
+    var hasOverride = (getYearOverrideValue(roles) !== null);
     var effective   = getEffectiveMonthlySalary(person);
     var salWrap = document.createElement('div');
     salWrap.className = 'pl-salary-wrap';
@@ -1813,11 +2129,18 @@
 
       var cell     = getCell(dataMap, project.id, m.ym, person.id);
       // v5.3: 셀 잠금 정책
-      //   - 퇴사월 이후 / 입사월 이전 / 사용자 직접 잠금 → 셋 중 하나라도 해당하면 잠금
+      //   - 연차 밖 월(분기 보기 패딩)이면 항상 잠금/회색 (입력 불가)
+      //   - 사용자 직접 잠금이면 무조건 잠금
+      //   - 그 외엔 퇴사월 이후/입사월 이전 잠금 — 단, 수동 '입력허용'(재입사 과거기간)이면 풀림
       var locked = false;
-      if (isExited && exitYm && m.ym > exitYm) locked = true;
-      if (hireYm && m.ym < hireYm)             locked = true;
-      if (isYmManuallyLocked(person.id, m.ym)) locked = true;
+      if (!isYmInActiveYear(m.ym)) {
+        locked = true;   // 연차 밖 월(분기에 걸친 연차 외 달)
+      } else if (isYmManuallyLocked(person.id, m.ym)) {
+        locked = true;
+      } else if (!isYmManuallyUnlocked(person.id, m.ym)) {
+        if (isExited && exitYm && m.ym > exitYm) locked = true;
+        if (hireYm && m.ym < hireYm)             locked = true;
+      }
       var inactive = locked;
 
       // 참여율
@@ -1909,7 +2232,7 @@
     if (hasRefund) {
       var rowTotalCash = 0, rowTotalSelf = 0, rowTotalInkind = 0;
       // dataMap에서 직접 12개월 다 더함 (months는 접힌 월 제외일 수 있어서 부정확)
-      var allYms = getAllMonths(state.year).map(function (m) { return m.ym; });
+      var allYms = getActiveYearMonths().map(function (m) { return m.ym; });
       allYms.forEach(function (ym) {
         var c = getCell(dataMap, project.id, ym, person.id);
         rowTotalCash   += (c.cash     || 0);
@@ -1959,7 +2282,7 @@
       : defaultSplitCis(person.id);
     var rowCis = splitCis.map(function (ci) { return { ci: ci }; });
     var nRows = rowCis.length;
-    var allYms = getAllMonths(state.year).map(function (mm) { return mm.ym; });
+    var allYms = getActiveYearMonths().map(function (mm) { return mm.ym; });
 
     // 사용 가능한 분류(드롭다운 옵션 후보)
     var availCis = ['현금'];
@@ -2007,7 +2330,7 @@
         var tdSalary = document.createElement('td');
         tdSalary.className = 'td-fixed pl-td-salary';
         tdSalary.rowSpan = nRows;
-        var hasOverride = (typeof roles.monthlySalaryOverride === 'number' && roles.monthlySalaryOverride > 0);
+        var hasOverride = (getYearOverrideValue(roles) !== null);
         var salWrap = document.createElement('div');
         salWrap.className = 'pl-salary-wrap';
         if (mode === 'planned') {
@@ -2034,13 +2357,11 @@
         tr.appendChild(tdSalary);
       }
 
-      // 구분 — 드롭다운(이 줄의 분류 선택). 다른 줄이 이미 쓰는 분류는 옵션에서 제외(중복 방지).
+      // 구분 — 드롭다운(이 줄의 분류 선택). 모든 분류 노출 — 다른 줄이 쓰는 걸 고르면 두 줄을 맞바꿈(순서 변경).
       var tdClassify = document.createElement('td');
       tdClassify.className = 'td-fixed pl-td-classify';
-      var usedByOthers = splitCis.filter(function (c, i) { return i !== ri; });
       var ciColorCls = rowField === 'inkind' ? 'is-inkind' : rowField === 'selfCash' ? 'is-selfcash' : 'is-cash';
       var optsHtml = availCis
-        .filter(function (c) { return c === rowCi || usedByOthers.indexOf(c) < 0; })
         .map(function (c) {
           return '<option value="' + c + '"' + (c === rowCi ? ' selected' : '') + '>' + fundTypeLabel(c) + '</option>';
         }).join('');
@@ -2064,9 +2385,14 @@
         }
         var cell = getCell(dataMap, project.id, m.ym, person.id);
         var locked = false;
-        if (isExited && exitYm && m.ym > exitYm) locked = true;
-        if (hireYm && m.ym < hireYm)             locked = true;
-        if (isYmManuallyLocked(person.id, m.ym)) locked = true;
+        if (!isYmInActiveYear(m.ym)) {
+          locked = true;   // 연차 밖 월(분기 보기 패딩)
+        } else if (isYmManuallyLocked(person.id, m.ym)) {
+          locked = true;
+        } else if (!isYmManuallyUnlocked(person.id, m.ym)) {
+          if (isExited && exitYm && m.ym > exitYm) locked = true;
+          if (hireYm && m.ym < hireYm)             locked = true;
+        }
         var inactive = locked;
 
         // 참여율(이 분류) — 시드 우선순위:
@@ -2349,6 +2675,7 @@
     months.forEach(function (m) {
       var totalRate = 0, totalCash = 0, totalSelf = 0, totalInkind = 0;
       persons.forEach(function (p) {
+        if (!isPersonActiveInYm(p, m.ym)) return;   // 입사 전/퇴사 후(회색) 셀은 합계 제외
         var cell = getCell(dataMap, project.id, m.ym, p.id);
         totalRate   += (cell.rate     || 0);
         totalCash   += (cell.cash     || 0);
@@ -2371,11 +2698,12 @@
 
     // v5.3: 행별 합계 (12개월 전체 — 접힌 월 포함) + 그랜드 토탈
     if (hasRefund) {
-      var allYms = getAllMonths(state.year).map(function (m) { return m.ym; });
+      var allYms = getActiveYearMonths().map(function (m) { return m.ym; });
       var grandCash = 0, grandSelf = 0, grandInkind = 0;
       persons.forEach(function (p) {
         var rowCash = 0, rowSelf = 0, rowInkind = 0;
         allYms.forEach(function (ym) {
+          if (!isPersonActiveInYm(p, ym)) return;   // 비활성 월(회색) 제외
           var c = getCell(dataMap, project.id, ym, p.id);
           rowCash   += (c.cash     || 0);
           rowSelf   += (c.selfCash || 0);
@@ -2612,7 +2940,14 @@
         newOrExisting: '기존', cashOrInkind: '현금', subRole: '', monthlySalaryOverride: null
       };
     }
-    var oldOverride = state.personRoles[pid].monthlySalaryOverride;
+    // v8.9: 연차별 오버라이드 — 활성 연차 기준으로 읽고 쓴다.
+    var activeIdx = getYearIndexForState();
+    if (!state.personRoles[pid].monthlySalaryOverrideByYear) state.personRoles[pid].monthlySalaryOverrideByYear = {};
+    var byYear = state.personRoles[pid].monthlySalaryOverrideByYear;
+    var oldOverride = (activeIdx && typeof byYear[activeIdx] === 'number' && byYear[activeIdx] > 0)
+      ? byYear[activeIdx]
+      : ((typeof state.personRoles[pid].monthlySalaryOverride === 'number' && state.personRoles[pid].monthlySalaryOverride > 0)
+          ? state.personRoles[pid].monthlySalaryOverride : null);
     var oldEffective = (typeof oldOverride === 'number' && oldOverride > 0)
       ? oldOverride
       : (person.monthlySalary || 0);
@@ -2630,7 +2965,7 @@
 
     // 영향 받는 cells 수집 (예상 탭만 — 자동 재계산은 예상 한정)
     var dataMap = state.planned;
-    var months  = getAllMonths(state.year);
+    var months  = getActiveYearMonths();
     var role    = state.personRoles[pid];
     var moneyField = moneyFieldOf(role.cashOrInkind);   // v7.4: 지원금/현금/현물 중 해당 필드
     var batchItems = [];
@@ -2666,12 +3001,18 @@
       setCell(dataMap, project.id, m.ym, pid, patch);
     });
 
-    // 월급 오버라이드 자체도 묶음에 포함 (override의 변경도 undo 가능하도록)
+    // 월급 오버라이드(연차별) 변경도 묶음에 포함 (undo 가능)
     batchItems.push({
-      personId: pid, field: '__salaryOverride',
+      personId: pid, field: '__salaryOverrideByYear', yearIndex: activeIdx,
       oldVal: oldOverride, newVal: newOverrideStored
     });
-    state.personRoles[pid].monthlySalaryOverride = newOverrideStored;
+    // v8.9: 활성 연차에만 기록 — 다른 연차는 그대로(연동 안 됨). 연차 식별 불가 시 기존 단일값으로.
+    if (activeIdx) {
+      if (newOverrideStored === null || newOverrideStored === 0) delete byYear[activeIdx];
+      else byYear[activeIdx] = newOverrideStored;
+    } else {
+      state.personRoles[pid].monthlySalaryOverride = newOverrideStored;
+    }
 
     // 묶음 undo entry
     _undoStack.push({
@@ -2717,7 +3058,29 @@
       var raw = Number(e.target.dataset.raw || 0);
       e.target.value = raw ? raw.toLocaleString('ko-KR') : '';
       e.target.blur();
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      moveSalaryFocus(e.target, 'down');
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      moveSalaryFocus(e.target, 'up');
     }
+  }
+
+  // 월급 칸 위/아래 이동 (현재 탭 테이블의 .pl-salary-input 들 사이)
+  function moveSalaryFocus(currentInput, direction) {
+    var mode = state.activeTab === 'actual' ? 'actual' : 'planned';
+    var table = document.getElementById('pl-table-' + mode);
+    if (!table) return;
+    var inputs = Array.prototype.slice.call(table.querySelectorAll('.pl-salary-input')).filter(function (el) {
+      return !el.disabled && !el.readOnly && el.offsetParent !== null;   // 보이는 입력칸만
+    });
+    var idx = inputs.indexOf(currentInput);
+    if (idx < 0) return;
+    var target = direction === 'down'
+      ? (inputs[idx + 1] || inputs[0])
+      : (inputs[idx - 1] || inputs[inputs.length - 1]);
+    if (target) { target.focus(); if (target.select) target.select(); }
   }
 
 
@@ -2728,7 +3091,7 @@
   //    · personRoles.cashOrInkind에 따라 cash 또는 inkind 필드로
   //  - 묶음 undo entry — 한 번의 Ctrl+Z로 전체 복원
   //  - Toast "N개 월 채움"
-  function fillRateToYearEnd(personId, fromYm, sourceRate) {
+  function fillRateToYearEnd(personId, fromYm, sourceRate, splitField) {
     var project = getProject();
     if (!project) return;
     // 예상 탭 한정
@@ -2739,9 +3102,9 @@
     var person = _allPersons.find(function (p) { return p.id === personId; });
     if (!person) return;
 
-    // 현재 연도의 모든 12개월 (접힌 월도 포함)
-    var year = state.year;
-    var allMonths = getAllMonths(year);
+    // 현재 활성 연차의 전체 월 (연차 없으면 달력 12개월 폴백). 접힌 월도 포함.
+    var allMonths = getFillMonths();   // v8.8: 화면 타임라인 전체(연차 밖 회색 월 포함)
+    if (!allMonths.length) allMonths = getAllMonths(state.year);
 
     // fromYm 이후의 월만 (자기 자신 제외 — 자신은 이미 그 값)
     var fromIdx = -1;
@@ -2749,24 +3112,67 @@
       if (allMonths[i].ym === fromYm) { fromIdx = i; break; }
     }
     if (fromIdx < 0) return;
-    var targets = allMonths.slice(fromIdx + 1);   // fromYm 다음 월부터 12월까지
-    // v5.3: 셀 잠금 정책과 일치 — 퇴사월 이후/입사월 이전/사용자 잠금 모두 제외
+    var targets = allMonths.slice(fromIdx + 1);   // fromYm 다음 월부터 끝까지
+    // v8.8: 잠긴 월도 건너뛰지 않고 채움(사용자 요청). 직접/재직기간 잠금은 채우기 직전 해제.
     var exitYm = (person.status === 'exited') ? getExitYm(person) : null;
     var hireYm = getHireYm(person);
-    targets = targets.filter(function (m) {
-      if (exitYm && m.ym > exitYm) return false;
-      if (hireYm && m.ym < hireYm) return false;
-      if (isYmManuallyLocked(personId, m.ym)) return false;
-      return true;
-    });
+    function _unlockForFill(ym) {
+      if (isYmManuallyLocked(personId, ym)) setYmLocked(personId, ym, false);
+      var pLk = (hireYm && ym < hireYm) || (exitYm && ym > exitYm);
+      if (pLk && !isYmManuallyUnlocked(personId, ym)) setYmUnlocked(personId, ym, true);
+    }
     if (targets.length === 0) {
-      showToast('이미 12월입니다. 채울 월이 없습니다.', 'info');
+      showToast('이 연차의 마지막 달입니다. 채울 월이 없습니다.', 'info');
       return;
     }
 
     var rate = parseCellNumber(sourceRate);
     if (rate > 100) rate = 100;
     if (rate < 0)   rate = 0;
+
+    // v7.4 나눔: 분류줄(splitField)에서 호출되면 그 분류 참여율만 채움.
+    //   다른 분류 참여율/금액은 보존, 그 분류 금액=급여×%, cell.rate=세 분류 합.
+    //   undo는 셀 전체 스냅샷(__cellSnapshot)으로 복원 — rates까지 정확히 되돌림.
+    if (splitField) {
+      var dataMapS = state.planned;
+      var roleS = (state.personRoles && state.personRoles[personId]) || {};
+      var pfS = moneyFieldOf(roleS.cashOrInkind);
+      var batchS = [];
+      targets.forEach(function (m) {
+        _unlockForFill(m.ym);
+        var prev = getCell(dataMapS, project.id, m.ym, personId);
+        // undo용 이전 셀 스냅샷
+        var snap = {
+          rate: prev.rate || 0,
+          cash: prev.cash || 0, selfCash: prev.selfCash || 0, inkind: prev.inkind || 0,
+          rates: prev.rates
+            ? { cash: prev.rates.cash || 0, selfCash: prev.rates.selfCash || 0, inkind: prev.rates.inkind || 0 }
+            : null
+        };
+        batchS.push({ personId: personId, ym: m.ym, field: '__cellSnapshot', oldVal: snap });
+        // 새 rates — 기존 보존 후 splitField만 교체
+        var rates = prev.rates
+          ? { cash: prev.rates.cash || 0, selfCash: prev.rates.selfCash || 0, inkind: prev.rates.inkind || 0 }
+          : (function () { var s = { cash: 0, selfCash: 0, inkind: 0 }; s[pfS] = prev.rate || 0; return s; })();
+        rates[splitField] = rate;
+        var salS = getEffectiveMonthlySalary(person, m.ym);
+        var sumRate = (rates.cash || 0) + (rates.selfCash || 0) + (rates.inkind || 0);
+        setCell(dataMapS, project.id, m.ym, personId, {
+          rates: rates,
+          cash:     Math.round(salS * (rates.cash || 0) / 100),
+          selfCash: Math.round(salS * (rates.selfCash || 0) / 100),
+          inkind:   Math.round(salS * (rates.inkind || 0) / 100),
+          rate: sumRate
+        });
+      });
+      _undoStack.push({ batch: true, mode: 'planned', label: '나눔 가로 채우기 (' + targets.length + '개 월)', items: batchS });
+      if (_undoStack.length > 50) _undoStack.shift();
+      buildTable(document.getElementById('pl-table-planned'), 'planned');
+      renderStickyBoxes();
+      scheduleSave();
+      showToast('→ ' + targets.length + '개 월 채움 (' + rate + '%)', 'success');
+      return;
+    }
 
     var role = (state.personRoles && state.personRoles[personId]) || {};
     var moneyField = moneyFieldOf(role.cashOrInkind);   // v7.4: 지원금/현금/현물
@@ -2789,6 +3195,7 @@
     // 묶음 undo entry — 채울 월 각각의 이전 값 기록
     var batchItems = [];
     targets.forEach(function (m) {
+      _unlockForFill(m.ym);
       var prev = getCell(dataMap, project.id, m.ym, personId);
       // rate 변경
       batchItems.push({
@@ -2834,6 +3241,115 @@
     showToast('→ ' + targets.length + '개 월 채움 (' + rate + '%)', 'success');
   }
 
+  // v8.8: 가로 채우기/잠그기 대상 월 — 화면에 보이는 타임라인 전체(연차 밖 회색 월 포함).
+  //   분기 보기 연차 과제는 모든 분기의 월을 모음(연차 밖 월도 데이터가 남아 있을 수 있어 채우기/비우기 대상에 포함).
+  //   그 외(전체 보기/연차 없음)는 연차 실제 기간(없으면 달력 12개월).
+  function getFillMonths() {
+    var proj = getProject();
+    var hasYb = proj && Array.isArray(proj.yearBudgets) && proj.yearBudgets.length > 0;
+    if (hasYb && state.viewMode === 'quarter') {
+      var qs = getYearQuarters();
+      if (qs && qs.length) {
+        var all = [];
+        qs.forEach(function (q) { (q.months || []).forEach(function (m) { all.push(m); }); });
+        if (all.length) return all;
+      }
+    }
+    var ms = getActiveYearMonths();
+    return ms.length ? ms : getAllMonths(state.year);
+  }
+
+  // v8.8: 현금/현물 셀 가로 채우기 — 이 셀 전체(참여율+금액)를 fromYm 다음 월부터 끝까지 그대로 복사(0이면 0%·0·0 전파).
+  //   - 경로의 '잠긴 월'(직접 잠금/재직기간 밖)은 건너뛰지 않고 자동 해제하고 같이 채움(사용자 요청).
+  //   - 값 그대로(폴백 계산 없음). 참여율도 함께 복사 → 소스가 0%면 대상도 0%로 떨어짐.
+  //   - 예상 탭 한정. 묶음 undo(셀 전체 스냅샷).
+  function fillAmountToYearEnd(personId, fromYm, field) {
+    var project = getProject();
+    if (!project) return;
+    if (state.activeTab !== 'planned') {
+      showToast('가로 채우기는 예상 탭에서만 사용할 수 있습니다.', 'warn');
+      return;
+    }
+    // 금액 필드만 대상 (cash/selfCash/inkind). 그 외 필드면 무시.
+    if (field !== 'cash' && field !== 'selfCash' && field !== 'inkind') return;
+    var person = _allPersons.find(function (p) { return p.id === personId; });
+    if (!person) return;
+
+    var allMonths = getFillMonths();
+    if (!allMonths.length) allMonths = getAllMonths(state.year);
+    var fromIdx = -1;
+    for (var i = 0; i < allMonths.length; i++) { if (allMonths[i].ym === fromYm) { fromIdx = i; break; } }
+    if (fromIdx < 0) return;
+    var targets = allMonths.slice(fromIdx + 1);
+    // v8.8: 잠긴 칸도 채움(사용자 요청) — 재직기간 밖/직접잠금 월을 '건너뛰지' 않고, 아래 루프에서 잠금 해제 후 채운다.
+    var exitYm = (person.status === 'exited') ? getExitYm(person) : null;
+    var hireYm = getHireYm(person);
+    if (targets.length === 0) {
+      showToast('이 연차의 마지막 달입니다. 채울 월이 없습니다.', 'info');
+      return;
+    }
+
+    var dataMap = state.planned;
+    var srcCell = getCell(dataMap, project.id, fromYm, personId);
+    // 셀 전체(참여율 + 금액 3종 + 나눔 rates)를 그대로 복사 — "0% 0 0"이면 0%·0·0이 그대로 전파.
+    var srcRate  = srcCell.rate || 0;
+    var srcCash  = srcCell.cash || 0;
+    var srcSelf  = srcCell.selfCash || 0;
+    var srcInk   = srcCell.inkind || 0;
+    var srcRates = srcCell.rates || null;
+
+    var batchItems = [];
+    var unlockedCount = 0;
+    targets.forEach(function (m) {
+      // 직접 잠금(lockedYms) 해제
+      if (isYmManuallyLocked(personId, m.ym)) { setYmLocked(personId, m.ym, false); unlockedCount++; }
+      // 재직기간 밖(입사 전/퇴사 후) 자동잠금 → 입력 허용으로 풀어서 같이 채움
+      var periodLocked = (hireYm && m.ym < hireYm) || (exitYm && m.ym > exitYm);
+      if (periodLocked && !isYmManuallyUnlocked(personId, m.ym)) { setYmUnlocked(personId, m.ym, true); unlockedCount++; }
+      var prev = getCell(dataMap, project.id, m.ym, personId);
+      var changed = (prev.rate || 0) !== srcRate || (prev.cash || 0) !== srcCash
+                 || (prev.selfCash || 0) !== srcSelf || (prev.inkind || 0) !== srcInk;
+      if (changed) {
+        // undo: 변경 전 셀 전체 스냅샷
+        batchItems.push({ personId: personId, ym: m.ym, field: '__cellSnapshot',
+          oldVal: { rate: prev.rate || 0, cash: prev.cash || 0, selfCash: prev.selfCash || 0, inkind: prev.inkind || 0, rates: prev.rates || null } });
+      }
+      setCell(dataMap, project.id, m.ym, personId, { rate: srcRate, cash: srcCash, selfCash: srcSelf, inkind: srcInk, rates: srcRates });
+    });
+
+    if (batchItems.length) {
+      _undoStack.push({ batch: true, mode: 'planned', label: '금액 가로 채우기 (' + targets.length + '개 월)', items: batchItems });
+      if (_undoStack.length > 50) _undoStack.shift();
+    }
+    buildTable(document.getElementById('pl-table-planned'), 'planned');
+    renderStickyBoxes();
+    scheduleSave();
+    showToast('→ ' + targets.length + '개 월 채움' + (unlockedCount ? ' · 잠금 ' + unlockedCount + '개 해제' : ''), 'success');
+  }
+
+  // v8.8: 이 월부터 연차 끝까지 잠그기 (가로 잠금). 단일 월 잠금(toggleManualLock)의 가로 버전.
+  //   - fromYm 포함. 이미 잠긴 월은 건너뜀. Ctrl+Z 대상 아님(잠금 토글과 동일 정책).
+  function lockToYearEnd(personId, fromYm) {
+    if (state.activeTab !== 'planned') {
+      showToast('잠금은 예상 탭에서만 사용할 수 있습니다.', 'warn');
+      return;
+    }
+    var allMonths = getFillMonths();
+    if (!allMonths.length) allMonths = getAllMonths(state.year);
+    var fromIdx = -1;
+    for (var i = 0; i < allMonths.length; i++) { if (allMonths[i].ym === fromYm) { fromIdx = i; break; } }
+    if (fromIdx < 0) return;
+    var targets = allMonths.slice(fromIdx);   // fromYm 포함
+    var cnt = 0;
+    targets.forEach(function (m) {
+      if (!isYmManuallyLocked(personId, m.ym)) { setYmLocked(personId, m.ym, true); cnt++; }
+    });
+    buildTable(document.getElementById('pl-table-planned'), 'planned');
+    renderStickyBoxes();
+    scheduleSave();
+    showToast('🔒 ' + cnt + '개 월 잠금 (' + fromYm + '부터)', 'success');
+  }
+
   // ====================================================================
   // §4.4 2b — 인건비 "📅 연봉 변경 반영" 선택 반영 엔진 (예상 탭 전용)
   //   연중 연봉 변경(salaryChanges) 있는 인력을 골라, 변경월(from)부터 예상 셀을
@@ -2869,7 +3385,7 @@
     var project = getProject();
     if (!project) return [];
     var dataMap = state.planned;
-    var months  = getAllMonths(state.year);
+    var months  = getActiveYearMonths();
     var out = [];
 
     _allPersons.forEach(function (person) {
@@ -2877,7 +3393,7 @@
       if (state.personIds && state.personIds.indexOf(person.id) < 0) return; // 현재 과제 인력만
 
       var role = (state.personRoles && state.personRoles[person.id]) || {};
-      var isOverride = (typeof role.monthlySalaryOverride === 'number' && role.monthlySalaryOverride > 0);
+      var isOverride = (getYearOverrideValue(role) !== null);
       var changes = sanitizeSalaryChanges(person.salaryChanges);
       var firstChangeYm = changes.length ? changes[0].from : null;
 
@@ -3206,6 +3722,109 @@
     if (mEachApply) mEachApply.addEventListener('click', onSalaryManualEachApply);
   }
 
+  // ====================================================================
+  // 이월금 확정 모달 — 이번 연차 잔액을 다음 연차 이월금으로 넘김
+  //   · 지원금: (예산 − 실제 누계) 자동 프리필, 수정 가능
+  //   · 자부담현금: 0 프리필, 직접 입력 (셀에 집행 집계 없음)
+  //   · 현물: 이월 불가 → 칸 없음
+  //   · 저장 위치: projectBudget/{id}_year{nextIdx}.carryoverCash / carryoverSelfCash
+  // ====================================================================
+  function carryFmtNum(n) {
+    n = Math.round(n || 0);
+    var sign = n < 0 ? '-' : '';
+    return sign + Math.abs(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  }
+  function carryParseWon(s) {
+    var digits = String(s == null ? '' : s).replace(/[^0-9]/g, '');
+    return digits ? parseInt(digits, 10) : 0;
+  }
+
+  function openCarryoverModal() {
+    var proj = getProject();
+    if (!proj) { showToast('과제를 먼저 선택하세요.', 'warn'); return; }
+    var curIdx  = getYearIndexForState();
+    var nextIdx = getNextYearIndex();
+    if (!curIdx)  { showToast('연차 정보가 없습니다.', 'warn'); return; }
+    if (!nextIdx) { showToast('마지막 연차입니다 — 이월할 다음 연차가 없습니다.', 'warn'); return; }
+
+    var b = getBudgetBreakdown();
+    var carry = getCarryover();                        // 전년도에서 받은 이월금
+    var actualCash = getActualCashSumForYear();
+    var leftCash = b.cash + (carry.cash || 0) - actualCash;   // 차액(예산+이월−실제집행)
+    var cashLeft = Math.max(0, leftCash);              // 지원금 잔액 (음수면 0)
+
+    var pathEl = document.getElementById('pl-carry-path');
+    if (pathEl) pathEl.textContent = curIdx + '차년도 → ' + nextIdx + '차년도';
+
+    var cashInfoEl = document.getElementById('pl-carry-cash-info');
+    if (cashInfoEl) {
+      cashInfoEl.textContent = '예산 ' + carryFmtNum(b.cash)
+        + ((carry.cash || 0) ? ' + 이월 ' + carryFmtNum(carry.cash) : '')
+        + ' − 실제 ' + carryFmtNum(actualCash)
+        + ' = 잔액 ' + carryFmtNum(leftCash) + '원';
+    }
+    var cashInput = document.getElementById('pl-carry-cash');
+    if (cashInput) cashInput.value = carryFmtNum(cashLeft);
+    var selfInput = document.getElementById('pl-carry-self');
+    if (selfInput) selfInput.value = '0';
+
+    var modal = document.getElementById('pl-carryover-modal');
+    if (modal) modal.hidden = false;
+  }
+  function closeCarryoverModal() {
+    var m = document.getElementById('pl-carryover-modal');
+    if (m) m.hidden = true;
+  }
+
+  function onCarryoverApply() {
+    var proj = getProject();
+    var nextIdx = getNextYearIndex();
+    if (!proj || !nextIdx) { showToast('이월 대상 연차가 없습니다.', 'warn'); return; }
+    if (!isFirestoreReady()) { showToast('저장할 수 없습니다 (연결 확인).', 'error'); return; }
+
+    var cashVal = carryParseWon(document.getElementById('pl-carry-cash').value);
+    var selfVal = carryParseWon(document.getElementById('pl-carry-self').value);
+    var docId   = proj.id + '_year' + nextIdx;
+
+    db().collection(BUDGET_COLL).doc(docId).set({
+      carryoverCash:     cashVal,
+      carryoverSelfCash: selfVal,
+    }, { merge: true }).then(function () {
+      closeCarryoverModal();
+      showToast('📥 ' + nextIdx + '차년도로 이월 완료 — 지원금 ' + carryFmtNum(cashVal) + ' · 자부담현금 ' + carryFmtNum(selfVal) + '원', 'success');
+      // 마침 다음 연차를 보고 있던 경우(드묾) 즉시 반영
+      if (getYearIndexForState() === nextIdx) reloadYearBudget();
+    }).catch(function (e) {
+      console.error('이월금 저장 실패:', e);
+      showToast('이월금 저장에 실패했습니다.', 'error');
+    });
+  }
+
+  function bindCarryoverEvents() {
+    // 잔액 박스는 innerHTML로 다시 그려지므로 위임 바인딩
+    var sticky = document.getElementById('pl-sticky');
+    if (sticky) sticky.addEventListener('click', function (e) {
+      if (e.target && e.target.id === 'pl-carryover-btn') openCarryoverModal();
+    });
+    var closeBtn = document.getElementById('pl-carry-close');
+    if (closeBtn) closeBtn.addEventListener('click', closeCarryoverModal);
+    var cancelBtn = document.getElementById('pl-carry-cancel');
+    if (cancelBtn) cancelBtn.addEventListener('click', closeCarryoverModal);
+    var overlay = document.getElementById('pl-carryover-modal');
+    if (overlay) overlay.addEventListener('click', function (e) { if (e.target === overlay) closeCarryoverModal(); });
+    var applyBtn = document.getElementById('pl-carry-apply');
+    if (applyBtn) applyBtn.addEventListener('click', onCarryoverApply);
+    // 입력 중 콤마 자동 포맷
+    ['pl-carry-cash', 'pl-carry-self'].forEach(function (id) {
+      var inp = document.getElementById(id);
+      if (inp) inp.addEventListener('input', function () {
+        var caretEnd = (this.selectionStart === this.value.length);
+        this.value = carryFmtNum(carryParseWon(this.value));
+        if (caretEnd) { this.selectionStart = this.selectionEnd = this.value.length; }
+      });
+    });
+  }
+
   // v5.3: 단일 셀 버림 — 우클릭 메뉴에서 호출
   //   - 예상 탭의 cash/inkind 셀에만 적용
   //   - 현재 값을 unit 단위로 내림 (Math.floor)
@@ -3271,6 +3890,15 @@
     renderStickyBoxes();
     scheduleSave();
     showToast(wasLocked ? '🔓 ' + ym + ' 잠금 해제' : '🔒 ' + ym + ' 잠금', 'success');
+  }
+
+  // 재입사 과거기간 입력용 — 자동 기간잠금(입사 전/퇴사 후) 월을 입력 허용/취소.
+  function toggleManualUnlock(personId, ym) {
+    var wasUnlocked = isYmManuallyUnlocked(personId, ym);
+    setYmUnlocked(personId, ym, !wasUnlocked);
+    renderAll();   // 잠금 상태가 바뀌면 명단/표 전체 재렌더(인력 표시 필터도 영향)
+    scheduleSave();
+    showToast(wasUnlocked ? '🔒 ' + ym + ' 입력 허용 취소' : '🔓 ' + ym + ' 입력 허용', 'success');
   }
 
   // v5.3: 셀 글자색 변경 (단일 셀, 단일 필드)
@@ -3402,14 +4030,17 @@
     var raw      = input.dataset.raw || '0';
     if (!personId || !ym) return;
 
-    showCellContextMenu(e.clientX, e.clientY, personId, ym, raw, field, cmMode);
+    // v7.4 나눔: 분류줄 참여율 칸이면 그 분류(splitField)를 같이 넘김 → 채우기가 분류별로 동작.
+    var splitField = (input.dataset.split === '1') ? (input.dataset.splitField || null) : null;
+    showCellContextMenu(e.clientX, e.clientY, personId, ym, raw, field, cmMode, splitField);
   }
 
   var _ctxMenuEl = null;
 
-  function showCellContextMenu(x, y, personId, ym, raw, field, mode) {
+  function showCellContextMenu(x, y, personId, ym, raw, field, mode, splitField) {
     hideCellContextMenu();
     mode = mode || 'planned';
+    splitField = splitField || null;
     var menu = document.createElement('div');
     menu.className = 'pl-ctx-menu';
 
@@ -3424,7 +4055,7 @@
         '</button>';
       document.body.appendChild(menu);
       _ctxMenuEl = menu;
-      positionAndBindCtxMenu(menu, x, y, personId, ym, raw, field, mode);
+      positionAndBindCtxMenu(menu, x, y, personId, ym, raw, field, mode, splitField);
       return;
     }
 
@@ -3444,7 +4075,7 @@
         '</button>';
       document.body.appendChild(menu);
       _ctxMenuEl = menu;
-      positionAndBindCtxMenu(menu, x, y, personId, ym, raw, field, mode);
+      positionAndBindCtxMenu(menu, x, y, personId, ym, raw, field, mode, splitField);
       return;
     }
 
@@ -3458,15 +4089,39 @@
         '💬 메모 ' + (_hasMemo ? '편집' : '추가') +
       '</button>' +
       '<div class="pl-ctx-divider"></div>';
+    // 재입사 등 — 입사 전/퇴사 후 자동잠금 월을 '입력 허용'으로 풀거나 되돌리기.
+    var _uperson = _allPersons.find(function (p) { return p.id === personId; });
+    var _periodLocked = false;
+    if (_uperson) {
+      var _hY = getHireYm(_uperson);
+      if (_hY && ym < _hY) _periodLocked = true;
+      if (_uperson.status === 'exited') { var _eY = getExitYm(_uperson); if (_eY && ym > _eY) _periodLocked = true; }
+    }
+    if (isYmManuallyUnlocked(personId, ym)) {
+      html +=
+        '<button type="button" class="pl-ctx-item" data-action="toggle-unlock">' +
+          '🔒 입력 허용 취소 (다시 잠금)' +
+        '</button>' +
+        '<div class="pl-ctx-divider"></div>';
+    } else if (_periodLocked) {
+      html +=
+        '<button type="button" class="pl-ctx-item" data-action="toggle-unlock">' +
+          '🔓 이 월 입력 허용 (재직 기간 외)' +
+        '</button>' +
+        '<div class="pl-ctx-divider"></div>';
+    }
     if (field === 'rate') {
-      // 참여율 셀 — 12월까지 채우기 + 이 월 잠그기
+      // 참여율 셀 — 이 월부터 연차 끝까지 채우기 + 이 월 잠그기
       html +=
         '<button type="button" class="pl-ctx-item" data-action="fill-right">' +
-          '→ 이 월부터 12월까지 채우기 ' +
+          '→ 이 월부터 채우기 ' +
           '<span class="pl-ctx-kbd">Ctrl+R</span>' +
         '</button>' +
         '<button type="button" class="pl-ctx-item" data-action="toggle-lock">' +
           '🔒 이 월 잠그기' +
+        '</button>' +
+        '<button type="button" class="pl-ctx-item" data-action="lock-right">' +
+          '🔒 이 월부터 잠그기 (옆으로)' +
         '</button>';
     } else {
       // 현금/현물 셀 — 버림 (이 셀만 + 아래로 복사)
@@ -3483,7 +4138,14 @@
         '<button type="button" class="pl-ctx-item" data-action="round-down-below" data-unit="100">'     + '100원 단위'     + '</button>' +
         '<button type="button" class="pl-ctx-item" data-action="round-down-below" data-unit="1000">'    + '1,000원 단위'   + '</button>' +
         '<button type="button" class="pl-ctx-item" data-action="round-down-below" data-unit="10000">'   + '10,000원 단위'  + '</button>' +
-        '<button type="button" class="pl-ctx-item" data-action="round-down-below" data-unit="100000">'  + '100,000원 단위' + '</button>';
+        '<button type="button" class="pl-ctx-item" data-action="round-down-below" data-unit="100000">'  + '100,000원 단위' + '</button>' +
+        '<div class="pl-ctx-divider"></div>' +
+        '<button type="button" class="pl-ctx-item" data-action="fill-right-amount">' +
+          '→ 이 값으로 이 월부터 채우기 (0 포함·잠긴 월 해제)' +
+        '</button>' +
+        '<button type="button" class="pl-ctx-item" data-action="lock-right">' +
+          '🔒 이 월부터 잠그기 (옆으로)' +
+        '</button>';
     }
 
     // v5.3: 글자색 변경 (모든 셀 공통, 잠금 셀 제외)
@@ -3508,12 +4170,12 @@
     menu.innerHTML = html;
     document.body.appendChild(menu);
     _ctxMenuEl = menu;
-    positionAndBindCtxMenu(menu, x, y, personId, ym, raw, field, mode);
+    positionAndBindCtxMenu(menu, x, y, personId, ym, raw, field, mode, splitField);
   }
 
   // v5.3: 메뉴 위치 보정 + 클릭 핸들러 — 공통화
   // C3: mode(planned/actual) — 메모 팝오버 타깃 결정
-  function positionAndBindCtxMenu(menu, x, y, personId, ym, raw, field, mode) {
+  function positionAndBindCtxMenu(menu, x, y, personId, ym, raw, field, mode, splitField) {
     // 화면 밖으로 나가지 않게 위치 보정
     var rect = menu.getBoundingClientRect();
     var maxX = window.innerWidth - rect.width - 8;
@@ -3527,7 +4189,7 @@
       var action = btn.dataset.action;
       hideCellContextMenu();
       if (action === 'fill-right') {
-        fillRateToYearEnd(personId, ym, raw);
+        fillRateToYearEnd(personId, ym, raw, splitField);
       } else if (action === 'round-down') {
         var unit = parseInt(btn.dataset.unit, 10) || 0;
         if (unit > 0) roundDownCell(personId, ym, field, unit);
@@ -3536,6 +4198,12 @@
         if (unit2 > 0) roundDownBelow(personId, ym, field, unit2);
       } else if (action === 'toggle-lock') {
         toggleManualLock(personId, ym);
+      } else if (action === 'toggle-unlock') {
+        toggleManualUnlock(personId, ym);
+      } else if (action === 'fill-right-amount') {
+        fillAmountToYearEnd(personId, ym, field);
+      } else if (action === 'lock-right') {
+        lockToYearEnd(personId, ym);
       } else if (action === 'set-color') {
         var colorKey = btn.dataset.color || '';
         applyCellColor(personId, ym, field, colorKey || null);
@@ -3723,11 +4391,17 @@
       }
       // OFF면 splitCis는 남겨둬도 무방(렌더 안 함). 데이터는 보존.
     } else if (field === 'splitCi') {
-      // split 줄의 구분 드롭다운 — 해당 줄의 분류 교체
+      // split 줄의 구분 드롭다운 — 해당 줄의 분류 교체. 다른 줄이 이미 그 분류면 두 줄을 맞바꿈.
       var idx = parseInt(sel.dataset.rowIndex, 10);
       if (!Array.isArray(role.splitCis)) role.splitCis = defaultSplitCis(personId);
       if (idx >= 0 && idx < role.splitCis.length) {
-        role.splitCis[idx] = sel.value;
+        var newCi = sel.value;
+        var oldCi = role.splitCis[idx];
+        var dupIdx = role.splitCis.indexOf(newCi);
+        if (dupIdx >= 0 && dupIdx !== idx) {
+          role.splitCis[dupIdx] = oldCi;   // 그 줄에 내 옛 분류를 넘겨 맞바꿈(중복 방지)
+        }
+        role.splitCis[idx] = newCi;
       }
     } else {
       role[field] = isSplitCheck ? sel.checked : sel.value;
@@ -3746,7 +4420,7 @@
     ['planned', 'actual'].forEach(function (mk) {
       var map = state[mk];
       if (!map) return;
-      var allYms = getAllMonths(state.year).map(function (m) { return m.ym; });
+      var allYms = getActiveYearMonths().map(function (m) { return m.ym; });
       allYms.forEach(function (ym) {
         var key = getLaborKey(project.id, ym, personId);
         var cell = map[key];
@@ -4190,8 +4864,9 @@
     stopAutoScroll();   // v5.3: 자동 스크롤 루프 정지
     if (movedId === targetId) return;
 
-    // personIds 재배열
-    var ids = state.personIds.slice();
+    // v8.8: 공용 personIds가 아니라 "이 연차의 표시 순서"만 재배열 → 다른 연차 순서는 안 흔들림.
+    var orderKey = getOrderKey();
+    var ids = getDisplayPersons().map(function (p) { return p.id; });   // 현재 보이는 순서
     var fromIdx = ids.indexOf(movedId);
     if (fromIdx < 0) return;
     ids.splice(fromIdx, 1);
@@ -4200,7 +4875,8 @@
     if (pos === 'below') toIdx += 1;
     ids.splice(toIdx, 0, movedId);
 
-    state.personIds = ids;
+    if (!state.personOrderByYear || typeof state.personOrderByYear !== 'object') state.personOrderByYear = {};
+    state.personOrderByYear[orderKey] = ids;
     // 세 탭 모두 재렌더 (같은 순서 보장)
     buildTable(document.getElementById('pl-table-planned'), 'planned');
     buildTable(document.getElementById('pl-table-actual'),  'actual');
@@ -4261,7 +4937,20 @@
   // ====================================================================
   function updateQuarterLabel() {
     var label = document.getElementById('pl-quarter-label');
-    if (label) label.textContent = state.quarter + '분기';
+    if (!label) return;
+    var proj = getProject();
+    var hasYb = proj && Array.isArray(proj.yearBudgets) && proj.yearBudgets.length > 0;
+    if (hasYb) {
+      // 연차 과제: 연차가 닿는 분기 목록 중 현재 분기의 실제 달력 분기 표시
+      var qs = getYearQuarters();
+      if (qs.length) {
+        var qi = Math.min(Math.max(state.quarter, 1), qs.length) - 1;
+        var cur = qs[qi];
+        label.textContent = cur.year + '년 ' + cur.q + '분기 (' + (qi + 1) + '/' + qs.length + ')';
+        return;
+      }
+    }
+    label.textContent = state.quarter + '분기';
   }
 
   // ====================================================================
@@ -4340,6 +5029,17 @@
     var nextBtn = document.getElementById('pl-quarter-next');
     if (prevBtn) {
       prevBtn.addEventListener('click', function () {
+        var projQ = getProject();
+        var hasYbQ = projQ && Array.isArray(projQ.yearBudgets) && projQ.yearBudgets.length > 0;
+        if (hasYbQ) {
+          // 연차 과제: 연차가 닿는 분기 목록 안에서만 이동(연차/연도는 연도 셀렉터로 바꿈)
+          var nQ = getYearQuarters().length || 1;
+          var curQ = Math.min(Math.max(state.quarter, 1), nQ);
+          state.quarter = Math.max(1, curQ - 1);
+          updateQuarterLabel();
+          renderAll();
+          return;
+        }
         var prevYear = state.year;
         if (state.quarter > 1) { state.quarter--; }
         else { state.quarter = 4; state.year--; document.getElementById('pl-year-input').value = state.year; }
@@ -4353,6 +5053,16 @@
     }
     if (nextBtn) {
       nextBtn.addEventListener('click', function () {
+        var projQ = getProject();
+        var hasYbQ = projQ && Array.isArray(projQ.yearBudgets) && projQ.yearBudgets.length > 0;
+        if (hasYbQ) {
+          var nQ = getYearQuarters().length || 1;
+          var curQ = Math.min(Math.max(state.quarter, 1), nQ);
+          state.quarter = Math.min(nQ, curQ + 1);
+          updateQuarterLabel();
+          renderAll();
+          return;
+        }
         var prevYear = state.year;
         if (state.quarter < 4) { state.quarter++; }
         else { state.quarter = 1; state.year++; document.getElementById('pl-year-input').value = state.year; }
@@ -4747,6 +5457,33 @@
           state.personRoles[it.personId].monthlySalaryOverride = it.oldVal;
           return;
         }
+        // v8.9: 연차별 월급 오버라이드 복원
+        if (it.field === '__salaryOverrideByYear') {
+          var rr = state.personRoles[it.personId];
+          if (!rr) {
+            rr = state.personRoles[it.personId] = {
+              newOrExisting: '기존', cashOrInkind: '현금', subRole: '', monthlySalaryOverride: null
+            };
+          }
+          if (it.yearIndex) {
+            if (!rr.monthlySalaryOverrideByYear) rr.monthlySalaryOverrideByYear = {};
+            if (it.oldVal === null || it.oldVal === 0) delete rr.monthlySalaryOverrideByYear[it.yearIndex];
+            else rr.monthlySalaryOverrideByYear[it.yearIndex] = it.oldVal;
+          } else {
+            rr.monthlySalaryOverride = it.oldVal;
+          }
+          return;
+        }
+        // v7.4 나눔 가로 채우기 — 셀 전체(rates 포함) 스냅샷 복원
+        if (it.field === '__cellSnapshot') {
+          var snap = it.oldVal || {};
+          setCell(dataMap0, project0.id, it.ym, it.personId, {
+            rate: snap.rate || 0,
+            cash: snap.cash || 0, selfCash: snap.selfCash || 0, inkind: snap.inkind || 0,
+            rates: snap.rates || null
+          });
+          return;
+        }
         var patch = {};
         patch[it.field] = it.oldVal;
         setCell(dataMap0, project0.id, it.ym, it.personId, patch);
@@ -4833,15 +5570,29 @@
   function copyPrevQuarter() {
     var project = getProject();
     if (!project) return;
+    var hasYb = Array.isArray(project.yearBudgets) && project.yearBudgets.length > 0;
 
-    // 이전 분기 계산
-    var prevYear    = state.year;
-    var prevQuarter = state.quarter - 1;
-    if (prevQuarter < 1) { prevQuarter = 4; prevYear--; }
-
-    var prevMonths = getMonths(prevYear, prevQuarter);
-    var currMonths = getMonths(state.year, state.quarter);
-    var persons    = getPersons();
+    var prevMonths, currMonths, prevLabel, currLabel;
+    if (hasYb && state.viewMode === 'quarter') {
+      // 연차 과제: 연차가 닿는 분기 목록에서 '이전 분기' = 한 칸 앞
+      var qs = getYearQuarters();
+      if (!qs.length) { showToast('분기 정보가 없습니다.', 'warn'); return; }
+      var qi = Math.min(Math.max(state.quarter, 1), qs.length) - 1;
+      if (qi < 1) { showToast('이전 분기가 없습니다 (연차의 첫 분기).', 'warn'); return; }
+      currMonths = qs[qi].months;
+      prevMonths = qs[qi - 1].months;
+      currLabel  = qs[qi].year + '년 ' + qs[qi].q + '분기';
+      prevLabel  = qs[qi - 1].year + '년 ' + qs[qi - 1].q + '분기';
+    } else {
+      var prevYear    = state.year;
+      var prevQuarter = state.quarter - 1;
+      if (prevQuarter < 1) { prevQuarter = 4; prevYear--; }
+      prevMonths = getMonths(prevYear, prevQuarter);
+      currMonths = getMonths(state.year, state.quarter);
+      currLabel  = state.year + '년 ' + state.quarter + '분기';
+      prevLabel  = prevYear + '년 ' + prevQuarter + '분기';
+    }
+    var persons = getPersons();
 
     // 복사할 데이터가 있는지 확인
     var hasPrevData = persons.some(function (p) {
@@ -4850,9 +5601,8 @@
         return !!(state.planned[key] || state.actual[key]);
       });
     });
-
     if (!hasPrevData) {
-      showToast('이전 분기(' + prevYear + '년 ' + prevQuarter + '분기)에 데이터가 없습니다.', 'warn');
+      showToast('이전 분기(' + prevLabel + ')에 데이터가 없습니다.', 'warn');
       return;
     }
 
@@ -4863,11 +5613,10 @@
         return !!(state.planned[key] || state.actual[key]);
       });
     });
-
     if (hasCurrData) {
       if (!confirm(
-        state.year + '년 ' + state.quarter + '분기에 이미 입력된 데이터가 있습니다.\n' +
-        '이전 분기(' + prevYear + '년 ' + prevQuarter + '분기) 데이터로 덮어쓸까요?'
+        currLabel + '에 이미 입력된 데이터가 있습니다.\n' +
+        '이전 분기(' + prevLabel + ') 데이터로 덮어쓸까요?'
       )) return;
     }
 
@@ -4877,22 +5626,19 @@
       actual:    JSON.parse(JSON.stringify(state.actual)),
       year:      state.year,
       quarter:   state.quarter,
-      prevYear:  prevYear,
-      prevQuarter: prevQuarter,
     };
 
-    // 이전 분기 → 현재 분기 복사 (월 인덱스 매핑: 0→0, 1→1, 2→2)
+    // 이전 분기 → 현재 분기 복사 (월 인덱스 매핑: 0→0, 1→1, 2→2). 연차 밖 칸엔 복사 안 함.
     persons.forEach(function (p) {
       prevMonths.forEach(function (pm, idx) {
         var cm = currMonths[idx];
-
-        // planned 복사
+        if (!cm) return;
+        if (hasYb && !isYmInActiveYear(cm.ym)) return;   // 연차 밖 월(패딩)엔 복사 안 함
         var pKey = getLaborKey(project.id, pm.ym, p.id);
         var cKey = getLaborKey(project.id, cm.ym, p.id);
         if (state.planned[pKey]) {
           state.planned[cKey] = Object.assign({}, state.planned[pKey], { memo: '' });
         }
-
         // actual은 복사 안 함 (실제 지급은 해당 월 것만 의미 있음)
       });
     });
@@ -4900,7 +5646,7 @@
     renderAll();
     scheduleSave();
     showToast(
-      '✅ ' + prevYear + '년 ' + prevQuarter + '분기 → ' + state.year + '년 ' + state.quarter + '분기 복사 완료',
+      '✅ ' + prevLabel + ' → ' + currLabel + ' 복사 완료',
       'success',
       true // 되돌리기 버튼 표시
     );
@@ -5021,7 +5767,8 @@
             personCount: Array.isArray(d.personIds) ? d.personIds.length : 0,
             planned:     d.planned || {},
             personIds:   Array.isArray(d.personIds) ? d.personIds : [],
-            personRoles: d.personRoles || {}
+            personRoles: d.personRoles || {},
+            personOrderByYear: d.personOrderByYear || {}  // v8.8
           });
         });
         arr.sort(function (a, b) { return (b.createdAt || '').localeCompare(a.createdAt || ''); });
@@ -5040,6 +5787,7 @@
       planned:     plDeepCopy(state.planned),
       personIds:   plDeepCopy(state.personIds),
       personRoles: plDeepCopy(state.personRoles),
+      personOrderByYear: plDeepCopy(state.personOrderByYear || {}),  // v8.8
       cellCount:   countPlanCells(state.planned)
     };
     return db().collection(SNAP_COLL).add(doc);
@@ -6144,6 +6892,17 @@
       var ne0 = (judged0 === '신규' || judged0 === '기존') ? judged0 : '기존';
       state.personRoles[personId] = { newOrExisting: ne0, cashOrInkind: '현금', subRole: '', monthlySalaryOverride: null };
     }
+    // 추가한 인력을 "현재 보는 연차"에만 소속시킴 — 빈 셀(rate 0)로 자리만 표시.
+    //   → 그 연차에서만 보이고 다른 연차엔 안 보임. 예산에서 보낸 인력과 동일 규칙.
+    //   활성 탭(예상/실제) 데이터맵의 첫 노출 월에 자리 생성(이미 그 연차에 보이면 그대로).
+    if (!personHasDataInView(personId)) {
+      var memProj   = getProject();
+      var memMonths = getVisibleMonths();
+      if (memProj && memMonths && memMonths.length) {
+        var memMap = state.activeTab === 'actual' ? state.actual : state.planned;
+        setCell(memMap, memProj.id, memMonths[0].ym, personId, {});
+      }
+    }
     renderAll();
     scheduleSave();
   }
@@ -6251,6 +7010,7 @@
     bindModalEvents();
     bindSnapshotEvents();   // v7.4.4 §4.2: 예상 계획 스냅샷
     bindSalaryUpdateEvents();   // §4.4 2b: 연봉 변경 반영
+    bindCarryoverEvents();      // 이월금: 다음 연차로 이월 확정
     bindKeyboard();
   }
 
