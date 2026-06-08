@@ -430,6 +430,32 @@
       font-weight: 500;
       color: #374151;
     }
+    /* §4.9-3: 전년도 이월금 안내 — 과제 관리(.pj-tip)와 동일한 큰 호버 박스 */
+    .f-tip { position: relative; display: inline-flex; align-items: center; gap: 0.25rem; cursor: help; }
+    .f-tip .f-tip-icon {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 1.15em; height: 1.15em; border-radius: 50%;
+      background: #93c5fd; color: #fff; font-size: 0.72rem; font-weight: 700;
+      line-height: 1; font-style: normal;
+    }
+    .f-tip .f-tip-box {
+      display: none; position: absolute; top: 100%; right: 0; margin-top: 0.45rem;
+      width: max-content; max-width: 280px; padding: 0.7rem 0.85rem;
+      background: #ffffff; color: #1e293b; font-size: 0.9rem; font-weight: 500;
+      line-height: 1.5; letter-spacing: -0.01em; border-radius: 0.6rem;
+      border: 1.5px solid #93c5fd; box-shadow: 0 8px 24px rgba(15,23,42,0.18);
+      white-space: normal; text-align: left; z-index: 1000; pointer-events: none;
+    }
+    .f-tip .f-tip-box::before {
+      content: ""; position: absolute; bottom: 100%; right: 0.7rem;
+      border: 7px solid transparent; border-bottom-color: #93c5fd;
+    }
+    .f-tip .f-tip-box::after {
+      content: ""; position: absolute; bottom: 100%; right: 0.78rem;
+      border: 6px solid transparent; border-bottom-color: #ffffff;
+    }
+    .f-tip:hover .f-tip-icon { background: #60a5fa; }
+    .f-tip:hover .f-tip-box { display: block; }
     .funding-matrix .f-balance {
       text-align: right;
       font-weight: 700;

@@ -646,10 +646,22 @@
     // personIds가 비어있으면 빈 배열
     if (!state.personIds.length) return [];
     return state.personIds
-      .map(function (id) {
-        return _allPersons.find(function (p) { return p.id === id; });
-      })
+      .map(resolveRowPerson)
       .filter(Boolean);
+  }
+
+  // 마스터 인력 또는 신규채용(임시) placeholder를 행 렌더용 인력 객체로 해석.
+  //   - 마스터에 있으면 그대로.
+  //   - 없고 personRoles[id].isPlaceholder면 합성 person 반환(이름은 personRoles에 저장).
+  //   - 둘 다 아니면 null(기존처럼 행에서 걸러짐).
+  function resolveRowPerson(id) {
+    var p = _allPersons.find(function (x) { return x.id === id; });
+    if (p) return p;
+    var role = state.personRoles && state.personRoles[id];
+    if (role && role.isPlaceholder) {
+      return { id: id, name: role.name || '신규채용', isPlaceholder: true, isNew: true };
+    }
+    return null;
   }
 
   // 인력이 "현재 보는 연도(연차)"에 셀(데이터)이 있는지 — 표시 필터용.
@@ -845,6 +857,15 @@
     return (next <= proj.yearBudgets.length) ? next : null;
   }
 
+  // v8.10 연차 마감/이월 상태 — 현재 연차 예산 문서(state.yearBudget)에 저장.
+  //   · carryoverDone = 이번 연차의 이월금을 처리(확정)했는가 (0원 확정과 '미처리'를 구분하는 명시 플래그)
+  //   · closed        = 이번 연차가 마감되었는가 (마감 시 셀 전체 읽기전용)
+  //   순서: 이월금 처리(carryoverDone) → 마감(closed). 마지막 연차는 이월 대상이 없어 이월 단계 생략.
+  function isActiveYearClosed() { return !!(state.yearBudget && state.yearBudget.closed); }
+  function isCarryoverDone()    { return !!(state.yearBudget && state.yearBudget.carryoverDone); }
+  // 마감 취소 권한 — 추후 권한 체계와 연동(권한자만 되돌리기). 지금은 허용.
+  function canUncloseYear()     { return true; /* TODO: 권한 연동 — 추후 권한 있는 사용자만 true */ }
+
   // 현재 연도 실제 탭 지원금(cash) 집행 합 — 이월 확정 모달 프리필용.
   function getActualCashSumForYear() {
     var proj = getProject();
@@ -864,10 +885,33 @@
     return sum;
   }
 
+  // v8.10: 합산 모드 실제집행(현금 한 풀) — 실제 탭 Σ(cell.cash + cell.selfCash).
+  //   '자부담현금' 분류 집행은 cell.selfCash에 저장되므로, 합산(현금 한 풀)에서는 이것도 집행에 포함해야
+  //   실제집행 과소계상이 없다. (별도 모드는 getActualCashSumForYear로 지원금만 따로 본다.)
+  function getActualCashPoolSumForYear() {
+    var proj = getProject();
+    if (!proj) return 0;
+    var sum = 0;
+    var months = getActiveYearMonths();
+    for (var mi = 0; mi < months.length; mi++) {
+      var ym = months[mi].ym;
+      for (var i = 0; i < state.personIds.length; i++) {
+        var pid = state.personIds[i];
+        var person = _allPersons.find(function (p) { return p.id === pid; });
+        if (!isPersonActiveInYm(person, ym)) continue;
+        var cell = state.actual[getLaborKey(proj.id, ym, pid)];
+        if (!cell) continue;
+        if (typeof cell.cash     === 'number') sum += cell.cash;
+        if (typeof cell.selfCash === 'number') sum += cell.selfCash;
+      }
+    }
+    return sum;
+  }
+
   // 누계: 현재 연도 1~12월의 cell 합산 (state.activeTab 기준 — planned/actual)
   // v5 Step 2: 항목별 분해 반환 {cash, selfCash, inkind, total}
   // - cash    = Σ cell.cash      (지원금, 환급 대상)
-  // - selfCash= 0                (셀 스키마에 selfCash 없음 — §6.1 미반영)
+  // - selfCash= Σ cell.selfCash  (자부담현금 분류 집행 — v8.10 보정. 별도 모드 누계 자부담 / 합산 현금 풀)
   // - inkind  = Σ cell.inkind    (현물)
   // - total   = cash + selfCash + inkind
   // 비교 탭일 때는 planned 기준 (의미상 누계는 계획 진척이 더 자연스러움. 추후 조정 가능)
@@ -875,7 +919,7 @@
     var proj = getProject();
     if (!proj) return { cash: 0, selfCash: 0, inkind: 0, total: 0 };
     var dataMap = state.activeTab === 'actual' ? state.actual : state.planned;
-    var sumCash = 0, sumInkind = 0;
+    var sumCash = 0, sumSelf = 0, sumInkind = 0;
     var months = getActiveYearMonths();   // 연차 실제 기간 전체(달력연도 걸쳐도 통째로)
     for (var mi = 0; mi < months.length; mi++) {
       var ym = months[mi].ym;
@@ -885,16 +929,18 @@
         if (!isPersonActiveInYm(person, ym)) continue;   // 입사 전/퇴사 후(회색) 제외
         var cell = dataMap[getLaborKey(proj.id, ym, pid)];
         if (!cell) continue;
-        if (typeof cell.cash   === 'number') sumCash   += cell.cash;
-        if (typeof cell.inkind === 'number') sumInkind += cell.inkind;
+        if (typeof cell.cash     === 'number') sumCash   += cell.cash;
+        if (typeof cell.selfCash === 'number') sumSelf   += cell.selfCash;   // v8.10: 자부담현금 분류 집행
+        if (typeof cell.inkind   === 'number') sumInkind += cell.inkind;
       }
     }
-    var selfCash = 0;  // v5 미반영
+    // v8.10: 자부담현금 분류('자부담현금' → cell.selfCash) 집행을 집계.
+    //   별도 모드 = 누계 자부담 줄에 실제 집행 표시. 합산 모드 = 현금 한 풀(cash+selfCash)에 합산.
     return {
       cash:     sumCash,
-      selfCash: selfCash,
+      selfCash: sumSelf,
       inkind:   sumInkind,
-      total:    sumCash + selfCash + sumInkind,
+      total:    sumCash + sumSelf + sumInkind,
     };
   }
 
@@ -991,6 +1037,11 @@
           // 이월금(전년도→올해 받은 금액). 현물은 이월 불가 → 지원금/자부담만.
           carryoverCash:     d.carryoverCash     || 0,
           carryoverSelfCash: d.carryoverSelfCash || 0,
+          // v8.10: 연차 마감/이월 처리 상태
+          carryoverDone:   !!d.carryoverDone,
+          carryoverDoneAt: d.carryoverDoneAt || null,
+          closed:          !!d.closed,
+          closedAt:        d.closedAt || null,
           period:         d.period         || null,
         };
       } else {
@@ -1007,9 +1058,17 @@
       }
 
       setLoading(false);
-      renderAll();
+      // 렌더/마이그레이션 단계 예외는 '로드 실패'가 아니다. 여기서 throw가 아래 .catch로
+      // 전파되면 이미 정상 로드한 personIds·cells가 통째로 []로 초기화돼 '데이터가 사라진 것처럼'
+      // 보이는 사고가 난다(과거 yearClosed/render 버그 사례). 데이터는 보존하고 에러만 남긴다.
+      try {
+        renderAll();
+      } catch (re) {
+        console.error('인건비 렌더 실패(데이터는 보존됨):', re);
+      }
     }).catch(function (e) {
-      console.error('인건비 로드 실패:', e);
+      // 여기까지 오는 건 Firestore get 자체가 실패(네트워크/권한 등)한 경우뿐.
+      console.error('인건비 로드 실패(네트워크/권한):', e);
       state.planned     = {};
       state.actual      = {};
       state.meta        = {};
@@ -1018,7 +1077,7 @@
       state.personOrderByYear = {};
       state.yearBudget  = null;
       setLoading(false);
-      renderAll();
+      try { renderAll(); } catch (re) { console.error('빈 상태 렌더 실패:', re); }
     });
   }
 
@@ -1047,6 +1106,10 @@
           budgetInkind:   d.budgetInkind   || 0,
           carryoverCash:     d.carryoverCash     || 0,
           carryoverSelfCash: d.carryoverSelfCash || 0,
+          carryoverDone:   !!d.carryoverDone,
+          carryoverDoneAt: d.carryoverDoneAt || null,
+          closed:          !!d.closed,
+          closedAt:        d.closedAt || null,
           period:         d.period         || null,
         };
       } else {
@@ -1194,12 +1257,54 @@
   // ====================================================================
   // 프로젝트/인력 Firestore 구독
   // ====================================================================
+  // v8.10: 연도 선택 = 드롭다운(select). 옵션 = 전체 과제 연차 범위 ∪ 올해 ∪ 현재 선택연도.
+  function populateYearSelect() {
+    var sel = document.getElementById('pl-year-input');
+    if (!sel || sel.tagName !== 'SELECT') return;
+    var years = {};
+    (_allProjects || []).forEach(function (p) {
+      var ybs = (p && p.yearBudgets) || [];
+      ybs.forEach(function (b) {
+        var s = parseInt(String((b && (b.startDate || b.start)) || '').substring(0, 4), 10);
+        var e = parseInt(String((b && (b.endDate   || b.end))   || '').substring(0, 4), 10);
+        if (s) years[s] = true;
+        if (e) years[e] = true;
+        if (s && e && e > s) { for (var y = s + 1; y < e; y++) years[y] = true; }
+      });
+    });
+    var cur = new Date().getFullYear();
+    years[cur] = true;
+    if (state.year) years[state.year] = true;
+    var list = Object.keys(years).map(Number).filter(function (n) { return !isNaN(n); }).sort(function (a, b) { return a - b; });
+    if (!list.length) { for (var y2 = cur - 2; y2 <= cur + 2; y2++) list.push(y2); }
+    sel.innerHTML = list.map(function (y) {
+      return '<option value="' + y + '"' + (y === state.year ? ' selected' : '') + '>' + y + '년</option>';
+    }).join('');
+    sel.value = String(state.year);
+  }
+  // state.year를 연도 컨트롤에 반영(없는 연도면 재구성). 분기 네비 등에서 호출.
+  function syncYearSelect() {
+    var sel = document.getElementById('pl-year-input');
+    if (!sel) return;
+    if (sel.tagName === 'SELECT') {
+      var has = false;
+      for (var i = 0; i < sel.options.length; i++) {
+        if (Number(sel.options[i].value) === state.year) { has = true; break; }
+      }
+      if (!has) { populateYearSelect(); return; }
+      sel.value = String(state.year);
+    } else {
+      sel.value = state.year;
+    }
+  }
+
   function loadProjects() {
     if (window.firestoreService) {
       window.firestoreService.subscribeProjects(function (projects) {
         _allProjects = Array.isArray(projects) ? projects : [];
         filterProjectsByYear(state.year);
         populateProjectSelect();
+        populateYearSelect();   // v8.10: 과제 연차 범위로 연도 드롭다운 채움
 
         // 첫 로드 or 프로젝트 변경 시 인건비 로드
         var proj = getProject();
@@ -1343,23 +1448,72 @@
     var carry = r.carryover;
     var yearIdx = getYearIndexForState();
 
+    // 합산 모드 자부담/지원금 분해 (자부담 먼저 차감 규칙 — v8.8 해석 B):
+    //   셀에는 자부담 집행이 따로 없어(현금=cash 한 풀) 예산/이월의 자부담을 먼저 소진한 것으로 본다.
+    //   · 자부담 집행 = min(현금집행, 자부담 사용가능액)  · 지원금 집행 = 나머지
+    //   · 자부담 차액 = max(0, 자부담 사용가능액 − 현금집행)  → 집행이 자부담예산 넘으면 0
+    //   · 지원금 차액 = 현금 차액 총합 − 자부담 차액  → 이월은 사실상 전액 지원금
+    var carryCash  = (carry && carry.cash)     || 0;
+    var carrySelf  = (carry && carry.selfCash) || 0;
+    var selfPool   = b.selfCash + carrySelf;            // 자부담 사용가능액(예산+이월)
+    var execPool   = c.cash + c.selfCash;               // 누계: 현금 한 풀 집행(지원금+자부담현금 분류)
+    var execSelf   = Math.min(execPool, selfPool);      // 누계: 자부담 먼저 소진
+    var execSupport= execPool - execSelf;               // 누계: 나머지 지원금
+    var poolRemain = r.cash + r.selfCash;               // 차액 현금 총합(합산)
+    var remSelf    = Math.max(0, selfPool - execPool);  // 차액: 자부담 잔여(대체로 0)
+    var remSupport = poolRemain - remSelf;              // 차액: 지원금 잔여
+
     // 자부담현금 별도 관리(hasSelfCash) OFF = 합산 보기:
-    //   지원금+자부담을 '현금' 한 줄로 합치고, 환급 기준(지원금)을 작은 서브라인으로 표기.
+    //   지원금+자부담을 '현금' 한 줄로 합치고, 그 밑에 자부담/지원금 서브라인으로 분해 표기.
     //   데이터/환급 계산은 그대로 지원금 분리 — 여긴 표시만.
     var combined = !projHasSelfCash(project);
-    function cashRows(cashV, selfV, sub, disabledSelf) {
+    function cashRows(cashV, selfV, subs, disabledSelf) {
       if (!combined) {
         // 별도: 지원금 / 현금(자부담) 두 줄
         return '<div><span>지원금</span><strong>' + fmtWon(cashV) + '</strong></div>' +
                '<div' + (disabledSelf ? ' class="is-disabled"' : '') + '><span>현금</span><strong>' + fmtWon(selfV) + '</strong></div>';
       }
-      // 합산: 현금 합계 한 줄 (+ 환급기준 지원금 서브라인)
+      // 합산: 현금 합계 한 줄 (+ 자부담/지원금 서브라인들)
       var h = '<div><span>현금</span><strong>' + fmtWon(cashV + selfV) + '</strong></div>';
-      if (sub) {
+      (subs || []).forEach(function (s) {
+        if (!s) return;
         h += '<div class="pl-sticky-refund-sub" style="opacity:0.62;">' +
-               '<span>└ ' + sub.label + '</span><strong>' + fmtWon(sub.value) + '</strong></div>';
-      }
+               '<span>└ ' + s.label + '</span><strong>' + fmtWon(s.value) + '</strong></div>';
+      });
       return h;
+    }
+
+    // v8.10: 차액 박스 푸터 — 마감 상태는 전 탭 표시, 이월/마감/취소 버튼은 실제 탭에서만. 순서 강제(이월 → 마감).
+    function carryCloseFooter(yIdx, nIdx) {
+      if (!yIdx) return '';   // 연차 정보 없는 과제
+      var bw = 'margin-top:0.5rem; width:100%; font-size:0.76rem; padding:0.42rem 0.3rem; border-radius:0.4rem; cursor:pointer; white-space:nowrap;';
+      var onActual = (state.activeTab === 'actual');
+
+      if (isActiveYearClosed()) {
+        var atTxt = (state.yearBudget && state.yearBudget.closedAt)
+          ? ' (' + String(state.yearBudget.closedAt).substring(0, 10) + ')' : '';
+        var head = '<div class="pl-sticky-box-note" style="color:#dc2626; font-weight:700; margin-top:0.5rem;">✓ ' + yIdx + '차년도 마감됨' + atTxt + '</div>'
+                 + '<div class="pl-sticky-box-note" style="margin-top:0.1rem;">셀이 읽기전용으로 잠겼습니다.</div>';
+        if (!onActual) return head + '<div class="pl-sticky-box-note">마감 취소는 <strong>[실제]</strong> 탭에서.</div>';
+        return head + (canUncloseYear()
+          ? '<button type="button" id="pl-yearunclose-btn" style="' + bw + ' border:1px solid var(--border-color); background:#fff; color:var(--text-secondary);" title="마감을 취소하고 다시 편집 가능 상태로 되돌립니다. (추후 권한 있는 사용자만)">🔓 마감 취소</button>'
+          : '<div class="pl-sticky-box-note">마감 취소는 권한 있는 사용자만 가능합니다.</div>');
+      }
+
+      if (!onActual) {
+        return '<div class="pl-sticky-box-note" style="margin-top:0.5rem;">📥 이월 · 🔒 마감은 <strong>[실제]</strong> 탭에서 진행합니다.</div>';
+      }
+      var done = isCarryoverDone();
+      var out = '';
+      if (nIdx) {
+        out += done
+          ? '<div class="pl-sticky-box-note" style="color:#16a34a; font-weight:600; margin-top:0.5rem;">✓ 이월금 처리 완료 — 이제 마감하세요.</div>'
+          : '<button type="button" id="pl-carryover-btn" style="' + bw + ' border:1px solid #2563eb; background:#2563eb; color:#fff;" title="이 차액을 ' + nIdx + '차년도 이월금으로 넘깁니다. (먼저 처리해야 마감 가능)">📥 ' + nIdx + '차년도로 이월</button>';
+      } else {
+        out += '<div class="pl-sticky-box-note" style="margin-top:0.5rem;">마지막 연차 (이월 대상 없음)</div>';
+      }
+      out += '<button type="button" id="pl-yearclose-btn" style="' + bw + ' border:1px solid var(--border-color); background:#fff; color:var(--text-primary);" title="이 연차를 마감하면 셀(참여율·금액)이 읽기전용으로 잠깁니다.">🔒 ' + yIdx + '차년도 마감</button>';
+      return out;
     }
 
     // 예산 페이지 링크 (있으면)
@@ -1382,7 +1536,7 @@
         '</div>' +
         '<div class="pl-sticky-box-amount">' + fmtWon(b.total) + '</div>' +
         '<div class="pl-sticky-box-breakdown">' +
-          cashRows(b.cash, b.selfCash, { label: '환급기준(지원금)', value: b.cash }, false) +
+          cashRows(b.cash, b.selfCash, [{ label: '자부담 (환급 X)', value: b.selfCash }, { label: '지원금 (환급 O)', value: b.cash }], false) +
           '<div><span>현물</span><strong>' + fmtWon(b.inkind) + '</strong></div>' +
         '</div>' +
         (hasYearBudget
@@ -1391,15 +1545,13 @@
       '</div>';
 
     // ── 박스 2: 이월금 (전년도→올해 받은 금액. 받은 표시만 — 다음 연차로 넘기는 버튼은 차액 박스로 이동) ──
-    var carryCash  = carry.cash     || 0;
-    var carrySelf  = carry.selfCash || 0;
     var carryTotal = carryCash + carrySelf;
     var nextIdx    = getNextYearIndex();
     html +=
       '<div class="pl-sticky-box pl-sticky-box--muted">' +
         '<div class="pl-sticky-box-head">' +
           '<span class="pl-sticky-box-title">이월금</span>' +
-          '<span class="pl-sticky-box-hint" title="전년도에서 이월받은 금액. 현물은 이월 불가.">전년도→올해</span>' +
+          '<span class="pl-sticky-box-hint" title="전년도에서 이월받은 금액. 이월은 전액 지원금. 현물은 이월 불가.">전년도→올해 (지원금)</span>' +
         '</div>' +
         '<div class="pl-sticky-box-amount">' + fmtWon(carryTotal) + '</div>' +
         '<div class="pl-sticky-box-breakdown">' +
@@ -1416,7 +1568,7 @@
         '</div>' +
         '<div class="pl-sticky-box-amount">' + fmtWon(c.total) + '</div>' +
         '<div class="pl-sticky-box-breakdown">' +
-          cashRows(c.cash, c.selfCash, { label: '지원금 집행', value: c.cash }, true) +
+          cashRows(c.cash, c.selfCash, [{ label: '자부담 집행', value: execSelf }, { label: '지원금 집행', value: execSupport }], true) +
           '<div><span>현물</span><strong>' + fmtWon(c.inkind) + '</strong></div>' +
         '</div>' +
       '</div>';
@@ -1429,15 +1581,11 @@
         '</div>' +
         '<div class="pl-sticky-box-amount">' + fmtWon(r.total) + '</div>' +
         '<div class="pl-sticky-box-breakdown">' +
-          cashRows(r.cash, r.selfCash, { label: '환급 가능(지원금)', value: Math.max(0, r.cash) }, true) +
+          cashRows(r.cash, r.selfCash, [{ label: '자부담 (환급 X)', value: remSelf }, { label: '지원금 (환급 O)', value: remSupport }], true) +
           '<div><span>현물</span><strong>' + fmtWon(r.inkind) + '</strong></div>' +
         '</div>' +
         '<div class="pl-sticky-box-formula">예산총액 + 이월금 − 누계</div>' +
-        (yearIdx
-          ? (nextIdx
-              ? '<button type="button" id="pl-carryover-btn" style="margin-top:0.5rem; width:100%; font-size:0.76rem; padding:0.4rem 0.3rem; border:1px solid var(--border-color); border-radius:0.4rem; background:#fff; color:var(--text-primary); cursor:pointer; white-space:nowrap;" title="이 차액(예산+이월−누계)을 ' + nextIdx + '차년도 이월금으로 넘깁니다.">📥 ' + nextIdx + '차년도로 이월</button>'
-              : '<div class="pl-sticky-box-note">마지막 연차 (이월 대상 없음)</div>')
-          : '') +
+        carryCloseFooter(yearIdx, nextIdx) +
       '</div>';
 
     wrap.innerHTML = html;
@@ -1469,6 +1617,7 @@
     var persons = getDisplayPersons();   // 현재 연차에 데이터 있는 인력만 (넣은 연차에만 보임) — v8.8: 연차별 순서 적용
     var project = getProject();
     var dataMap = mode === 'actual' ? state.actual : state.planned;
+    var yearClosed = isActiveYearClosed();   // v8.10: 마감된 연차 = 셀 전체 읽기전용 + 확정/지급 버튼 차단
 
     // 환급 여부: project.laborRefund === false 이면 참여율만, 그 외 환급 있음
     var hasRefund = !project || project.laborRefund !== false;
@@ -1609,7 +1758,16 @@
       var isConfirmed = !!confMeta.confirmed;
       var isPaid      = !!confMeta.paid;
       var confLabel = '';
-      if (mode === 'planned') {
+      if (yearClosed) {
+        // v8.10: 마감된 연차 — 확정/지급 토글 버튼 차단, 상태는 정적 뱃지로만 표시.
+        if (isConfirmed) {
+          confLabel =
+            '<div class="pl-month-meta">' +
+              '<span class="pl-month-confirm-badge" title="마감된 연차 — 변경하려면 마감을 취소하세요.">✓ 확정</span>' +
+              (isPaid ? '<span class="pl-month-paid-badge" title="지급 ' + (confMeta.paidAt || '') + '">💸 ' + (confMeta.paidAt || '') + '</span>' : '') +
+            '</div>';
+        }
+      } else if (mode === 'planned') {
         if (isConfirmed) {
           var atText = confMeta.confirmedAt
             ? ' (' + String(confMeta.confirmedAt).substring(0, 10) + ' 확정)'
@@ -1635,14 +1793,15 @@
         var paidPart;
         if (isPaid) {
           var paidAt = confMeta.paidAt || '';
-          var paidTip = '지급일 ' + paidAt + ' — 클릭하면 수정/취소';
+          var paidTip = '지급 완료 ' + paidAt + ' · 이 월은 셀이 잠겼습니다. 클릭 → 지급일 수정 또는 지급/잠금 취소(사유 입력).';
           paidPart =
-            '<span class="pl-month-paid-badge" data-paid-month="' + m.ym + '" title="' + paidTip + '">' +
+            '<span class="pl-month-paid-badge" data-paid-month="' + m.ym + '" title="' + paidTip + paidCancelTip(m.ym) + '">' +
               '💸 ' + paidAt +
+              ' <span style="color:#dc2626; font-weight:700; margin-left:0.4rem;">✓</span>' +
             '</span>';
         } else {
           paidPart =
-            '<button type="button" class="pl-month-paid-btn" data-paid-month="' + m.ym + '" title="' + m.year + '년 ' + m.month + '월 지급 완료 처리. 지급일 입력 prompt 표시.">' +
+            '<button type="button" class="pl-month-paid-btn" data-paid-month="' + m.ym + '" title="' + m.year + '년 ' + m.month + '월 지급 완료 처리. 지급일 입력 prompt 표시. 지급 시 해당 월 셀이 잠깁니다.' + paidCancelTip(m.ym) + '">' +
               '지급 완료' +
             '</button>';
         }
@@ -1722,12 +1881,18 @@
       tbody.appendChild(trEmp);
     } else {
       persons.forEach(function (person) {
-        if (mode === 'compare') {
-          buildCompareRows(tbody, person, months, project);
-        } else if (state.personRoles && state.personRoles[person.id] && state.personRoles[person.id].split) {
-          buildSplitPersonRows(tbody, person, months, project, dataMap, mode, hasRefund);
-        } else {
-          buildDataRow(tbody, person, months, project, dataMap, mode, hasRefund);
+        // 행 단위 격리: 한 인력 행에서 예외가 나도 나머지 인력은 계속 그린다.
+        // (예전엔 한 행의 예외가 buildTable 전체를 중단시켜 '0명'처럼 보였음.)
+        try {
+          if (mode === 'compare') {
+            buildCompareRows(tbody, person, months, project);
+          } else if (state.personRoles && state.personRoles[person.id] && state.personRoles[person.id].split) {
+            buildSplitPersonRows(tbody, person, months, project, dataMap, mode, hasRefund);
+          } else {
+            buildDataRow(tbody, person, months, project, dataMap, mode, hasRefund);
+          }
+        } catch (rowErr) {
+          console.error('인력 행 렌더 실패 — id=', (person && person.id), '/ mode=', mode, '/ 오류:', rowErr);
         }
       });
     }
@@ -1738,7 +1903,8 @@
       trAdd.className = 'pl-row-add';
       var tdAdd = document.createElement('td');
       tdAdd.colSpan = totalCols;
-      tdAdd.innerHTML = '<button type="button" class="pl-add-person-btn pl-add-inline-btn">＋ 인력 추가</button>';
+      tdAdd.innerHTML = '<button type="button" class="pl-add-person-btn pl-add-inline-btn">＋ 인력 추가</button>' +
+        '<button type="button" class="pl-add-person-btn pl-add-placeholder-inline-btn" title="마스터 인력과 매칭되지 않는 신규채용(임시) 행 추가">🔖 신규채용(임시)</button>';
       trAdd.appendChild(tdAdd);
       tbody.appendChild(trAdd);
     }
@@ -1937,6 +2103,23 @@
     if (!role || !Array.isArray(role.lockedYms)) return false;
     return role.lockedYms.indexOf(ym) >= 0;
   }
+  // v8.10: 지급 완료된 월은 그 월 전체 셀을 하드 잠금(readonly). 지급 취소로만 해제.
+  //   (데이터는 보존 — 상태만 잠금/해제. 마감처럼 '데이터 있는 잠금'이므로 흐림 X, 또렷하게 표시.)
+  function isMonthPaidLocked(ym) {
+    return !!(state.meta && state.meta[ym] && state.meta[ym].paid);
+  }
+  // v8.10: 지급취소 이력을 title 속성용 멀티라인 문자열로 (없으면 빈 문자열). 추적용.
+  function paidCancelTip(ym) {
+    var m = state.meta && state.meta[ym];
+    var log = m && Array.isArray(m.paidCancelLog) ? m.paidCancelLog : [];
+    if (!log.length) return '';
+    var parts = ['&#10;&#10;[지급취소 이력 ' + log.length + '건]'];
+    log.forEach(function (e) {
+      var when = e && e.at ? String(e.at).substring(0, 10) : '';
+      parts.push('&#10;· ' + escapeAttr(when + ' 취소: ' + ((e && e.reason) || '')));
+    });
+    return parts.join('');
+  }
   function setYmLocked(personId, ym, locked) {
     if (!state.personRoles) state.personRoles = {};
     if (!state.personRoles[personId]) {
@@ -2002,6 +2185,7 @@
   // ---- 일반 행 ----
   function buildDataRow(tbody, person, months, project, dataMap, mode, hasRefund) {
     var isExited = (person.status === 'exited');
+    var yearClosed = isActiveYearClosed();   // v8.10: 마감된 연차 셀 잠금 (buildTable과 별도 함수 → 여기서 다시 계산)
     var hasSelfCash = projHasSelfCash(project);   // v7.4: 자부담현금 컬럼 노출 여부
     // v7.4: 분류 나눔 — 한 사람이 한 과제에서 분류별로 참여율을 나눠 입력
     var roleForRow = (state.personRoles && state.personRoles[person.id]) || {};
@@ -2029,20 +2213,25 @@
     tdName.className = 'td-fixed pl-td-name pl-sticky-left';   // v5.3: sticky
     var badgesHtml = '';
     if (person.isYouth) badgesHtml += '<span class="pl-badge pl-badge--youth">청년</span>';
-    if (person.isNew)   badgesHtml += '<span class="pl-badge pl-badge--new">신규</span>';
+    if (person.isPlaceholder) badgesHtml += '<span class="pl-badge pl-badge--ph">🔖 신규채용(임시)</span>';
+    else if (person.isNew)   badgesHtml += '<span class="pl-badge pl-badge--new">신규</span>';
     // v7.4: 퇴사자는 뱃지 대신 이름에 취소선 + 진회색 (CSS: .pl-row--exited .pl-name-text)
     // v5.2: hover 시 노출되는 ✕ 삭제 버튼. data-remove-person으로 위임 처리.
     // v5.3 Step 4.8: 이름 앞에 드래그 핸들(≡). data-drag-handle 마커 — dragstart에서 확인.
+    // 신규채용(임시): 마스터 이름이 없으므로 이름을 자유 입력(personRoles[id].name).
+    var nameInnerHtml = person.isPlaceholder
+      ? '<input type="text" class="pl-name-input" data-ph-name="' + escapeAttr(person.id) + '" value="' + escapeAttr(person.name) + '" placeholder="신규채용" title="신규채용(임시) — 채용 확정 후 실제 인력에 매칭 예정">'
+      : '<span class="pl-name-text">' + person.name + '</span>';
     tdName.innerHTML =
       '<div class="pl-name-row">' +
         '<span class="pl-row-drag-handle" data-drag-handle="1" title="드래그해서 순서 변경">≡</span>' +
         buildNeSelectHtml(person.id) +
-        '<span class="pl-name-text">' + person.name + '</span>' +
+        nameInnerHtml +
         (badgesHtml ? '<span class="pl-name-badges-inline">' + badgesHtml + '</span>' : '') +
         '<button type="button" class="pl-row-remove-btn" data-remove-person="' + person.id + '"' +
-          ' title="' + person.name + ' 이 프로젝트에서 제거">×</button>' +
+          ' title="' + escapeAttr(person.name) + ' 이 프로젝트에서 제거">×</button>' +
       '</div>' +
-      buildRoleControlsHtml(person.id);
+      (person.isPlaceholder ? '' : buildRoleControlsHtml(person.id));
     tr.appendChild(tdName);
 
     // v5.2: 월급 셀 — 예상 탭에서 편집 가능 (오버라이드 입력)
@@ -2132,16 +2321,19 @@
       //   - 연차 밖 월(분기 보기 패딩)이면 항상 잠금/회색 (입력 불가)
       //   - 사용자 직접 잠금이면 무조건 잠금
       //   - 그 외엔 퇴사월 이후/입사월 이전 잠금 — 단, 수동 '입력허용'(재입사 과거기간)이면 풀림
-      var locked = false;
+      //   - v8.10: 마감된 연차는 무조건 잠금(최상위)
+      // v8.10: '데이터 있는 잠금'(마감·지급)은 readonly만 — 흐림(inactive) 없이 또렷하게.
+      //        '데이터 없는 비활성'(연차 밖·수동잠금·입퇴사 범위 밖)만 흐리게 표시.
+      var locked = yearClosed || isMonthPaidLocked(m.ym);
+      var inactive = false;
       if (!isYmInActiveYear(m.ym)) {
-        locked = true;   // 연차 밖 월(분기에 걸친 연차 외 달)
+        locked = true; inactive = true;   // 연차 밖 월(분기에 걸친 연차 외 달)
       } else if (isYmManuallyLocked(person.id, m.ym)) {
-        locked = true;
+        locked = true; inactive = true;
       } else if (!isYmManuallyUnlocked(person.id, m.ym)) {
-        if (isExited && exitYm && m.ym > exitYm) locked = true;
-        if (hireYm && m.ym < hireYm)             locked = true;
+        if (isExited && exitYm && m.ym > exitYm) { locked = true; inactive = true; }
+        if (hireYm && m.ym < hireYm)             { locked = true; inactive = true; }
       }
-      var inactive = locked;
 
       // 참여율
       // v5 Step 4: type=number → type=text + 포맷팅 ('10%' 등)
@@ -2268,6 +2460,7 @@
   //   데이터는 단일 셀(cell.rates + cell.cash/selfCash/inkind)에 저장 — 키 변경 없음.
   //   각 줄: 구분 라벨 + 참여율(이 분류) 입력 + 그 분류 금액(읽기전용). 다른 분류 칸은 빈칸.
   function buildSplitPersonRows(tbody, person, months, project, dataMap, mode, hasRefund) {
+    var yearClosed = isActiveYearClosed();   // v8.10: 마감된 연차 셀 잠금 (buildTable/buildDataRow와 별도 함수 → 여기서도 선언 필요)
     var isExited = (person.status === 'exited');
     var hasSelfCash = projHasSelfCash(project);
     var exitYm = isExited ? getExitYm(person) : null;
@@ -2384,16 +2577,17 @@
           return;
         }
         var cell = getCell(dataMap, project.id, m.ym, person.id);
-        var locked = false;
+        // v8.10: 마감·지급 = 데이터 있는 잠금(readonly, 또렷). 기간 밖/수동잠금/입퇴사 밖 = 비활성(흐림).
+        var locked = yearClosed || isMonthPaidLocked(m.ym);
+        var inactive = false;
         if (!isYmInActiveYear(m.ym)) {
-          locked = true;   // 연차 밖 월(분기 보기 패딩)
+          locked = true; inactive = true;   // 연차 밖 월(분기 보기 패딩)
         } else if (isYmManuallyLocked(person.id, m.ym)) {
-          locked = true;
+          locked = true; inactive = true;
         } else if (!isYmManuallyUnlocked(person.id, m.ym)) {
-          if (isExited && exitYm && m.ym > exitYm) locked = true;
-          if (hireYm && m.ym < hireYm)             locked = true;
+          if (isExited && exitYm && m.ym > exitYm) { locked = true; inactive = true; }
+          if (hireYm && m.ym < hireYm)             { locked = true; inactive = true; }
         }
-        var inactive = locked;
 
         // 참여율(이 분류) — 시드 우선순위:
         //   1) cell.rates[field] 있으면 그대로
@@ -2773,10 +2967,8 @@
     var project = getProject();
     if (!project) return;
 
-    var person = _allPersons.find(function (p) { return p.id === personId; });
+    var person = resolveRowPerson(personId);   // 마스터 + 신규채용(임시) placeholder
     if (!person) return;
-
-    // v5 Step 4: 표시값(콤마/%) 안전 파싱
     var val = parseCellNumber(input.value);
 
     if (field === 'rate') {
@@ -2926,10 +3118,8 @@
     if (!pid) return;
     var project = getProject();
     if (!project) return;
-    var person = _allPersons.find(function (p) { return p.id === pid; });
+    var person = resolveRowPerson(pid);   // 마스터 + 신규채용(임시) placeholder
     if (!person) return;
-
-    // 입력값 파싱 (콤마 제거 후 숫자)
     var raw = String(input.value || '').replace(/[^\d]/g, '');
     var newOverride = raw ? Number(raw) : 0;
     if (!isFinite(newOverride) || newOverride < 0) newOverride = 0;
@@ -3099,7 +3289,7 @@
       showToast('가로 채우기는 예상 탭에서만 사용할 수 있습니다.', 'warn');
       return;
     }
-    var person = _allPersons.find(function (p) { return p.id === personId; });
+    var person = resolveRowPerson(personId);   // 마스터 + 신규채용(임시) placeholder
     if (!person) return;
 
     // 현재 활성 연차의 전체 월 (연차 없으면 달력 12개월 폴백). 접힌 월도 포함.
@@ -3181,16 +3371,14 @@
     // v5.3: source 월(fromYm)의 실제 입력값을 그대로 가져옴.
     //   - 이전엔 monthlySalary × rate 로 재계산해서 버림/수동 조정값이 무시됐음.
     //   - 이제는 1월에 100원 단위 버림한 값을 그대로 12월까지 복사함.
-    //   - source의 moneyField 값이 0이거나 없으면 폴백으로 자동 계산값 사용.
+    // v9.x: source 금액이 0이어도 그대로 0을 복사(재계산 안 함).
+    //   - 참여율은 잡되 지원금은 0인 인력(급여 0 / 참여율만 추적 / 자부담·현물 등)이 있어,
+    //     0을 월급×참여율로 되살리면 의도와 다르게 비-0이 옆으로 퍼졌음.
+    //   - 참여율 입력 시 지원금은 항상 자동계산되므로(아래 onCellInput 참고),
+    //     'rate>0 & 지원금=0'은 사실상 의도적 0 → 0을 그대로 전파하는 게 맞음.
     var dataMap = state.planned;
     var srcCell = getCell(dataMap, project.id, fromYm, personId);
-    var srcAmount = srcCell[moneyField] || 0;
-    if (srcAmount === 0) {
-      // 폴백: source 셀에 값이 없으면 raw 계산값 사용 (이전 동작)
-      var monthlySalary = getEffectiveMonthlySalary(person, fromYm);
-      srcAmount = Math.round(monthlySalary * rate / 100);
-    }
-    var autoAmount = srcAmount;
+    var autoAmount = srcCell[moneyField] || 0;
 
     // 묶음 undo entry — 채울 월 각각의 이전 값 기록
     var batchItems = [];
@@ -3272,7 +3460,7 @@
     }
     // 금액 필드만 대상 (cash/selfCash/inkind). 그 외 필드면 무시.
     if (field !== 'cash' && field !== 'selfCash' && field !== 'inkind') return;
-    var person = _allPersons.find(function (p) { return p.id === personId; });
+    var person = resolveRowPerson(personId);   // 마스터 + 신규채용(임시) placeholder
     if (!person) return;
 
     var allMonths = getFillMonths();
@@ -3749,24 +3937,49 @@
 
     var b = getBudgetBreakdown();
     var carry = getCarryover();                        // 전년도에서 받은 이월금
-    var actualCash = getActualCashSumForYear();
-    var leftCash = b.cash + (carry.cash || 0) - actualCash;   // 차액(예산+이월−실제집행)
-    var cashLeft = Math.max(0, leftCash);              // 지원금 잔액 (음수면 0)
+    var combined = !projHasSelfCash(proj);             // 자부담 별도 OFF = 합산(현금 한 풀)
 
     var pathEl = document.getElementById('pl-carry-path');
     if (pathEl) pathEl.textContent = curIdx + '차년도 → ' + nextIdx + '차년도';
 
     var cashInfoEl = document.getElementById('pl-carry-cash-info');
-    if (cashInfoEl) {
-      cashInfoEl.textContent = '예산 ' + carryFmtNum(b.cash)
-        + ((carry.cash || 0) ? ' + 이월 ' + carryFmtNum(carry.cash) : '')
-        + ' − 실제 ' + carryFmtNum(actualCash)
-        + ' = 잔액 ' + carryFmtNum(leftCash) + '원';
+    var cashInput  = document.getElementById('pl-carry-cash');
+    var selfInput  = document.getElementById('pl-carry-self');
+    var selfBlock  = selfInput ? selfInput.parentElement : null;   // 자부담현금 이월 입력 블록
+
+    if (combined) {
+      // 합산 모드(해석 B): 현금을 한 풀로 보고, 안 쓴 돈 전부를 지원금 이월로.
+      //   지원금 이월 = (지원금예산+자부담예산) + (받은이월 cash+selfCash) − 실제집행(현금 한 풀)
+      //   자부담현금 이월 = 0 → 입력 칸 숨김.
+      var budgetPool = b.cash + b.selfCash;
+      var carryIn    = (carry.cash || 0) + (carry.selfCash || 0);
+      var poolExec   = getActualCashPoolSumForYear();
+      var leftPool   = budgetPool + carryIn - poolExec;
+      var cashLeft   = Math.max(0, leftPool);
+      if (cashInput) cashInput.value = carryFmtNum(cashLeft);
+      if (selfInput) selfInput.value = '0';
+      if (selfBlock) selfBlock.style.display = 'none';
+      if (cashInfoEl) {
+        cashInfoEl.textContent = '합산(현금 한 풀): 예산 ' + carryFmtNum(budgetPool)
+          + (carryIn ? ' + 이월 ' + carryFmtNum(carryIn) : '')
+          + ' − 실제집행 ' + carryFmtNum(poolExec)
+          + ' = 잔액 ' + carryFmtNum(leftPool) + '원 (전액 지원금 · 자부담현금 이월 0)';
+      }
+    } else {
+      // 별도 모드: 지원금만 자동(예산+이월−지원금집행), 자부담현금은 직접 입력.
+      var actualCash = getActualCashSumForYear();
+      var leftCash = b.cash + (carry.cash || 0) - actualCash;   // 차액(예산+이월−실제집행)
+      var cashLeft2 = Math.max(0, leftCash);                    // 지원금 잔액 (음수면 0)
+      if (cashInput) cashInput.value = carryFmtNum(cashLeft2);
+      if (selfInput) selfInput.value = '0';
+      if (selfBlock) selfBlock.style.display = '';
+      if (cashInfoEl) {
+        cashInfoEl.textContent = '예산 ' + carryFmtNum(b.cash)
+          + ((carry.cash || 0) ? ' + 이월 ' + carryFmtNum(carry.cash) : '')
+          + ' − 실제 ' + carryFmtNum(actualCash)
+          + ' = 잔액 ' + carryFmtNum(leftCash) + '원';
+      }
     }
-    var cashInput = document.getElementById('pl-carry-cash');
-    if (cashInput) cashInput.value = carryFmtNum(cashLeft);
-    var selfInput = document.getElementById('pl-carry-self');
-    if (selfInput) selfInput.value = '0';
 
     var modal = document.getElementById('pl-carryover-modal');
     if (modal) modal.hidden = false;
@@ -3778,25 +3991,89 @@
 
   function onCarryoverApply() {
     var proj = getProject();
+    var curIdx  = getYearIndexForState();
     var nextIdx = getNextYearIndex();
     if (!proj || !nextIdx) { showToast('이월 대상 연차가 없습니다.', 'warn'); return; }
     if (!isFirestoreReady()) { showToast('저장할 수 없습니다 (연결 확인).', 'error'); return; }
 
     var cashVal = carryParseWon(document.getElementById('pl-carry-cash').value);
     var selfVal = carryParseWon(document.getElementById('pl-carry-self').value);
-    var docId   = proj.id + '_year' + nextIdx;
+    var nextDocId = proj.id + '_year' + nextIdx;
+    var curDocId  = proj.id + '_year' + curIdx;
+    var nowIso    = new Date().toISOString();
 
-    db().collection(BUDGET_COLL).doc(docId).set({
-      carryoverCash:     cashVal,
-      carryoverSelfCash: selfVal,
-    }, { merge: true }).then(function () {
+    // 다음 연차에 이월금 저장 + 현재 연차에 '이월 처리됨' 플래그(carryoverDone) 기록.
+    //   carryoverDone은 0원 확정과 '미처리'를 구분하는 명시 플래그 → 마감 순서 강제에 사용.
+    Promise.all([
+      db().collection(BUDGET_COLL).doc(nextDocId).set({
+        carryoverCash:     cashVal,
+        carryoverSelfCash: selfVal,
+      }, { merge: true }),
+      curIdx ? db().collection(BUDGET_COLL).doc(curDocId).set({
+        carryoverDone:   true,
+        carryoverDoneAt: nowIso,
+      }, { merge: true }) : Promise.resolve()
+    ]).then(function () {
       closeCarryoverModal();
-      showToast('📥 ' + nextIdx + '차년도로 이월 완료 — 지원금 ' + carryFmtNum(cashVal) + ' · 자부담현금 ' + carryFmtNum(selfVal) + '원', 'success');
-      // 마침 다음 연차를 보고 있던 경우(드묾) 즉시 반영
+      if (state.yearBudget) { state.yearBudget.carryoverDone = true; state.yearBudget.carryoverDoneAt = nowIso; }
+      renderStickyBoxes();   // '이월 완료 → 마감하세요'로 즉시 갱신
+      showToast('📥 ' + nextIdx + '차년도로 이월 완료 — 이제 ' + curIdx + '차년도 마감을 진행하세요.', 'success');
       if (getYearIndexForState() === nextIdx) reloadYearBudget();
     }).catch(function (e) {
       console.error('이월금 저장 실패:', e);
       showToast('이월금 저장에 실패했습니다.', 'error');
+    });
+  }
+
+  // v8.10: 연차 마감 — 셀 읽기전용 잠금. 순서 강제: (다음 연차 있으면) 이월금 처리 → 마감.
+  function onYearClose() {
+    var proj = getProject();
+    var curIdx = getYearIndexForState();
+    if (!proj || !curIdx) { showToast('연차 정보가 없습니다.', 'warn'); return; }
+    if (!isFirestoreReady()) { showToast('저장할 수 없습니다 (연결 확인).', 'error'); return; }
+    if (isActiveYearClosed()) { showToast('이미 마감된 연차입니다.', 'info'); return; }
+
+    var nextIdx = getNextYearIndex();
+    if (nextIdx && !isCarryoverDone()) {
+      // 이월금 미처리 → 먼저 이월 처리하도록 유도(모달 자동 오픈)
+      showToast('먼저 이월금을 처리하세요. 이월 확정 후 마감할 수 있습니다.', 'warn');
+      openCarryoverModal();
+      return;
+    }
+    if (!confirm(curIdx + '차년도를 마감하시겠습니까?\n\n마감하면 이 연차의 셀(참여율·금액)이 읽기전용으로 잠깁니다.\n(마감 취소로 되돌릴 수 있습니다.)')) return;
+
+    var nowIso = new Date().toISOString();
+    db().collection(BUDGET_COLL).doc(proj.id + '_year' + curIdx).set({
+      closed: true, closedAt: nowIso,
+    }, { merge: true }).then(function () {
+      if (state.yearBudget) { state.yearBudget.closed = true; state.yearBudget.closedAt = nowIso; }
+      renderAll();   // 셀 잠금 반영 위해 표 전체 재렌더
+      showToast('🔒 ' + curIdx + '차년도 마감 완료 — 셀이 읽기전용입니다.', 'success');
+    }).catch(function (e) {
+      console.error('마감 저장 실패:', e);
+      showToast('마감 저장에 실패했습니다.', 'error');
+    });
+  }
+
+  // v8.10: 연차 마감 취소 — 추후 권한자만(canUncloseYear). 셀 다시 편집 가능.
+  function onYearUnclose() {
+    var proj = getProject();
+    var curIdx = getYearIndexForState();
+    if (!proj || !curIdx) { showToast('연차 정보가 없습니다.', 'warn'); return; }
+    if (!isFirestoreReady()) { showToast('저장할 수 없습니다 (연결 확인).', 'error'); return; }
+    if (!isActiveYearClosed()) { showToast('마감되지 않은 연차입니다.', 'info'); return; }
+    if (!canUncloseYear()) { showToast('마감 취소 권한이 없습니다.', 'warn'); return; }
+    if (!confirm(curIdx + '차년도 마감을 취소하시겠습니까?\n셀이 다시 편집 가능 상태가 됩니다.')) return;
+
+    db().collection(BUDGET_COLL).doc(proj.id + '_year' + curIdx).set({
+      closed: false, closedAt: null,
+    }, { merge: true }).then(function () {
+      if (state.yearBudget) { state.yearBudget.closed = false; state.yearBudget.closedAt = null; }
+      renderAll();
+      showToast('🔓 ' + curIdx + '차년도 마감 취소 — 편집 가능합니다.', 'success');
+    }).catch(function (e) {
+      console.error('마감 취소 실패:', e);
+      showToast('마감 취소에 실패했습니다.', 'error');
     });
   }
 
@@ -3805,6 +4082,8 @@
     var sticky = document.getElementById('pl-sticky');
     if (sticky) sticky.addEventListener('click', function (e) {
       if (e.target && e.target.id === 'pl-carryover-btn') openCarryoverModal();
+      if (e.target && e.target.id === 'pl-yearclose-btn') onYearClose();
+      if (e.target && e.target.id === 'pl-yearunclose-btn') onYearUnclose();
     });
     var closeBtn = document.getElementById('pl-carry-close');
     if (closeBtn) closeBtn.addEventListener('click', closeCarryoverModal);
@@ -3954,7 +4233,7 @@
     var skippedLocked = 0;
 
     targetIds.forEach(function (pid) {
-      var person = _allPersons.find(function (p) { return p.id === pid; });
+      var person = resolveRowPerson(pid);   // 마스터 + 신규채용(임시) placeholder
       if (!person) return;
 
       // 잠금 체크 — buildDataRow와 같은 정책
@@ -4589,6 +4868,13 @@
       state.meta[ym].confirmed = false;
       delete state.meta[ym].confirmedAt;
       if (state.meta[ym].paid) {
+        // v8.10: 확정 취소에 따른 자동 지급취소도 이력에 남긴다(추적 연속성)
+        if (!Array.isArray(state.meta[ym].paidCancelLog)) state.meta[ym].paidCancelLog = [];
+        state.meta[ym].paidCancelLog.push({
+          reason:     '확정 취소에 따른 자동 지급취소',
+          at:         new Date().toISOString(),
+          prevPaidAt: state.meta[ym].paidAt || null,
+        });
         state.meta[ym].paid = false;
         delete state.meta[ym].paidAt;
       }
@@ -4681,15 +4967,29 @@
         showToast('💸 ' + ymLabel + ' 지급일 ' + newDate + '로 수정', 'success');
         return;
       }
-      // 취소 분기
-      var msg2 = ymLabel + '의 지급 완료를 취소하시겠습니까?\n(데이터는 그대로 두고 상태만 미지급으로 변경)';
+      // 취소 분기 — v8.10: 취소 사유 입력(필수) + 이력 누적(추후 마스터 권한자 추적용)
+      var msg2 = ymLabel + '의 지급 완료를 취소하시겠습니까?\n(데이터는 그대로 두고 상태만 미지급으로 변경 — 셀 잠금도 해제됩니다.)';
       if (confirm(msg2)) {
+        var reason = prompt(ymLabel + ' 지급 취소 사유를 입력하세요.\n(추후 관리자가 취소 이력을 추적할 수 있도록 기록됩니다.)', '');
+        if (reason === null) return;                 // 취소창에서 취소 → 아무것도 안 함
+        reason = String(reason).trim();
+        if (!reason) {
+          showToast('취소 사유를 입력해야 지급 취소가 가능합니다.', 'warn');
+          return;
+        }
         if (!state.meta[ym]) state.meta[ym] = {};
+        // 이력 누적(덮어쓰지 않음): { reason, at, prevPaidAt }  — by(취소자)는 추후 권한/사용자 연동 시 추가
+        if (!Array.isArray(state.meta[ym].paidCancelLog)) state.meta[ym].paidCancelLog = [];
+        state.meta[ym].paidCancelLog.push({
+          reason:     reason,
+          at:         new Date().toISOString(),
+          prevPaidAt: state.meta[ym].paidAt || null,
+        });
         state.meta[ym].paid = false;
         delete state.meta[ym].paidAt;
         renderAll();
         scheduleSave();
-        showToast('↩ ' + ymLabel + ' 지급 완료 취소됨', 'success');
+        showToast('↩ ' + ymLabel + ' 지급 완료 취소됨 (사유 기록됨) — 셀 잠금 해제', 'success');
       }
       return;
     }
@@ -4717,7 +5017,7 @@
     e.stopPropagation();
     var pid = btn.dataset.removePerson;
     if (!pid) return;
-    var person = _allPersons.find(function (p) { return p.id === pid; });
+    var person = resolveRowPerson(pid);   // 마스터 + 신규채용(임시) placeholder
     var name = person ? person.name : '이 인력';
     if (!confirm(name + '을(를) 이 프로젝트에서 제거하시겠습니까?\n(입력된 인건비 데이터는 그대로 보존되며, 다시 추가 시 복원됩니다)')) return;
     removePersonFromProject(pid);
@@ -5042,7 +5342,7 @@
         }
         var prevYear = state.year;
         if (state.quarter > 1) { state.quarter--; }
-        else { state.quarter = 4; state.year--; document.getElementById('pl-year-input').value = state.year; }
+        else { state.quarter = 4; state.year--; syncYearSelect(); }
         updateQuarterLabel();
         if (state.year !== prevYear) {
           reloadYearBudget();         // v5 Step 2
@@ -5065,7 +5365,7 @@
         }
         var prevYear = state.year;
         if (state.quarter < 4) { state.quarter++; }
-        else { state.quarter = 1; state.year++; document.getElementById('pl-year-input').value = state.year; }
+        else { state.quarter = 1; state.year++; syncYearSelect(); }
         updateQuarterLabel();
         if (state.year !== prevYear) {
           reloadYearBudget();         // v5 Step 2
@@ -5210,6 +5510,20 @@
       if (e.target.id === 'pl-add-person-top-btn' || e.target.classList.contains('pl-add-inline-btn')) {
         openAddModal();
       }
+      // 신규채용(임시) 추가
+      if (e.target.id === 'pl-add-placeholder-top-btn' || e.target.classList.contains('pl-add-placeholder-inline-btn')) {
+        addPlaceholderPerson();
+      }
+    });
+
+    // 신규채용(임시) 이름 자유 입력 → personRoles[id].name (위임)
+    document.addEventListener('input', function (e) {
+      var t = e.target;
+      if (!t || !t.classList || !t.classList.contains('pl-name-input')) return;
+      var id = t.dataset.phName;
+      if (!id || !state.personRoles[id]) return;
+      state.personRoles[id].name = t.value;
+      scheduleSave();
     });
   }
 
@@ -6907,6 +7221,34 @@
     scheduleSave();
   }
 
+  // 신규채용(임시) 행 추가 — 마스터 인력과 매칭되지 않는 placeholder.
+  //   임시 id로 셀을 채워 예산/계획을 미리 잡아두고, 채용 확정 후 실제 인력에 매칭(2단계 예정).
+  //   이름·월급은 자유/직접 입력(personRoles[tempId].name / monthlySalaryOverride).
+  function addPlaceholderPerson() {
+    var proj = getProject();
+    if (!proj) { showToast('과제를 먼저 선택하세요.', 'error'); return; }
+    var tempId = '__new_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+    // 이름 자동 번호: 현재 placeholder 개수 + 1
+    var cnt = 0;
+    Object.keys(state.personRoles || {}).forEach(function (k) {
+      if (state.personRoles[k] && state.personRoles[k].isPlaceholder) cnt++;
+    });
+    state.personIds.push(tempId);
+    state.personRoles[tempId] = {
+      newOrExisting: '신규', cashOrInkind: '현금', subRole: '',
+      monthlySalaryOverride: null, isPlaceholder: true, name: '신규채용 ' + (cnt + 1)
+    };
+    // 현재 보는 연차에만 자리 생성(빈 셀) — 일반 인력 추가와 동일 규칙(그 연차에만 보임).
+    var months = getActiveYearMonths();
+    if (months && months.length) {
+      var map = state.activeTab === 'actual' ? state.actual : state.planned;
+      setCell(map, proj.id, months[0].ym, tempId, {});
+    }
+    renderAll();
+    scheduleSave();
+    showToast('🔖 신규채용(임시) 행 추가 — 이름·월급·참여율 입력 후, 채용 확정 시 실제 인력에 매칭하세요.', 'info');
+  }
+
   function removePersonFromProject(personId) {
     state.personIds = state.personIds.filter(function (id) { return id !== personId; });
     // v5: personRoles는 일부러 삭제하지 않음 — 다시 추가 시 분류 보존.
@@ -6989,7 +7331,7 @@
     state.quarter = Math.ceil((now.getMonth() + 1) / 3);
 
     var yearInput = document.getElementById('pl-year-input');
-    if (yearInput) yearInput.value = state.year;
+    if (yearInput) populateYearSelect();   // v8.10: 드롭다운 옵션 생성 + 현재 연도 선택
     updateQuarterLabel();
 
     // 회사 칩 초기 상태 동기화 (localStorage 복원값)

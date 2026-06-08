@@ -24,6 +24,12 @@
     var el = document.getElementById(id);
     if (el) el.textContent = val;
   }
+  // §4.9-3: 전년도 이월금 안내 호버 박스 HTML (과제 관리 .pj-tip와 동일한 .f-tip 스타일)
+  function carryTipHtml(totalP, amount) {
+    return '<span class="f-tip"><i class="f-tip-icon">i</i>' +
+           '<span class="f-tip-box">예상 ' + formatNum(totalP) + '원<br>전년도 이월금 ' +
+           formatNum(amount) + '원 포함</span></span>';
+  }
 
   // normalizeStatus — projects.js와 동일
   function normalizeStatus(it) {
@@ -585,10 +591,48 @@
   // ============================================================
 
   var LABOR_COLL = 'projectLabor';
+  var BUDGET_COLL = 'projectBudget';   // §4.9-3: 이월금(carryoverCash)·이월확정(carryoverDone) 표시 전용 로드
   var _laborCache = {};        // { [projectId]: { planned: cells, actual: cells, meta: {[ym]:{confirmed,...}} } }
+  // _pbCache: 이월금 hover 표기 전용. { [projectId]: { [yearIdx]: { carryoverCash, carryoverDone } } }
+  //   · carryoverCash  = 받는 연차(idx) 문서에 저장됨 → 그 연차에 들어온 전년도 이월금
+  //   · carryoverDone  = 보내는 연차(idx) 문서에 저장됨 → "이 연차의 이월금을 처리(확정)했는가"
+  //   따라서 idx차 화면의 '전년도 이월금'은: 금액=_pbCache[pid][idx].carryoverCash, 확정여부=_pbCache[pid][idx-1].carryoverDone
+  var _pbCache = {};
   var _laborCacheYear = null;
   var _laborLoading = false;
   // _companyFilter는 메인 상태(상단)에서 선언 — 두 탭 공통
+
+  // 과제의 '시작연도 === 대상 달력연도'인 연차 인덱스(1-based). 없으면 0.
+  //   project-labor.js getYearIndexForState와 동일한 시작연도 매핑(걸치는 연차 1차 오인 방지).
+  //   ※ funding의 getYearIndexForProject(라벨용)는 겹침 매핑이라 여기선 쓰지 않음.
+  function resolveStartYearIdx(proj, year) {
+    if (!proj || !Array.isArray(proj.yearBudgets)) return 0;
+    for (var i = 0; i < proj.yearBudgets.length; i++) {
+      var yb = proj.yearBudgets[i];
+      var sd = ((yb && (yb.startDate || yb.start)) || '').toString();
+      var sy = parseInt(sd.slice(0, 4), 10);
+      if (isFinite(sy) && sy === year) return i + 1;
+    }
+    return 0;
+  }
+
+  // §4.9-3: 한 과제의 '전년도 이월금' 표기 정보.
+  //   show = (idx >= 2) && 전년도 문서(idx-1)의 carryoverDone === true
+  //     · idx===1(1차) 또는 그해 시작 연차 없음(꼬리연도) → 표기 안 함
+  //     · carryoverDone은 0원 확정과 미처리를 구분하는 명시 플래그 → 금액 0이어도 확정됐으면 표기
+  //   amount = 받는 연차(idx) 문서의 carryoverCash (0 가능)
+  //   ※ 예상 합계(Σ planned)에는 더하지 않음 — 예산 계획에 이미 반영돼 있어 이중계상 방지. hover 표기 전용.
+  function getProjectCarryover(proj) {
+    var none = { show: false, amount: 0 };
+    if (!proj) return none;
+    var idx = resolveStartYearIdx(proj, parseInt(currentYear, 10));
+    if (idx < 2) return none;
+    var pb = _pbCache[proj.id] || {};
+    var prev = pb[idx - 1];
+    if (!prev || prev.carryoverDone !== true) return none;
+    var cur = pb[idx] || {};
+    return { show: true, amount: Number(cur.carryoverCash) || 0 };
+  }
 
   function db() { return window.__firebaseDb || null; }
   function isFirestoreReady() {
@@ -695,23 +739,53 @@
                      meta: (snap.exists && snap.data().meta) ? snap.data().meta : {} };
           })
       );
+
+      // §4.9-3: 이월금 hover 표기용 — 시작연도===올해인 연차(idx)와 그 전년도(idx-1) 예산 문서만 로드.
+      //   idx차 금액 = year{idx}.carryoverCash / 확정여부 = year{idx-1}.carryoverDone
+      //   표시 전용이라 실패해도 빈 객체로 흘려보내 라벨 로드를 막지 않음.
+      var pbIdx = resolveStartYearIdx(proj, yearInt);
+      if (pbIdx >= 2) {
+        [pbIdx, pbIdx - 1].forEach(function (yi) {
+          promises.push(
+            db().collection(BUDGET_COLL).doc(docId + '_year' + yi).get()
+              .then(function (snap) {
+                var d = (snap.exists && snap.data()) ? snap.data() : {};
+                return { projectId: proj.id, kind: 'budget', yearIdx: yi,
+                         data: { carryoverCash: Number(d.carryoverCash) || 0,
+                                 carryoverDone: d.carryoverDone === true } };
+              })
+              .catch(function () {
+                return { projectId: proj.id, kind: 'budget', yearIdx: yi,
+                         data: { carryoverCash: 0, carryoverDone: false } };
+              })
+          );
+        });
+      }
     });
 
     Promise.all(promises).then(function (results) {
       var cache = {};
+      var pbCache = {};
       results.forEach(function (r) {
+        if (r.kind === 'budget') {
+          if (!pbCache[r.projectId]) pbCache[r.projectId] = {};
+          pbCache[r.projectId][r.yearIdx] = r.data;
+          return;
+        }
         if (!cache[r.projectId]) cache[r.projectId] = { planned: {}, actual: {}, meta: {} };
         if (r.kind === 'planned')     cache[r.projectId].planned = r.cells;
         else if (r.kind === 'actual') cache[r.projectId].actual  = r.cells;
         else if (r.kind === 'meta')   cache[r.projectId].meta    = r.meta;
       });
       _laborCache = cache;
+      _pbCache = pbCache;
       _laborCacheYear = currentYear;
       _laborLoading = false;
       renderLaborRefundTable();
     }).catch(function (err) {
       console.error('[funding] projectLabor 로드 실패:', err);
       _laborCache = {};
+      _pbCache = {};
       _laborCacheYear = currentYear;
       _laborLoading = false;
       renderLaborRefundTable();
@@ -893,6 +967,18 @@
     setEl('labor-sum-year-pay',     formatNum(yearExpected));
     setEl('labor-sum-year-refund',  formatNum(yearRefund));
     setEl('labor-sum-year-rate',    yearRate.toFixed(1));
+
+    // §4.9-3: 누적 예상 환급액 카드 라벨에 전년도 이월금 안내 호버 박스 (합계는 그대로, 표기 전용).
+    //   라벨 textContent는 위 setEl에서 매 렌더 초기화되므로, 여기서 다시 붙이면 중복 안 됨.
+    var sumCarry = 0, anyCarry = false;
+    targets.forEach(function (p) {
+      var c = getProjectCarryover(p);
+      if (c.show) { sumCarry += c.amount; anyCarry = true; }
+    });
+    var payLabel = document.getElementById('labor-sum-year-pay-label');
+    if (payLabel && anyCarry) {
+      payLabel.insertAdjacentHTML('beforeend', ' ' + carryTipHtml(yearExpected, sumCarry));
+    }
   }
 
   // ── 렌더 ──────────────────────────────────────────────
@@ -970,6 +1056,7 @@
       grandTotalPlanned += totalP;
       grandTotalActual  += totalA;
 
+      var carry = getProjectCarryover(p);
       rows.push({
         name: p.keywords || p.keyword || p.projectName || '(이름 없음)',
         id: p.id,
@@ -977,7 +1064,9 @@
         division: (p.division1 === '과제') ? 'task' : 'other',   // v6.2: 분류 배지용
         bins: bins,
         totalP: totalP,
-        totalA: totalA
+        totalA: totalA,
+        carryShow: carry.show,
+        carryAmount: carry.amount
       });
     });
 
@@ -1089,7 +1178,10 @@
         '<td class="f-name" rowspan="3">' + nameHtml + '</td>' +
         '<td class="f-kind f-kind-planned">예상</td>' +
         plannedCells +
-        '<td class="f-cell f-cell-total">' + (r.totalP > 0 ? formatNum(r.totalP) : '-') + '</td>' +
+        '<td class="f-cell f-cell-total">' +
+          (r.totalP > 0 ? formatNum(r.totalP) : '-') +
+          (r.carryShow ? ' ' + carryTipHtml(r.totalP, r.carryAmount) : '') +
+        '</td>' +
       '</tr>';
 
       var actualRow = '<tr class="f-row-trio-mid">' +
@@ -1113,12 +1205,19 @@
     var grandActualCells  = grandBins.map(actualCellHtml).join('');
     var grandUnpaidCells  = grandCumInfo.cumDiffs.map(function (d, i) { return unpaidCellHtml(d, grandBins[i]); }).join('');
 
+    // §4.9-3: 표시 중인 과제들의 전년도 이월금 합 (확정된 것만). 합계엔 더하지 않고 hover 표기만.
+    var grandCarry = 0, grandCarryAny = false;
+    rows.forEach(function (r) { if (r.carryShow) { grandCarry += r.carryAmount; grandCarryAny = true; } });
+
     var grandRows =
       '<tr class="f-row-grand-top">' +
         '<td class="f-name" rowspan="3"><strong>전체 합계</strong></td>' +
         '<td class="f-kind f-kind-planned"><strong>예상</strong></td>' +
         grandPlannedCells +
-        '<td class="f-cell f-cell-total"><strong>' + (grandTotalPlanned > 0 ? formatNum(grandTotalPlanned) : '-') + '</strong></td>' +
+        '<td class="f-cell f-cell-total">' +
+          '<strong>' + (grandTotalPlanned > 0 ? formatNum(grandTotalPlanned) : '-') + '</strong>' +
+          (grandCarryAny ? ' ' + carryTipHtml(grandTotalPlanned, grandCarry) : '') +
+        '</td>' +
       '</tr>' +
       '<tr class="f-row-grand-mid">' +
         '<td class="f-kind f-kind-actual"><strong>실제</strong></td>' +

@@ -64,6 +64,8 @@
     }
     .history-toolbar select { min-width: 200px; }
     .history-toolbar input[type="number"] { width: 76px; }
+    /* v8.10: 연도 드롭다운은 '2026년' 정도라 200px가 과함 → 약 2/3로 축소 */
+    #pl-year-input { min-width: 0; width: 130px; }
 
     /* 분기 네비게이터 */
     .pl-quarter-nav {
@@ -470,9 +472,9 @@
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      width: 0;                  /* v5.3: 평소엔 자리 차지 안 함 (이름 ellipsis 방지) */
+      width: 1.1rem;             /* 자리 항상 확보 — 호버 시 레이아웃 안 흔들리게 */
       height: 1.1rem;
-      margin-left: 0;
+      margin-left: 0.35rem;
       border: none;
       background: transparent;
       color: #94a3b8;
@@ -480,17 +482,15 @@
       line-height: 1;
       cursor: pointer;
       border-radius: 0.2rem;
-      opacity: 0;
+      opacity: 0;                /* 평소엔 투명(자리는 유지) */
       overflow: hidden;
-      transition: opacity 0.12s, background 0.12s, color 0.12s, width 0.12s, margin 0.12s;
+      transition: opacity 0.12s, background 0.12s, color 0.12s;
       font-family: inherit;
       padding: 0;
       flex-shrink: 0;
     }
     .pl-table tbody tr:hover .pl-row-remove-btn {
-      opacity: 1;
-      width: 1.1rem;             /* hover 시 정상 너비 */
-      margin-left: 0.35rem;
+      opacity: 1;                /* 호버 시 보이기만 — width/margin은 안 바뀜 */
     }
     .pl-row-remove-btn:hover {
       background: #fee2e2;
@@ -505,24 +505,22 @@
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      width: 0;              /* v5.3: 평소엔 자리 차지 안 함 (이름 ellipsis 방지) */
+      width: 1.1rem;        /* 자리 항상 확보 — 호버 시 레이아웃 안 흔들리게 */
       height: 1.1rem;
-      margin-right: 0;
+      margin-right: 0.35rem;
       color: #cbd5e1;
       font-size: 0.95rem;
       line-height: 1;
       cursor: grab;
       border-radius: 0.2rem;
-      opacity: 0;
-      overflow: hidden;       /* width 0일 때 ≡ 글자 안 보이게 */
-      transition: opacity 0.12s, color 0.12s, background 0.12s, width 0.12s, margin 0.12s;
+      opacity: 0;           /* 평소엔 투명(자리는 유지) */
+      overflow: hidden;
+      transition: opacity 0.12s, color 0.12s, background 0.12s;
       user-select: none;
       flex-shrink: 0;
     }
     .pl-table tbody tr:hover .pl-row-drag-handle {
-      opacity: 1;
-      width: 1.1rem;          /* hover 시 정상 너비 */
-      margin-right: 0.35rem;
+      opacity: 1;           /* 호버 시 보이기만 — width/margin은 안 바뀜 */
     }
     .pl-row-drag-handle:hover { color: #475569; background: #f1f5f9; }
     .pl-row-drag-handle:active { cursor: grabbing; }
@@ -710,6 +708,17 @@
     .pl-badge--youth { background: #ede9fe; color: #5b21b6; }
     .pl-badge--new   { background: #dbeafe; color: #1e40af; }
     .pl-badge--exit  { background: #fee2e2; color: #991b1b; }
+    /* 신규채용(임시) placeholder */
+    .pl-badge--ph    { background: #fef3c7; color: #92400e; white-space: nowrap; }
+    .pl-name-input {
+      flex: 0 1 auto; width: 7.5rem; min-width: 4rem; max-width: 100%; height: 24px;
+      font-size: 0.78rem; font-weight: 600; color: #92400e;
+      padding: 0.1rem 0.35rem;
+      border: 1px dashed #f59e0b; border-radius: 0.25rem;
+      background: #fffbeb;
+    }
+    .pl-name-input:focus { outline: none; border-color: #d97706; background: #fff; }
+    .pl-add-placeholder-inline-btn { margin-left: 0.4rem; border-style: dashed; }
     .pl-td-salary {
       font-size: 0.78rem; color: var(--text-secondary, #64748b);
       text-align: right; font-variant-numeric: tabular-nums;
@@ -896,7 +905,7 @@
     }
     .pl-cell-input:focus { outline: none; background: #eff6ff; }
     .pl-cell-input:hover:not(:focus) { background: #f8fafc; }
-    .pl-cell-input[readonly] { color: var(--text-secondary, #64748b); cursor: default; }
+    .pl-cell-input[readonly] { color: #1e293b; cursor: default; }  /* v8.10: 마감/읽기전용 셀 가독성 — 편집 셀과 동일한 진회색으로 명확히 */
     .pl-cell-input[readonly]:hover { background: transparent; }
 
     /* 참여율 색상 */
@@ -914,7 +923,7 @@
     .pl-cell--inactive .pl-cell-input {
       background: transparent;   /* td 배경 보이게 */
       cursor: not-allowed;
-      color: #cbd5e1;
+      color: #94a3b8;            /* v8.10: 거의 안 보이던 색 완화 — 0/값이 읽히게(단 활성 셀보다는 흐리게 유지) */
     }
 
     /* v7.4.3 §4.1: 셀 메모 — 옅은 분홍 배경 + 모서리 마커 + 편집 팝오버 */
@@ -1836,7 +1845,7 @@
               <span>↕</span> 모두 펼치기 <span class="pl-expand-all-count" id="pl-expand-all-count"></span>
             </button>
             <span class="history-toolbar-label">연도</span>
-            <input type="number" id="pl-year-input" value="2025" min="2020" max="2035" step="1" style="font-weight:700; text-align:center;">
+            <select id="pl-year-input" style="font-weight:700; text-align:center; padding:0.32rem 0.5rem; border:1px solid var(--border-color, #cbd5e1); border-radius:0.4rem; background:#fff; cursor:pointer;"></select>
             <span class="history-toolbar-label">분기</span>
             <div class="pl-quarter-nav">
               <button type="button" class="pl-quarter-btn" id="pl-quarter-prev">◀</button>
@@ -1869,6 +1878,7 @@
               <button type="button" class="ui-btn ui-btn--success" id="pl-calc-all-btn" style="flex:1; justify-content:center; font-size:0.78rem; padding:0.45rem 0.3rem; white-space:nowrap;">⚡ 일괄 자동 계산</button>
               <button type="button" class="ui-btn" id="pl-salary-update-btn" style="flex:1; justify-content:center; font-size:0.78rem; padding:0.45rem 0.3rem; white-space:nowrap;" title="연중 연봉 변경이 있는 인력의 예상 셀을 변경월부터 '그 달 연봉 × 참여율'로 재계산">📅 연봉 변경 반영</button>
               <button type="button" class="ui-btn ui-btn--primary" id="pl-add-person-top-btn" style="flex:1; justify-content:center; font-size:0.78rem; padding:0.45rem 0.3rem; white-space:nowrap;">+ 인력 추가</button>
+              <button type="button" class="ui-btn" id="pl-add-placeholder-top-btn" style="flex:1; justify-content:center; font-size:0.78rem; padding:0.45rem 0.3rem; white-space:nowrap;" title="마스터 인력과 매칭되지 않는 신규채용(임시) 행 추가">🔖 신규채용(임시)</button>
             </div>
 
           </div>

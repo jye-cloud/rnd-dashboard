@@ -1339,8 +1339,11 @@
 
     // 분배 대상 행: personId 가 있는 행 (인력 매핑된 행만 인건비 예상에 들어감)
     var mappableRows = yd.rows.filter(function (r) { return r.personId && r.rate > 0; });
+    var skippedRows = getUnmatchedFilledRows();   // 미매칭(채용예정) — 전송에서 빠짐(안내용)
     if (mappableRows.length === 0) {
-      toast('인력 매핑된 행이 없습니다. (성명 옆 🔍로 인력 선택)', true);
+      toast(skippedRows.length
+        ? ('미매칭(채용예정) ' + skippedRows.length + '명만 있어 보낼 게 없습니다. 성명 옆 🔍로 인력을 매칭한 뒤 다시 전송하세요.')
+        : '인력 매핑된 행이 없습니다. (성명 옆 🔍로 인력 선택)', true);
       return;
     }
 
@@ -1354,6 +1357,7 @@
       state.yearIndex + '차년도 ' + mappableRows.length + '명의 데이터를\n' +
       '인건비 예상 탭에 분배합니다.\n\n' +
       '대상 월: ' + ymList[0] + ' ~ ' + ymList[ymList.length - 1] + ' (' + ymList.length + '개월)\n' +
+      (skippedRows.length ? ('\n⚠ ' + unmatchedNoticeText(skippedRows) + '\n   (성명 옆 🔍로 인력 매칭 후 다시 전송하세요.)\n') : '') +
       '※ 기존 예상 탭 데이터의 같은 인력·월 셀은 덮어쓰여집니다.\n\n계속하시겠어요?'
     )) return;
 
@@ -1430,7 +1434,8 @@
       return batch.commit();
     }).then(function () {
       setLoading(false);
-      toast('✓ 인건비 예상 탭에 ' + mappableRows.length + '명, ' + ymList.length + '개월 분배 완료');
+      toast('✓ 인건비 예상 탭에 ' + mappableRows.length + '명, ' + ymList.length + '개월 분배 완료'
+        + (skippedRows.length ? ' · 미매칭 ' + skippedRows.length + '명 제외' : ''));
     }).catch(function (e) {
       setLoading(false);
       console.error('분배 실패:', e);
@@ -1456,6 +1461,20 @@
     });
   }
 
+  // 미매칭(채용예정) 행: personId 없는데 참여율>0 → 전송하면 빠지는 행(안내용).
+  //   placeholder 자체는 의도된 동작 — 다만 사용자가 모르고 빠뜨리지 않게 메시지로 알린다.
+  function getUnmatchedFilledRows() {
+    var yd = getCurrentYearData();
+    if (!yd || !yd.rows) return [];
+    return yd.rows.filter(function (r) { return !r.personId && (Number(r.rate) || 0) > 0; });
+  }
+  function unmatchedNoticeText(rows) {
+    if (!rows || !rows.length) return '';
+    var names = rows.map(function (r) { return r.personName || '(이름 없음)'; });
+    var preview = names.slice(0, 5).join(', ') + (names.length > 5 ? ' 외 ' + (names.length - 5) + '명' : '');
+    return '미매칭(채용예정) ' + rows.length + '명 제외: ' + preview;
+  }
+
   function openSendModal() {
     if (!state.projectId || !isFirestoreReady()) {
       toast('과제를 먼저 선택해주세요.', true);
@@ -1468,7 +1487,10 @@
     }
     var rows = getSendPersonRows();
     if (rows.length === 0) {
-      toast('인력 매핑된 행이 없습니다. (성명 옆 🔍로 인력 선택)', true);
+      var skOnly = getUnmatchedFilledRows();
+      toast(skOnly.length
+        ? ('미매칭(채용예정) ' + skOnly.length + '명만 있어 보낼 게 없습니다. 성명 옆 🔍로 인력을 매칭한 뒤 다시 전송하세요.')
+        : '인력 매핑된 행이 없습니다. (성명 옆 🔍로 인력 선택)', true);
       return;
     }
     var overlay = document.getElementById('pb-send-modal');
@@ -1489,7 +1511,14 @@
       }).join('');
     }
 
-    // ④ 월 범위 셀렉트 채우기
+    // 미매칭(채용예정) 행 안내 — 목록 끝에 노란 메모(전송 대상에 안 보이는 이유 안내)
+    var skModal = getUnmatchedFilledRows();
+    if (listEl && skModal.length) {
+      listEl.insertAdjacentHTML('beforeend',
+        '<div class="pb-send-skip-note" style="margin-top:0.5rem; font-size:0.78rem; color:#b45309; ' +
+        'background:#fffbeb; border:1px solid #fde68a; border-radius:0.35rem; padding:0.45rem 0.6rem; line-height:1.5;">' +
+        '⚠ ' + escapeHtml(unmatchedNoticeText(skModal)) + '<br>성명 옆 🔍로 실제 인력에 매칭한 뒤 다시 전송하세요.</div>');
+    }
     var period = yd.period || {};
     var ymList = (period.startDate && period.endDate) ? getYmListInRange(period.startDate, period.endDate) : [];
     var startSel = document.getElementById('pb-send-start');
